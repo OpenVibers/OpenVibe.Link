@@ -25,10 +25,17 @@ one-time code: `curl -fsSL https://openvibe.bot/install | sh -s -- --network …
   on a second run, and so do the keys you added.
 
 Then add your agent keys to the runner's `env` in `config.json` (`DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`,
-`OPENAI_API_KEY`, and `GITHUB_TOKEN` to push branches and open pull requests), install any agent CLIs system-wide
+`OPENAI_API_KEY`, and `GITHUB_TOKEN` to clone private GitHub repositories, push branches and open pull requests;
+`GITLAB_TOKEN` for gitlab.com, and `OPENVIBE_GIT_CREDENTIALS` for any other host, one `https://user:token@host` per
+line, as git's credential store writes them), install any agent CLIs system-wide
 (`sudo npm install -g @anthropic-ai/claude-code @openai/codex`), and restart the service. A task started on
 openvibe.codes/run then clones the repository inside the job's sandbox, runs the agents there, and hands back the
 summary, the changed files and the patch; it never pushes to the branch it started from.
+
+Inside the sandbox nothing of yours is reachable (no home folder, no git sign-in), so a private repository clones only
+with a token from this `env`. Codes CLI 0.6.1 and later sends it to git as an `Authorization` header for that host
+alone, through `GIT_CONFIG_*` variables: it is never on a command line, in the clone's remote URL or in its
+`.git/config`, and it never passes through OpenVibe.
 
 ## Config
 
