@@ -11,7 +11,9 @@ permissions:
 jobs:
   go:
     name: go vet and test (race)
-    runs-on: ubuntu-latest
+    # ubuntu-24.04, not -latest: on 2026-11-01 -latest moved to 26.04, whose runner scope will not delegate the cgroup v2
+    # controllers the real desk sandbox test needs (test_a_real_desk_in_the_sandbox), and has no Python 3.9.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -100,7 +102,7 @@ jobs:
 
   python:
     name: plugins (python ${{ matrix.python }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # 26.04 (-latest since 2026-11-01) has no Python 3.9 to set up
     strategy:
       fail-fast: false
       matrix:
