@@ -8,7 +8,9 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -22,6 +24,13 @@ import (
 // The test binary doubles as a fake plugin: with OPENVIBE_FAKE_PLUGIN set it speaks the plugin protocol and appends
 // everything it receives to the file named by that variable.
 func TestMain(m *testing.M) {
+	// A grandchild of a fake plugin (mode "jobtree"): write its pid where the test reads it, then wait to be killed
+	// with the plugin's process tree. Checked before OPENVIBE_FAKE_PLUGIN, which it inherits.
+	if path := os.Getenv("OPENVIBE_FAKE_GRANDCHILD"); path != "" {
+		_ = os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())), 0o600)
+		time.Sleep(20 * time.Second)
+		os.Exit(0)
+	}
 	if path := os.Getenv("OPENVIBE_FAKE_PLUGIN"); path != "" {
 		fakePlugin(path, os.Stdin, os.Stdout)
 		os.Exit(0)
@@ -78,6 +87,19 @@ func fakePlugin(logPath string, in io.Reader, out io.Writer) {
 			if m["probe"] == true {
 				continue
 			}
+			if mode == "jobtree" {
+				// A grandchild of its own, then ignore stdin as a plugin stuck in a handler would: the core has to
+				// kill the whole tree rather than see the plugin exit by itself.
+				exe, _ := os.Executable()
+				child := exec.Command(exe)
+				child.Env = append(os.Environ(), "OPENVIBE_FAKE_GRANDCHILD="+os.Getenv("OPENVIBE_FAKE_GRANDCHILD_PIDFILE"))
+				if err := child.Start(); err != nil {
+					rec("GRANDCHILD-ERROR " + err.Error())
+				}
+				w.Encode(map[string]any{"op": "ready"})
+				time.Sleep(20 * time.Second)
+				continue
+			}
 			if mode == "fault" {
 				w.Encode(map[string]any{"op": "fault", "fault_code": "firmware_unsupported", "message": "v1 not v2"})
 				continue
@@ -124,12 +146,13 @@ type fixture struct {
 	seen []Output
 }
 
-func start(t *testing.T, mode string) *fixture {
+func start(t *testing.T, mode string, extraEnv ...string) *fixture {
 	t.Helper()
 	logPath := filepath.Join(t.TempDir(), "plugin.log")
 	exe, _ := os.Executable()
-	spec := Spec{Name: "fake", Argv: []string{exe}, Env: []string{"OPENVIBE_FAKE_PLUGIN=" + logPath, "OPENVIBE_FAKE_MODE=" + mode},
-		Config: map[string]any{"k": "v"}}
+	env := []string{"OPENVIBE_FAKE_PLUGIN=" + logPath, "OPENVIBE_FAKE_MODE=" + mode}
+	env = append(env, extraEnv...)
+	spec := Spec{Name: "fake", Argv: []string{exe}, Env: env, Config: map[string]any{"k": "v"}}
 	m := NewManager([]Spec{spec}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	ctx, cancel := context.WithCancel(context.Background())
 	m.Start(ctx)
