@@ -353,12 +353,27 @@ func finishPair(g *globals, a pairArgs, cfg *config.Config, noConfig bool, stdou
 		}
 		chownLikeDir(g.paths.ConfigFile(), g.paths.ConfigDir)
 	}
-	if service.Status(serviceOptions(g, "")) == "running" {
-		_ = service.Control(serviceOptions(g, ""), "restart")
+	// The service has one name on a machine (service.Name) whatever --home it runs, so a pairing in another --home
+	// (a second node, a test node) must not restart it: that would restart a different node (11-02: a test node
+	// paired in its own folder beside a working robot's service). Only the default home's pairing restarts it.
+	if g.home != "" {
+		if serviceStatus(serviceOptions(g, "")) == "running" {
+			fmt.Fprintln(stdout, "A node service is running on this machine; it was left alone. If it runs this --home, restart it (Windows: `sc stop openvibe-node` then `sc start openvibe-node`; Linux: `sudo systemctl restart openvibe-node`).")
+		}
+		return nil
+	}
+	if serviceStatus(serviceOptions(g, "")) == "running" {
+		_ = serviceControl(serviceOptions(g, ""), "restart")
 		fmt.Fprintln(stdout, "The service was running and has been restarted with the new credential.")
 	}
 	return nil
 }
+
+// The service manager, behind seams so the pairing tests can watch it (service.Status and service.Control otherwise).
+var (
+	serviceStatus  = service.Status
+	serviceControl = service.Control
+)
 
 func cmdPair(g *globals, a pairArgs, stdout io.Writer) error {
 	code, err := link.NormalizeCode(a.code)
