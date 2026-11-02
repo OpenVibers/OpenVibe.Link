@@ -18,11 +18,17 @@ Config (the plugin's block in config.json):
 * ``max_tokens``: the most a reply may be (default 2048, at most 32768).
 * ``timeout_s``: how long one reply may take (default 180, at most 900).
 
-Command ``ai`` ``{"model", "messages": [{"role", "content"}], "max_tokens"?, "temperature"?}`` →
-``{model, message: {role: "assistant", content}, usage?, finish_reason?}``.
+Command ``ai`` ``{"model", "messages": [{"role", "content"}], "max_tokens"?, "temperature"?, "tools"?, "tool_choice"?}``
+→ ``{model, message: {role: "assistant", content, tool_calls?}, usage?, finish_reason?}``.
+
+Tools (contracts 0.277.0, plugin 0.2.0): the functions the model may ask for, passed to the model server as written.
+The plugin never runs one: it hands back the calls the model asked for, and the caller (an agent on OpenVibe) runs
+them and sends the next command with the assistant's message (its ``tool_calls``) and one ``tool`` message per call.
+``describe`` says ``tools: true`` so a caller knows this machine can.
 """
 
 import json
+import re
 import threading
 import time
 import urllib.error
@@ -30,12 +36,81 @@ import urllib.request
 
 from openvibe_plugin import Deferred, Fault, Plugin
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 DEFAULT_ENDPOINTS = ("http://127.0.0.1:11434", "http://127.0.0.1:1234", "http://127.0.0.1:8080")
 MAX_REPLY_CHARS = 200 * 1024     # well inside the core's answer limit (512 KB)
 MAX_MESSAGES = 200
 MAX_CONTENT = 64 * 1024
-ROLES = ("system", "user", "assistant")
+ROLES = ("system", "user", "assistant", "tool")
+MAX_TOOLS = 64
+MAX_CALLS = 32
+MAX_TOOLS_BYTES = 256 * 1024
+NAME = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+
+
+def _call(c):
+    """One tool call as the contract has it, or None."""
+    if not isinstance(c, dict) or c.get("type", "function") != "function":
+        return None
+    fn = c.get("function") if isinstance(c.get("function"), dict) else {}
+    name, args, cid = fn.get("name"), fn.get("arguments"), c.get("id")
+    if not isinstance(name, str) or not NAME.match(name):
+        return None
+    if isinstance(args, (dict, list)):
+        args = json.dumps(args)   # Ollama may give the arguments as an object
+    if args is None:
+        args = "{}"
+    if not isinstance(args, str) or len(args) > MAX_CONTENT:
+        return None
+    if cid is not None and (not isinstance(cid, str) or not cid or len(cid) > 200):
+        return None
+    return {"id": cid, "type": "function", "function": {"name": name, "arguments": args}}
+
+
+def _message(m):
+    """A message as the model server gets it, or None when it breaks the contract."""
+    if not isinstance(m, dict) or m.get("role") not in ROLES or not isinstance(m.get("content"), str) or len(m["content"]) > MAX_CONTENT:
+        return None
+    out = {"role": m["role"], "content": m["content"]}
+    calls, call_id = m.get("tool_calls"), m.get("tool_call_id")
+    if calls is not None:
+        if m["role"] != "assistant" or not isinstance(calls, list) or not 0 < len(calls) <= MAX_CALLS:
+            return None
+        made = [_call(c) for c in calls]
+        if any(c is None or c["id"] is None for c in made):
+            return None
+        out["tool_calls"] = made
+    if m["role"] == "tool":
+        if not isinstance(call_id, str) or not call_id or len(call_id) > 200:
+            return None
+        out["tool_call_id"] = call_id
+    elif call_id is not None:
+        return None
+    return out
+
+
+def _tools(tools):
+    """The tools as the model server gets them, or None when they break the contract."""
+    if not isinstance(tools, list) or not 0 < len(tools) <= MAX_TOOLS:
+        return None
+    out = []
+    for t in tools:
+        fn = t.get("function") if isinstance(t, dict) else None
+        if not isinstance(fn, dict) or t.get("type") != "function" or not isinstance(fn.get("name"), str) or not NAME.match(fn["name"]):
+            return None
+        one = {"name": fn["name"]}
+        if fn.get("description") is not None:
+            if not isinstance(fn["description"], str) or len(fn["description"]) > 4096:
+                return None
+            one["description"] = fn["description"]
+        if fn.get("parameters") is not None:
+            if not isinstance(fn["parameters"], dict):
+                return None
+            one["parameters"] = fn["parameters"]
+        out.append({"type": "function", "function": one})
+    if len(json.dumps(out)) > MAX_TOOLS_BYTES:
+        return None
+    return out
 
 
 def _int(v, name, lo, hi, default):
@@ -112,7 +187,7 @@ class Ai(Plugin):
         except Fault:
             return {}
         return {"ai": {"models": self.models, "ready": self.reachable and bool(self.models),
-                       "max_tokens": self.max_tokens}}
+                       "max_tokens": self.max_tokens, "tools": True}}
 
     def setup(self, config):
         self._configure(config)
@@ -128,10 +203,17 @@ class Ai(Plugin):
         messages = v.get("messages")
         if not isinstance(model, str) or not model or len(model) > 200:
             raise Fault("bad_value", "model is the name of a model this machine offers")
-        if not isinstance(messages, list) or not messages or len(messages) > MAX_MESSAGES or not all(
-                isinstance(m, dict) and m.get("role") in ROLES and isinstance(m.get("content"), str)
-                and len(m["content"]) <= MAX_CONTENT for m in messages):
-            raise Fault("bad_value", "messages are 1 to %d of {role: system|user|assistant, content: text}" % MAX_MESSAGES)
+        sent = [_message(m) for m in messages] if isinstance(messages, list) and 0 < len(messages) <= MAX_MESSAGES else None
+        if not sent or any(m is None for m in sent):
+            raise Fault("bad_value", "messages are 1 to %d of {role: system|user|assistant|tool, content: text}; tool_calls on an assistant message, tool_call_id on a tool one" % MAX_MESSAGES)
+        tools = None
+        if v.get("tools") is not None:
+            tools = _tools(v.get("tools"))
+            if tools is None:
+                raise Fault("bad_value", "tools are 1 to %d of {type: function, function: {name, description?, parameters?}}" % MAX_TOOLS)
+        tool_choice = v.get("tool_choice")
+        if tool_choice is not None and tool_choice not in ("auto", "none"):
+            raise Fault("bad_value", "tool_choice is auto or none")
         if not self.reachable:
             self._configure_again()
         if not self.reachable:
@@ -146,10 +228,12 @@ class Ai(Plugin):
             raise Fault("bad_value", "temperature is 0 to 2")
         if not self.busy.acquire(blocking=False):
             raise Fault("not_ready", "the model is answering another request on this machine: try again in a moment")
-        body = {"model": model, "messages": [{"role": m["role"], "content": m["content"]} for m in messages],
-                "max_tokens": max_tokens, "stream": False}
+        body = {"model": model, "messages": sent, "max_tokens": max_tokens, "stream": False}
         if temperature is not None:
             body["temperature"] = temperature
+        if tools:
+            body["tools"] = tools
+            body["tool_choice"] = tool_choice or "auto"
         threading.Thread(target=self._reply, args=(cmd.id, body), name="ai-reply", daemon=True).start()
         raise Deferred()
 
@@ -188,11 +272,22 @@ class Ai(Plugin):
             choice = (doc.get("choices") or [{}])[0] if isinstance(doc, dict) else {}
             msg = choice.get("message") if isinstance(choice, dict) else None
             content = msg.get("content") if isinstance(msg, dict) else None
+            calls = []
+            if isinstance(msg, dict) and isinstance(msg.get("tool_calls"), list) and body.get("tools"):
+                for i, c in enumerate(msg["tool_calls"][:MAX_CALLS]):
+                    made = _call(c)
+                    if made is not None:
+                        made["id"] = made["id"] or "call_%d" % (i + 1)   # some servers give no id
+                        calls.append(made)
             if not isinstance(content, str):
-                return self.fail(cid, "hardware", "the model server gave no reply")
+                if not calls:
+                    return self.fail(cid, "hardware", "the model server gave no reply")
+                content = ""
             out = {"model": str(doc.get("model") or body["model"]),
                    "message": {"role": "assistant", "content": content[:MAX_REPLY_CHARS]},
                    "ms": int((self.clock() - started) * 1000)}
+            if calls:
+                out["message"]["tool_calls"] = calls
             if isinstance(choice.get("finish_reason"), str):
                 out["finish_reason"] = choice["finish_reason"]
             usage = doc.get("usage")
