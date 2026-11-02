@@ -46,6 +46,12 @@ class FakeServer(http.server.BaseHTTPRequestHandler):
             return self._send(404, {"error": "not found"})
         if body.get("model") == "broken":
             return self._send(500, {"error": "out of memory"})
+        if body.get("tools") and body["messages"][-1]["role"] != "tool":
+            # The model asks for tools: one call with an id and JSON text, one (as Ollama may) with neither.
+            calls = [{"id": "call_x", "type": "function", "function": {"name": body["tools"][0]["function"]["name"], "arguments": "{\"q\": \"Lisbon\"}"}},
+                     {"type": "function", "function": {"name": "clock", "arguments": {"tz": "UTC"}}}]
+            return self._send(200, {"model": body["model"], "choices": [{"index": 0, "finish_reason": "tool_calls",
+                                                                        "message": {"role": "assistant", "content": None, "tool_calls": calls}}]})
         last = body["messages"][-1]["content"]
         self._send(200, {"model": body["model"], "choices": [{"index": 0, "finish_reason": "stop",
                                                                 "message": {"role": "assistant", "content": "You said: " + last}}],
@@ -109,6 +115,53 @@ class AiPluginTest(unittest.TestCase):
         path, body = FakeServer.seen[-1]
         self.assertEqual(path, "/v1/chat/completions")
         self.assertEqual((body["max_tokens"], body["temperature"], body["stream"]), (50, 0.2, False))
+
+    def test_tools_go_to_the_model_and_its_calls_come_back_never_run(self):
+        caps = self.boot()[0]["capabilities"]["ai"]
+        self.assertIs(caps["tools"], True, "the machine says it can pass tools")
+        tools = [{"type": "function", "function": {"name": "web_search", "description": "Search the web",
+                                                    "parameters": {"type": "object", "properties": {"q": {"type": "string"}}}}},
+                 {"type": "function", "function": {"name": "clock"}}]
+        first = [{"role": "user", "content": "Weather in Lisbon?"}]
+        r = self.ask({"model": "qwen2.5:7b", "messages": first, "tools": tools})
+        self.assertEqual(r["op"], "ack", r)
+        msg = r["data"]["message"]
+        self.assertEqual(msg["content"], "", "a reply that only asks for tools has empty text")
+        self.assertEqual(msg["tool_calls"], [
+            {"id": "call_x", "type": "function", "function": {"name": "web_search", "arguments": '{"q": "Lisbon"}'}},
+            {"id": "call_2", "type": "function", "function": {"name": "clock", "arguments": '{"tz": "UTC"}'}},
+        ], "an id is made where the server gave none, and object arguments become JSON text")
+        self.assertEqual(r["data"]["finish_reason"], "tool_calls")
+        body = FakeServer.seen[-1][1]
+        self.assertEqual((body["tools"], body["tool_choice"]), (tools, "auto"), "the tools reach the model server as written")
+        # The caller ran them; the next command carries the calls and their results.
+        second = first + [msg, {"role": "tool", "tool_call_id": "call_x", "content": "19 C, sunny"},
+                          {"role": "tool", "tool_call_id": "call_2", "content": "15:40"}]
+        r = self.ask({"model": "qwen2.5:7b", "messages": second, "tools": tools, "tool_choice": "auto"})
+        self.assertEqual(r["data"]["message"], {"role": "assistant", "content": "You said: 15:40"})
+        sent = FakeServer.seen[-1][1]["messages"]
+        self.assertEqual(sent[1]["tool_calls"][0]["id"], "call_x")
+        self.assertEqual((sent[2]["role"], sent[2]["tool_call_id"]), ("tool", "call_x"))
+        # Without tools, a reply's tool calls are never passed on (nothing asked for them).
+        r = self.ask({"model": "qwen2.5:7b", "messages": [{"role": "user", "content": "plain"}]})
+        self.assertNotIn("tool_calls", r["data"]["message"])
+        self.assertNotIn("tools", FakeServer.seen[-1][1])
+
+    def test_tool_messages_that_break_the_contract_are_refused(self):
+        self.boot()
+        bad = [
+            {"messages": [{"role": "user", "content": "x"}, {"role": "tool", "content": "orphan"}]},
+            {"messages": [{"role": "user", "content": "x", "tool_call_id": "c1"}]},
+            {"messages": [{"role": "user", "content": "x", "tool_calls": [{"id": "c", "type": "function", "function": {"name": "a", "arguments": "{}"}}]}]},
+            {"messages": [{"role": "assistant", "content": "", "tool_calls": [{"type": "function", "function": {"name": "a", "arguments": "{}"}}]}]},
+            {"messages": [{"role": "user", "content": "x"}], "tools": [{"type": "function", "function": {"name": "rm -rf"}}]},
+            {"messages": [{"role": "user", "content": "x"}], "tools": []},
+            {"messages": [{"role": "user", "content": "x"}], "tools": [{"type": "function", "function": {"name": "a"}}], "tool_choice": "required"},
+        ]
+        for v in bad:
+            r = self.ask({"model": "qwen2.5:7b", **v})
+            self.assertEqual((r["op"], r.get("fault_code")), ("nack", "bad_value"), v)
+        self.assertEqual(FakeServer.seen, [], "nothing reached the model server")
 
     def test_it_says_how_fast_each_model_answers_here(self):
         self.boot()
