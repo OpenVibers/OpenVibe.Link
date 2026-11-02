@@ -18,6 +18,7 @@ import (
 	"github.com/OpenVibers/OpenVibe.Node/internal/fakebot"
 	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
 	"github.com/OpenVibers/OpenVibe.Node/internal/safety"
+	"github.com/OpenVibers/OpenVibe.Node/internal/service"
 	"github.com/OpenVibers/OpenVibe.Node/internal/video"
 )
 
@@ -300,5 +301,30 @@ func TestRunDryRun(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "stopping every actuator") {
 		t.Fatalf("no shutdown stop in logs:\n%s", logs.String())
+	}
+}
+
+// A pairing in its own --home never restarts the machine's node service: the service has one name whatever home it runs,
+// so it may be another node's (11-02: a test node paired in its own folder beside a working robot's service).
+func TestPairInAnotherHomeLeavesTheServiceAlone(t *testing.T) {
+	srv := fakebot.New()
+	defer srv.Close()
+	srv.AddCode("WXYZ2345")
+	home := shortHome(t)
+	t.Setenv("PYTHONPATH", pythonPath(t))
+	var controls []string
+	oldStatus, oldControl := serviceStatus, serviceControl
+	serviceStatus = func(service.Options) string { return "running" }
+	serviceControl = func(_ service.Options, action string) error { controls = append(controls, action); return nil }
+	defer func() { serviceStatus, serviceControl = oldStatus, oldControl }()
+	out, errOut, code := cli(t, "pair", "--code", "wxyz-2345", "--robot", fakebot.RobotID, "--home", home, "--server", srv.URL())
+	if code != 0 {
+		t.Fatalf("pair failed: %s", errOut)
+	}
+	if len(controls) != 0 {
+		t.Fatalf("the running service was touched: %v", controls)
+	}
+	if !strings.Contains(out, "left alone") || strings.Contains(out, "has been restarted") {
+		t.Fatalf("the output does not say the service was left alone: %s", out)
 	}
 }
