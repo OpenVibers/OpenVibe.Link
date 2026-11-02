@@ -35,6 +35,8 @@ computer plugin's shared desks) reads the same config as the Node that started i
 4. The core sends `heartbeat` every 250 ms and commands as they arrive; the plugin answers each command with `ack` or
    `nack` and sends `telemetry`, `event` and `video` messages whenever it has them.
 5. On shutdown the core sends `stop` and closes stdin; the plugin stops everything and exits. After 2 s it is killed.
+   On Windows the kill covers every process the plugin started (a Job Object), as killing the process group does on
+   Linux and macOS.
 
 A plugin that exits is restarted with exponential backoff (1 s doubling to 30 s, reset after a minute of uptime). It
 starts stopped; if the e-stop or the local kill switch is latched, the core sends `estop` right after `hello`.

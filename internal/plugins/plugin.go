@@ -559,9 +559,14 @@ func (p *Plugin) runOnce(ctx context.Context) error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start %s: %w", p.spec.Argv[0], err)
 	}
+	tree, treeErr := startProcessTree(cmd)
+	if treeErr != nil {
+		p.log.Warn("plugin is not in a job object; processes it starts may outlive it", "err", errString(treeErr))
+	}
+	defer tree.close()
 	queue := make(chan line, 256)
 	var killOnce sync.Once
-	kill := func() { killOnce.Do(func() { killProcess(cmd) }) }
+	kill := func() { killOnce.Do(func() { tree.kill() }) }
 	p.mu.Lock()
 	p.queue, p.kill, p.pid, p.fault, p.desc = queue, kill, cmd.Process.Pid, nil, nil
 	estopped, estopCause, estopReason, haltEpoch := p.estopped, p.estopCause, p.estopReason, p.haltEpoch
@@ -633,8 +638,9 @@ func (p *Plugin) runOnce(ctx context.Context) error {
 	}
 
 	// Watch the plugin process itself, not its stdout: a child it started (speech, a camera helper) can hold stdout
-	// open after the plugin died. When the plugin exits, its whole process group is killed, which also frees any
-	// motor bus or serial port a child still holds, and ends the stdout reader.
+	// open after the plugin died. When the plugin exits, its whole process tree is killed (the process group on Unix,
+	// the Job Object on Windows), which also frees any motor bus or serial port a child still holds, and ends the
+	// stdout reader.
 	exited := make(chan error, 1)
 	go func() {
 		ps, err := cmd.Process.Wait()
@@ -819,6 +825,9 @@ func Probe(ctx context.Context, spec Spec) (*Describe, error) {
 		return nil, err
 	}
 	defer func() { _ = cmd.Wait() }()
+	// The probe must not leave children behind either: CommandContext kills only the direct process.
+	tree, _ := startProcessTree(cmd)
+	defer tree.close()
 	defer stdin.Close()
 	b, _ := json.Marshal(map[string]any{"op": "hello", "config": nonNil(spec.Config), "probe": true})
 	if _, err := stdin.Write(append(b, '\n')); err != nil {

@@ -11,7 +11,9 @@ permissions:
 jobs:
   go:
     name: go vet and test (race)
-    runs-on: ubuntu-latest
+    # ubuntu-24.04, not -latest: on 2026-11-01 -latest moved to 26.04, whose runner scope will not delegate the cgroup v2
+    # controllers the real desk sandbox test needs (test_a_real_desk_in_the_sandbox), and has no Python 3.9.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -96,11 +98,16 @@ jobs:
       # Python SDK's own suite, verbose so the log shows each ran on this OS (and its clock readings), never skipped.
       - name: deadlines across the pipe (verbose)
         run: go test -count=1 -v -run "TestQPC|TestTheClock|TestUntilAndSince|TestPython|TestHelloNamesTheSharedClock|TestPipeDelay|TestWriterQueue|TestStrictTiming" ./internal/mono ./internal/plugins
+      # A plugin's own children must not outlive it on Windows (a Job Object, as the process group does on macOS):
+      # verbose so the log shows this ran there rather than being skipped.
+      - name: plugin process tree (verbose)
+        if: runner.os == 'Windows'
+        run: go test -count=1 -v -run TestPluginKillEndsTheWholeTree ./internal/plugins
       - run: go test -count=1 ./...
 
   python:
     name: plugins (python ${{ matrix.python }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # 26.04 (-latest since 2026-11-01) has no Python 3.9 to set up
     strategy:
       fail-fast: false
       matrix:
