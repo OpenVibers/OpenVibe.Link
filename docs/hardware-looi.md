@@ -99,7 +99,7 @@ openvibe-node install --user-session --home "%OVHOME%"
 
 `install --user-session` starts the Node when you sign in, in a console window that shows its log (Windows keeps no
 service log yet). Closing the window stops the Node and every actuator; nothing restarts it until the next sign-in.
-`openvibe-node uninstall --user-session` removes the sign-in start. On Windows a killed plugin takes the processes it
+`openvibe-node uninstall --user-session --home DIR` removes that directory's sign-in start (each Node directory has its own, since v0.37.2, so a test node never replaces a working one). On Windows a killed plugin takes the processes it
 started with it (a Job Object), as it does on Linux and macOS, so a bridge helper cannot keep the Bluetooth link open
 after the Node stops or restarts the plugin.
 

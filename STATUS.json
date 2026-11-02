@@ -5,7 +5,7 @@
   "wave": "T15",
   "plan": "Plan track T15 (Bot complete) and ADR-043 (Bot: devices, pairing, control and safety); the computer plugin and the job worker serve OpenVibe.Actor and the Codes job runner (tracks T14/T17)",
   "kind": "client",
-  "version": "0.37.1",
+  "version": "0.37.2",
   "release": "v0.36.0: the ai plugin (0.2.0) passes tools to the machine's own model server and hands back the calls the model asked for, never running one, so an agent on OpenVibe (Actor) can work on a model this machine serves; its capabilities say tools: true (contracts 0.277.0). v0.35.0: the Node applies the roles the network's machines hub gives it at each check-in (codes.worker starts the job worker it was installed with, desks.host and ai.host are checked against what the machine was installed for, an unknown role is ignored, and the local configuration always wins), and its status reports them back; a desk's first browser start in a cold sandbox gets 90 s. v0.34.0: on Windows a killed plugin takes every process it started with it (a Job Object with kill-on-close), as the process group does on Linux and macOS, so a bridge helper cannot keep a robot's link open after the Node stops or restarts its plugin; the Node reads what the coding tools remember (read-only, local, redacted) and `openvibe-node memory` uploads it to your own store; the heartbeat carries the machine's fleet of coding agents; the Codes job runner pin is v0.5.2",
   "runtime": "go 1.24 (one static binary per platform); plugins in Python 3; an ESP32 Arduino library",
   "database": "none",

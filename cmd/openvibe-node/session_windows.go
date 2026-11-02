@@ -10,20 +10,29 @@ import (
 
 func userSessionSupported() error { return nil }
 
-func registerUserSession(line string) error {
-	out, err := exec.Command("reg", "add", runKey, "/v", runValueName, "/t", "REG_SZ", "/d", line, "/f").CombinedOutput()
+func registerUserSession(name, line string) error {
+	out, err := exec.Command("reg", "add", runKey, "/v", name, "/t", "REG_SZ", "/d", line, "/f").CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("reg add %s: %v: %s", runKey, err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
 
-func unregisterUserSession() error {
-	out, err := exec.Command("reg", "delete", runKey, "/v", runValueName, "/f").CombinedOutput()
+func unregisterUserSession(name string) error {
+	out, err := exec.Command("reg", "delete", runKey, "/v", name, "/f").CombinedOutput()
 	if err != nil && !strings.Contains(strings.ToLower(string(out)), "unable to find") {
 		return fmt.Errorf("reg delete %s: %v: %s", runKey, err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// readUserSession reads one Run value's command line; ok is false when there is no such value.
+func readUserSession(name string) (string, bool) {
+	out, err := exec.Command("reg", "query", runKey, "/v", name).CombinedOutput()
+	if err != nil {
+		return "", false
+	}
+	return parseRegQuery(string(out), name)
 }
 
 // startUserSession starts the Node now in a window of its own, as the Run key will at the next sign-in.
