@@ -189,7 +189,7 @@ class RealSharedDeskTest(unittest.TestCase):
             n[0] += 1
             cid = "r%d" % n[0]
             rt.dispatch({"op": "command", "id": cid, "kind": kind, "value": value, "deadline_ms": 60000})
-            return out.wait_for(lambda m: m.get("id") == cid and m.get("op") in ("ack", "nack"), timeout=60)
+            return out.wait_for(lambda m: m.get("id") == cid and m.get("op") in ("ack", "nack"), timeout=120)   # the browser gets STARTUP_S (90 s) for a first start
         self.assertEqual(cmd("desk", {"action": "start", "desk": "desk-a", "kind": "browser", "width": 800, "height": 600})["op"], "ack")
         try:
             shot = cmd("screen", {"desk": "desk-a", "max_width": 400})

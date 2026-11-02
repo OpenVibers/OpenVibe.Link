@@ -24,7 +24,7 @@ import threading
 import time
 
 MAX_TEXT = 20000
-STARTUP_S = 45.0
+STARTUP_S = 90.0   # a first start in a cold sandbox (CI runners took over 45 s on 2026-11-02)
 MAX_LINKS = 60
 MAX_ELEMENTS = 120
 MAX_APPEARED = 8
