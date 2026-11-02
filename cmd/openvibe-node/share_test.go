@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -39,7 +40,7 @@ func TestShareCommands(t *testing.T) {
 	if len(matches) != 1 {
 		t.Fatalf("the saved file: %v", matches)
 	}
-	if fi, _ := os.Stat(matches[0]); fi.Mode().Perm() != 0o600 {
+	if fi, _ := os.Stat(matches[0]); runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 { // Windows keeps no Unix mode bits
 		t.Fatalf("mode %v", fi.Mode().Perm())
 	}
 	out.Reset()

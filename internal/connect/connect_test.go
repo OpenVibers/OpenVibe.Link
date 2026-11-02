@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -360,7 +361,7 @@ func TestSavedSharesAreTheOwnersOnly(t *testing.T) {
 		t.Fatalf("the same key replaces: %v", list)
 	}
 	fi, _ := os.Stat(filepath.Join(dir, File))
-	if fi.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 { // Windows keeps no Unix mode bits
 		t.Fatalf("mode %v", fi.Mode().Perm())
 	}
 	if n, _ := Remove(dir, "8791"); n != 1 {
