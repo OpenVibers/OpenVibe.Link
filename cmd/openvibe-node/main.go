@@ -193,7 +193,7 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		err = cmdInstall(g, *svcUser, stdout)
 	case "uninstall":
 		if *session {
-			err = cmdUninstallUserSession(stdout)
+			err = cmdUninstallUserSession(g, stdout)
 			break
 		}
 		err = service.Control(serviceOptions(g, ""), "stop")

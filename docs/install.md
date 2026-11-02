@@ -149,7 +149,7 @@ console window that shows its log; closing the window stops the Node and every a
 | `openvibe-node install [--user NAME]`     | install and start the service                                              |
 | `openvibe-node uninstall`                 | stop and remove the service (config and credential are kept)               |
 | `openvibe-node install --user-session --home DIR` | Windows: start at sign-in in your own session instead of as a service |
-| `openvibe-node uninstall --user-session`  | Windows: remove that sign-in start                                         |
+| `openvibe-node uninstall --user-session --home DIR` | Windows: remove that directory's sign-in start (one per directory) |
 | `openvibe-node status [--json]`           | link, stop latch, limits, plugins, video, battery, running jobs            |
 | `openvibe-node stop`                      | **kill switch**: stop every actuator now and hold it stopped              |
 | `openvibe-node resume`                    | release the local stop (and a server e-stop)                               |
