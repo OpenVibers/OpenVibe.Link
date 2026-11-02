@@ -98,6 +98,11 @@ jobs:
       # Python SDK's own suite, verbose so the log shows each ran on this OS (and its clock readings), never skipped.
       - name: deadlines across the pipe (verbose)
         run: go test -count=1 -v -run "TestQPC|TestTheClock|TestUntilAndSince|TestPython|TestHelloNamesTheSharedClock|TestPipeDelay|TestWriterQueue|TestStrictTiming" ./internal/mono ./internal/plugins
+      # A plugin's own children must not outlive it on Windows (a Job Object, as the process group does on macOS):
+      # verbose so the log shows this ran there rather than being skipped.
+      - name: plugin process tree (verbose)
+        if: runner.os == 'Windows'
+        run: go test -count=1 -v -run TestPluginKillEndsTheWholeTree ./internal/plugins
       - run: go test -count=1 ./...
 
   python:
