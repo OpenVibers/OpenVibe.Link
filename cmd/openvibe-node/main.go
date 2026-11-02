@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/OpenVibers/OpenVibe.Node/internal/config"
+	"github.com/OpenVibers/OpenVibe.Node/internal/connect"
 	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
 	"github.com/OpenVibers/OpenVibe.Node/internal/link"
 	"github.com/OpenVibers/OpenVibe.Node/internal/localctl"
@@ -77,6 +78,9 @@ Usage:
   openvibe-node memory scan [--tools a,b] [--project DIR …] [--json]
                     read the memory files of the coding tools on this machine
                     (read-only, local, secrets removed)
+  openvibe-node share --key ovc_… --port N           put this machine's port N on the web (OpenVibe Connect),
+                                                   behind OpenVibe sign-in, until Ctrl-C
+  openvibe-node share add|list|remove …             the shares the Node service keeps up (openvibe-node share)
   openvibe-node version
 
 Global flags (before or after the command):
@@ -133,6 +137,9 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		session = fs.Bool("user-session", false, "Windows: start at sign-in in your own session instead of as a service (install, uninstall)")
 		keyID   = fs.String("key-id", "", "accept only this Bot signing key id (profile verify)")
 		autoArg = fs.String("autostart", "", "on or off: start the tray when you sign in (tray)")
+		shKey   = fs.String("key", "", "the share's ovc_… connect key from connect.openvibe.website (share)")
+		shPort  = fs.Int("port", 0, "the local port to share (share)")
+		shSrv   = fs.String("connect-server", "", "OpenVibe Connect's tunnel URL; default wss://connect.openvibe.website/tunnel (share)")
 	)
 	// Accept flags anywhere: split positionals out.
 	var positional []string
@@ -222,6 +229,11 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 			return 2
 		}
 		err = cmdProfileVerify(g, positional[1], *server, *keyID, stdout)
+	case "share":
+		err = cmdShare(g, positional, shareArgs{key: *shKey, port: *shPort, server: *shSrv}, stdout, stderr)
+		if errors.Is(err, errUsage) {
+			return 2
+		}
 	case "version", "--version":
 		fmt.Fprintf(stdout, "openvibe-node %s %s/%s\n", version, runtime.GOOS, runtime.GOARCH)
 	default:
@@ -569,6 +581,10 @@ func cmdRun(g *globals, dryRun bool) error {
 	}
 	g.log.Info("openvibe-node starting", "version", version, "config", g.paths.ConfigDir, "plugins", len(cfg.Plugins))
 	return service.Run(serviceOptions(g, ""), func(ctx context.Context) error {
+		if !dryRun {
+			// OpenVibe Connect: every saved share stays up while the Node runs (openvibe-node share add).
+			go connect.RunAll(ctx, g.paths.ConfigDir, connect.Options{Log: g.log, Version: version})
+		}
 		if err := n.Run(ctx); !errors.Is(err, node.ErrQuit) {
 			return err
 		}
