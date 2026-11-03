@@ -102,7 +102,9 @@ SETUP="${OPENVIBE_SETUP_KEY:-}"
 # and it runs every harness the private portal runs, with the argv and the environment the portal learned. v0.5.1 adds
 # the portal's limits and turn-cap continuation, the single continuation, and the Know store's lessons. v0.5.2 adds the
 # conductor's turn: the `conductor` job kind, and the `openvibe-codes mcp` server it starts with the person's folder).
-CODES_VERSION="${OPENVIBE_CODES_VERSION:-v0.5.2}"
+# v0.7.0 (2026-11-03) lets a conductor's turn run on Codex or OpenCode with the Codes tools, so the conductor can fall
+# back to another agent when Claude Code nears its usage limit; an older runner keeps running Claude Code.
+CODES_VERSION="${OPENVIBE_CODES_VERSION:-v0.7.0}"
 CODES_DIR=/opt/openvibe-codes
 
 usage() {
