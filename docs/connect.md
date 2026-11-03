@@ -5,6 +5,27 @@
 The Node speaks Connect's protocol itself (`internal/connect`, `ovconnect-ws/1`), so a share can stay up as part of
 the Node service, across reboots, without the one-file client.
 
+## A share this computer serves, with no key
+
+A computer added on [openvibe.bot/machines](https://openvibe.bot/machines) has its own OpenVibe sign-in (its node
+principal). On a share's page on connect.openvibe.website, pick it under "Or serve it from one of your computers",
+then on the computer:
+
+```sh
+openvibe-node share mine                          # the shares this computer was picked for
+openvibe-node share --share shr_…                 # serve one now, until Ctrl-C
+sudo openvibe-node share add --share shr_…        # or keep it up with the Node service
+```
+
+There is no key to copy or leak. Before every connection the Node buys its node token for OpenVibe Connect (audience
+`openvibe.website`, 5 minutes) and asks Connect for a tunnel token for that one share (60 seconds, one use), and says
+hello with both (ADR-057 decision 4, CON-4). While connected it sends a fresh node token every 45 seconds. A computer
+removed on OpenVibe stops serving within about five minutes, and the Node stops that share instead of retrying.
+
+Without `--port`, the Node serves the port the share's page names when you run or add it, and keeps that port: if the
+page names another one later, the Node keeps serving the port it was given and says so in the log. Connect can never
+point it at a different local service. Pass `--port N` to choose the port yourself.
+
 ## Make a share
 
 Sign in at connect.openvibe.website, give the share a name and the port, and pick who can open it. The page shows its

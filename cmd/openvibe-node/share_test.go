@@ -52,3 +52,23 @@ func TestShareCommands(t *testing.T) {
 		t.Fatalf("a bad key: %d %q", code, errb.String())
 	}
 }
+
+// A share by id needs this computer added to OpenVibe (a Network pairing); without it the commands say where to do that.
+func TestShareByIDNeedsThePairing(t *testing.T) {
+	home := t.TempDir()
+	var out, errb bytes.Buffer
+	for _, args := range [][]string{
+		{"share", "--share", "shr_01K9ZZZZZZZZZZZZZZZZZZZZZZ", "--home", home},
+		{"share", "add", "--share", "shr_01K9ZZZZZZZZZZZZZZZZZZZZZZ", "--port", "8790", "--home", home},
+		{"share", "mine", "--home", home},
+	} {
+		errb.Reset()
+		if code := run(args, &out, &errb); code != 1 || !strings.Contains(errb.String(), "openvibe.bot/machines") {
+			t.Fatalf("%v: %d %q", args, code, errb.String())
+		}
+	}
+	errb.Reset()
+	if code := run([]string{"share", "--share", "shr_nope", "--home", home}, &out, &errb); code != 1 || !strings.Contains(errb.String(), "shr_") {
+		t.Fatalf("a bad id: %d %q", code, errb.String())
+	}
+}
