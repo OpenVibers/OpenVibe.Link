@@ -53,7 +53,7 @@ func save(dir string, shares []Share) error {
 	return os.Rename(tmp, filepath.Join(dir, File))
 }
 
-// Add saves a share (the same key again replaces its port and name).
+// Add saves a share (the same key, or the same share id, again replaces its port and name).
 func Add(dir string, s Share) error {
 	shares, err := Load(dir)
 	if err != nil {
@@ -61,14 +61,14 @@ func Add(dir string, s Share) error {
 	}
 	out := shares[:0]
 	for _, x := range shares {
-		if x.Key != s.Key {
+		if (s.Key == "" || x.Key != s.Key) && (s.ID == "" || x.ID != s.ID) {
 			out = append(out, x)
 		}
 	}
 	return save(dir, append(out, s))
 }
 
-// Remove forgets the share with this key, or every share on this port; it reports how many it removed.
+// Remove forgets the share with this key or id, or every share on this port; it reports how many it removed.
 func Remove(dir string, keyOrPort string) (int, error) {
 	shares, err := Load(dir)
 	if err != nil {
@@ -77,7 +77,7 @@ func Remove(dir string, keyOrPort string) (int, error) {
 	out := shares[:0]
 	n := 0
 	for _, x := range shares {
-		if x.Key == keyOrPort || fmt.Sprint(x.Port) == keyOrPort || (x.Name != "" && x.Name == keyOrPort) {
+		if (x.Key != "" && x.Key == keyOrPort) || (x.ID != "" && x.ID == keyOrPort) || fmt.Sprint(x.Port) == keyOrPort || (x.Name != "" && x.Name == keyOrPort) {
 			n++
 			continue
 		}
@@ -126,7 +126,7 @@ func RunAll(ctx context.Context, dir string, o Options) {
 			defer wg.Done()
 			err := Run(ctx, s, so)
 			if errors.Is(err, ErrStopped) && o.Log != nil {
-				o.Log.Warn("connect: share stopped; remove it with `openvibe-node share remove`", "port", s.Port, "key", Redact(s.Key))
+				o.Log.Warn("connect: share stopped; remove it with `openvibe-node share remove`", "port", s.Port, "share", s.Label())
 			}
 		}()
 	}

@@ -5,6 +5,7 @@
 // the same protocol as the one-file client (OpenVibe.Connect public/ov-connect.js):
 //
 //	→ {"t":"hello","v":1,"key":"ovc_…","client":"openvibe-node/…","port":8790}
+//	  or, served by this computer as OpenVibe Node (node.go, CON-4): {"t":"hello","v":1,"share":"shr_…","node_token":…,"tunnel":"ovt_…",…}
 //	← {"t":"ready","v":1,"share":{"id","host","url","mode"}}            or {"t":"error",…} and a close
 //	← {"t":"req","id":N,"method","path","headers":[[k,v]…]}             an HTTP request for the local port
 //	← {"t":"raw","id":N,"head":"GET /ws HTTP/1.1\r\n…"}                  a WebSocket upgrade: a byte pipe
@@ -47,9 +48,11 @@ const (
 	chunkSize       = 32 * 1024
 )
 
-// Share is one share the Node keeps up: its connect key and the local port it serves.
+// Share is one share the Node keeps up: its connect key (or, served by this computer as OpenVibe Node, its id) and
+// the local port it serves.
 type Share struct {
-	Key    string `json:"key"`
+	Key    string `json:"key,omitempty"`
+	ID     string `json:"share,omitempty"` // shr_…: this computer serves it with its own node token, no key (CON-4)
 	Port   int    `json:"port"`
 	Server string `json:"server,omitempty"` // default DefaultServer
 	Name   string `json:"name,omitempty"`   // the share's address, learnt from "ready" (shown by `share list`)
@@ -76,6 +79,20 @@ type Options struct {
 	Dialer    *websocket.Dialer
 	MinWait   time.Duration // reconnect backoff floor (default 1 s)
 	MaxWait   time.Duration // reconnect backoff ceiling (default 30 s)
+
+	// NodeToken buys this computer's node token for openvibe.website, for shares it serves by id (node.go). An error
+	// wrapping ErrStopped (the machine was removed on OpenVibe) stops the share; any other is tried again.
+	NodeToken   func(ctx context.Context) (string, error)
+	HTTPClient  *http.Client  // Connect's API, for tunnel tokens (default: 20 s timeout)
+	ReauthEvery time.Duration // default DefaultReauthEvery
+}
+
+// Label names a share in logs and lists without its key: the id, or the key's first characters.
+func (s Share) Label() string {
+	if s.ID != "" {
+		return s.ID
+	}
+	return Redact(s.Key)
 }
 
 // Run keeps one share connected until ctx ends or the server stops it (ErrStopped).
@@ -83,8 +100,19 @@ func Run(ctx context.Context, s Share, o Options) error {
 	if s.Port < 1 || s.Port > 65535 {
 		return fmt.Errorf("connect: port %d is not a port", s.Port)
 	}
-	if !strings.HasPrefix(s.Key, "ovc_") {
+	switch {
+	case s.ID != "":
+		if !ShareIDRe.MatchString(s.ID) {
+			return errors.New("connect: the share is its shr_… id from connect.openvibe.website")
+		}
+		if o.NodeToken == nil {
+			return errors.New("connect: this share is served by the computer itself; pair the Node with OpenVibe first (openvibe.bot/machines)")
+		}
+	case !strings.HasPrefix(s.Key, "ovc_"):
 		return errors.New("connect: the key is the share's ovc_… connect key")
+	}
+	if o.ReauthEvery == 0 {
+		o.ReauthEvery = DefaultReauthEvery
 	}
 	if o.Log == nil {
 		o.Log = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -185,6 +213,24 @@ func runOnce(ctx context.Context, s Share, o Options, onReady func()) error {
 	if server == "" {
 		server = DefaultServer
 	}
+	hello := map[string]any{"t": "hello", "v": protocolVersion, "client": "openvibe-node/" + o.Version, "port": s.Port}
+	if s.ID != "" {
+		// Served by this computer (node.go): a fresh node token and a tunnel token for this one hello.
+		tok, err := o.NodeToken(ctx)
+		if err != nil {
+			return err
+		}
+		ticket, info, err := tunnelToken(ctx, o, server, s.ID, tok)
+		if err != nil {
+			return err
+		}
+		if info.LocalPort != 0 && info.LocalPort != s.Port {
+			o.Log.Warn("connect: the share's page names another port; this computer serves the one it was given", "share", s.ID, "page", info.LocalPort, "serving", s.Port)
+		}
+		hello["share"], hello["node_token"], hello["tunnel"] = s.ID, tok, ticket
+	} else {
+		hello["key"] = s.Key
+	}
 	dialer := o.Dialer
 	if dialer == nil {
 		dialer = &websocket.Dialer{HandshakeTimeout: 15 * time.Second, Proxy: http.ProxyFromEnvironment}
@@ -199,9 +245,10 @@ func runOnce(ctx context.Context, s Share, o Options, onReady func()) error {
 	defer t.closeAll()
 	go func() { <-ctx.Done(); _ = ws.Close() }()
 	// The server pings every 25 s; answering is gorilla's default ping handler. A dead link shows as a read error.
-	if err := t.sendJSON(map[string]any{"t": "hello", "v": protocolVersion, "key": s.Key, "client": "openvibe-node/" + o.Version, "port": s.Port}); err != nil {
+	if err := t.sendJSON(hello); err != nil {
 		return err
 	}
+	reauthing := false
 	for {
 		mt, data, err := ws.ReadMessage()
 		if err != nil {
@@ -232,6 +279,10 @@ func runOnce(ctx context.Context, s Share, o Options, onReady func()) error {
 		switch m.T {
 		case "ready":
 			onReady()
+			if s.ID != "" && !reauthing {
+				reauthing = true
+				go t.reauthLoop(ctx)
+			}
 			o.Log.Info("connect: connected", "url", m.Share.URL, "port", s.Port)
 			if o.OnReady != nil {
 				o.OnReady(m.Share)
@@ -248,6 +299,28 @@ func runOnce(ctx context.Context, s Share, o Options, onReady func()) error {
 			}
 		case "abort":
 			t.drop(m.ID)
+		}
+	}
+}
+
+// reauthLoop sends a fresh node token every ReauthEvery while the tunnel is up (a share served by this computer). A
+// token it cannot buy is skipped: Connect closes the tunnel once the last one runs out, and Run reconnects or stops.
+func (t *tunnel) reauthLoop(ctx context.Context) {
+	tick := time.NewTicker(t.o.ReauthEvery)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+		tok, err := t.o.NodeToken(ctx)
+		if err != nil {
+			t.o.Log.Warn("connect: no fresh node token", "share", t.share.ID, "err", err)
+			continue
+		}
+		if err := t.sendJSON(map[string]any{"t": "reauth", "node_token": tok}); err != nil {
+			return
 		}
 	}
 }

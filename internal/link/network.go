@@ -151,8 +151,17 @@ type TokenSource struct {
 
 // NewTokenSource returns the token source of a Network-paired machine.
 func NewTokenSource(c *credentials.Credentials, client *http.Client, userAgent string) *TokenSource {
+	return NewTokenSourceFor(c, client, userAgent, Audience(c))
+}
+
+// ConnectAudience is OpenVibe Connect's: any person's machine may buy a node token for it, whichever service paired
+// the machine (Network, CON-4), to serve the shares bound to it.
+const ConnectAudience = "openvibe.website"
+
+// NewTokenSourceFor returns a token source for another audience the machine may speak to (ConnectAudience).
+func NewTokenSourceFor(c *credentials.Credentials, client *http.Client, userAgent, audience string) *TokenSource {
 	return &TokenSource{network: strings.TrimSuffix(c.Network, "/"), principal: c.Principal, credential: c.NodeCredential,
-		audience: Audience(c), client: defaultClient(client), userAgent: userAgent, now: time.Now}
+		audience: audience, client: defaultClient(client), userAgent: userAgent, now: time.Now}
 }
 
 // Invalidate drops the cached token, so the next Token fetches a fresh one (after a 401 from Bot, before a reauth).

@@ -140,6 +140,7 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		shKey   = fs.String("key", "", "the share's ovc_… connect key from connect.openvibe.website (share)")
 		shPort  = fs.Int("port", 0, "the local port to share (share)")
 		shSrv   = fs.String("connect-server", "", "OpenVibe Connect's tunnel URL; default wss://connect.openvibe.website/tunnel (share)")
+		shID    = fs.String("share", "", "a share this computer serves itself, as OpenVibe Node: its shr_… id, no key (share)")
 	)
 	// Accept flags anywhere: split positionals out.
 	var positional []string
@@ -230,7 +231,7 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		}
 		err = cmdProfileVerify(g, positional[1], *server, *keyID, stdout)
 	case "share":
-		err = cmdShare(g, positional, shareArgs{key: *shKey, port: *shPort, server: *shSrv}, stdout, stderr)
+		err = cmdShare(g, positional, shareArgs{key: *shKey, port: *shPort, server: *shSrv, share: *shID}, stdout, stderr)
 		if errors.Is(err, errUsage) {
 			return 2
 		}
@@ -598,7 +599,12 @@ func cmdRun(g *globals, dryRun bool) error {
 	return service.Run(serviceOptions(g, ""), func(ctx context.Context) error {
 		if !dryRun {
 			// OpenVibe Connect: every saved share stays up while the Node runs (openvibe-node share add).
-			go connect.RunAll(ctx, g.paths.ConfigDir, connect.Options{Log: g.log, Version: version})
+			// A share bound to this computer (no key) signs in with the machine's own node token (CON-4).
+			co := connect.Options{Log: g.log, Version: version}
+			if creds.NetworkPaired() {
+				co.NodeToken = connectNodeToken(creds)
+			}
+			go connect.RunAll(ctx, g.paths.ConfigDir, co)
 		}
 		if err := n.Run(ctx); !errors.Is(err, node.ErrQuit) {
 			return err
