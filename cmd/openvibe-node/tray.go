@@ -286,6 +286,7 @@ func (t *trayCore) answerByID(id string, approved bool) error {
 		if t.view.Waiting[i].ID == id {
 			a := t.view.Waiting[i]
 			found = &a
+			break
 		}
 	}
 	t.mu.Unlock()
