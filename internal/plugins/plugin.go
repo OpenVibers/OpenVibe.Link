@@ -549,20 +549,20 @@ func (p *Plugin) begin(ctx context.Context, id, kind string, value json.RawMessa
 		return now(Reply{FaultCode: protocol.FaultPluginDown})
 	}
 	p.requests[id] = binding
+	pushed := true
 	select {
 	case p.queue <- queued:
 	default:
-		err = errors.New(protocol.FaultPluginDown)
+		pushed = false
 	}
 	kill := p.kill
 	p.mu.Unlock()
-	if err != nil {
+	if !pushed {
+		// The plugin is not reading its input: it can no longer be told to stop, so we end it.
 		p.log.Error("plugin is not reading its input; killing it")
 		if kill != nil {
 			kill()
 		}
-	}
-	if err != nil {
 		done()
 		return now(Reply{FaultCode: protocol.FaultPluginDown})
 	}
