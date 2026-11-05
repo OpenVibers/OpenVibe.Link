@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -99,6 +100,15 @@ func TestDesktopNotifierAsksAndHearsTheButtons(t *testing.T) {
 	n.Ask(node.Approval{ID: "c1", Summary: "again"}, "Not taken")
 	if again := <-f.notify; again[0] != nid {
 		t.Fatalf("asking again replaces the same notification: %v", again)
+	}
+	// The no-actions hint must quote its identifier and escape display controls.
+	desktop := n.(*dbusNotifier)
+	desktop.actions = false
+	desktop.Ask(node.Approval{ID: "x';$(bad)", Summary: "unsafe\n\x1b[2J\u202e"}, "")
+	hint := <-f.notify
+	body := hint[2].(string)
+	if strings.ContainsAny(body, "\x1b\u202e") || !strings.Contains(body, `\u202e`) || !strings.Contains(body, `approve 'x'"'"';$(bad)'`) {
+		t.Fatalf("unsafe hint: %q", body)
 	}
 	n.Close("c1")
 	select {

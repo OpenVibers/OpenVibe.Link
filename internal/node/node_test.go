@@ -378,7 +378,10 @@ func TestMissedHeartbeatsStop(t *testing.T) {
 	}
 }
 
-func TestEstopLatchedUntilOwnerClears(t *testing.T) {
+// TestRobotEstopLatchedUntilOwnerClears: the remote latch is the server's to clear, and the owner clears it
+// with `estop latched:false`. The computer plugin is the one exception: an e-stop on a computer waits for a
+// local `openvibe-node resume` (TestComputerRemoteStopRequiresLocalResume).
+func TestRobotEstopLatchedUntilOwnerClears(t *testing.T) {
 	e := start(t)
 	n := len(e.records())
 	e.cmd("drive", `{"throttle":0.3}`, 1000)

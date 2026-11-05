@@ -8,6 +8,9 @@ package plugins
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -89,10 +92,11 @@ const (
 // Output is something a plugin said that the core forwards: telemetry, an event, a video frame, a fault or a state
 // change. Data is the plugin's message without "op".
 type Output struct {
-	Plugin string
-	Kind   string
-	Data   map[string]any
-	At     time.Time
+	Plugin   string
+	Kind     string
+	Data     map[string]any
+	At       time.Time
+	Approval *ApprovalRequest // local only: never forwarded in Data
 }
 
 // Plugin is one supervised driver process.
@@ -111,6 +115,7 @@ type Plugin struct {
 	// The newest turn_epoch a halt carried: hello tells a restarted process, so a stale turn stays refused there too.
 	haltEpoch int64
 	pending   map[string]chan Reply
+	requests  map[string]*ApprovalRequest
 	queue     chan line // to the current process's stdin; nil while down
 	kill      func()
 	restarts  int
@@ -119,7 +124,7 @@ type Plugin struct {
 
 func newPlugin(spec Spec, log *slog.Logger, out chan<- Output) *Plugin {
 	return &Plugin{spec: spec, log: log.With("plugin", spec.Name), out: out, state: StateStarting,
-		pending: map[string]chan Reply{}}
+		pending: map[string]chan Reply{}, requests: map[string]*ApprovalRequest{}}
 }
 
 // Name is the configured name.
@@ -329,9 +334,63 @@ func (p *Plugin) Resume() {
 	_ = p.send(map[string]any{"op": "resume", "cause": "cleared"})
 }
 
-// Answer gives the plugin its owner's answer to an approval it asked for (`openvibe-node approve|deny <id>`).
-func (p *Plugin) Answer(id string, approved bool) error {
-	return p.send(map[string]any{"op": "approval", "id": id, "approved": approved})
+// ApprovalRequest is an immutable local identity for one pending payload and process instance: the
+// random nonce the owner's answer names, the digest of the payload it was minted for, the process it
+// belongs to (its queue) and the instant it expires at. Only the core's local approval listing exposes
+// the nonce; the plugin never sees it.
+type ApprovalRequest struct {
+	Nonce    string
+	Digest   [32]byte
+	id       string
+	expires  mono.Instant
+	queue    chan line
+	reply    chan Reply
+	answered bool
+}
+
+// approval captures the pending request at event receipt, before Node's event queue.
+func (p *Plugin) approval(id string, seconds float64) *ApprovalRequest {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	a := p.requests[id]
+	if a == nil || a.answered || p.pending[id] != a.reply {
+		return nil
+	}
+	if seconds > 0 && seconds < mono.Until(a.expires).Seconds() {
+		a.expires = mono.Now().Add(time.Duration(seconds * float64(time.Second)))
+	}
+	return a
+}
+
+// ApprovalValid rejects stale events, replaced processes, completed work and expiry.
+func (p *Plugin) ApprovalValid(a *ApprovalRequest) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.approvalValidLocked(a)
+}
+
+func (p *Plugin) approvalValidLocked(a *ApprovalRequest) bool {
+	return a != nil && !a.answered && p.requests[a.id] == a && p.pending[a.id] == a.reply && p.queue == a.queue && mono.Until(a.expires) > 0
+}
+
+// Answer binds validation and enqueue to the same process queue under the lock.
+func (p *Plugin) Answer(a *ApprovalRequest, approved bool) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.approvalValidLocked(a) {
+		return errors.New("approval expired or its request is no longer pending")
+	}
+	b, err := json.Marshal(map[string]any{"op": "approval", "id": a.id, "approved": approved})
+	if err != nil {
+		return err
+	}
+	select {
+	case p.queue <- line{b: append(b, '\n')}:
+		a.answered = true
+		return nil
+	default:
+		return errors.New("plugin input queue is full")
+	}
 }
 
 // Voice tells a voice plugin whether its owner lets Vibe answer their voice here, and the call word to listen for.
@@ -422,12 +481,24 @@ func (p *Plugin) begin(ctx context.Context, id, kind string, value json.RawMessa
 		}
 		return now(Reply{FaultCode: protocol.FaultNotReady})
 	}
+	if _, exists := p.pending[id]; exists {
+		p.mu.Unlock()
+		return now(Reply{FaultCode: protocol.FaultNotAllowed, Message: "command ID is already pending"})
+	}
+	var nonce [32]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		p.mu.Unlock()
+		return now(Reply{FaultCode: protocol.FaultNotAllowed, Message: "cannot mint local approval identity"})
+	}
 	ch := make(chan Reply, 1)
 	p.pending[id] = ch
 	p.mu.Unlock()
 	done := func() {
 		p.mu.Lock()
-		delete(p.pending, id)
+		if p.pending[id] == ch {
+			delete(p.pending, id)
+			delete(p.requests, id)
+		}
 		p.mu.Unlock()
 	}
 	msg := map[string]any{"op": "command", "id": id, "kind": kind, "deadline_ms": deadlineMS}
@@ -447,11 +518,49 @@ func (p *Plugin) begin(ctx context.Context, id, kind string, value json.RawMessa
 	if prov != nil {
 		msg["provenance"] = prov
 	}
-	var err error
-	if expires == 0 {
-		err = p.send(msg)
-	} else {
-		err = p.enqueue(line{cmd: &timed{id: id, msg: msg, expires: expires, queued: mono.Now(), motion: p.motionKind(kind)}})
+	// Hash the encoded command, not a caller-owned RawMessage that could change.
+	raw, err := json.Marshal(msg)
+	if err != nil {
+		done()
+		return now(Reply{FaultCode: protocol.FaultBadValue})
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		done()
+		return now(Reply{FaultCode: protocol.FaultBadValue})
+	}
+	immutable := make(map[string]any, len(fields))
+	for key, value := range fields {
+		immutable[key] = value
+	}
+	expiry := expires
+	if expiry == 0 {
+		expiry = mono.Now().Add(time.Duration(deadlineMS) * time.Millisecond)
+	}
+	queued := line{b: append(raw, '\n')}
+	if expires != 0 {
+		queued = line{cmd: &timed{id: id, msg: immutable, expires: expires, queued: mono.Now(), motion: p.motionKind(kind)}}
+	}
+	p.mu.Lock()
+	binding := &ApprovalRequest{Nonce: hex.EncodeToString(nonce[:]), Digest: sha256.Sum256(raw), id: id, expires: expiry, queue: p.queue, reply: ch}
+	if p.pending[id] != ch || p.queue == nil {
+		p.mu.Unlock()
+		done()
+		return now(Reply{FaultCode: protocol.FaultPluginDown})
+	}
+	p.requests[id] = binding
+	select {
+	case p.queue <- queued:
+	default:
+		err = errors.New(protocol.FaultPluginDown)
+	}
+	kill := p.kill
+	p.mu.Unlock()
+	if err != nil {
+		p.log.Error("plugin is not reading its input; killing it")
+		if kill != nil {
+			kill()
+		}
 	}
 	if err != nil {
 		done()
@@ -490,6 +599,7 @@ func (p *Plugin) failPending(code string) {
 		default:
 		}
 		delete(p.pending, id)
+		delete(p.requests, id)
 	}
 }
 
@@ -761,6 +871,7 @@ func (p *Plugin) readStdout(r io.Reader, described chan struct{}) {
 			}
 			p.mu.Lock()
 			ch := p.pending[id]
+			delete(p.requests, id) // completion invalidates any queued approval event
 			p.mu.Unlock()
 			if ch != nil {
 				select {
@@ -786,7 +897,13 @@ func (p *Plugin) readStdout(r io.Reader, described chan struct{}) {
 			}
 			p.emit(Output{Kind: OutTelemetry, Data: m}, false)
 		case "event":
-			p.emit(Output{Kind: OutEvent, Data: m}, true)
+			var approval *ApprovalRequest
+			if name, _ := m["name"].(string); name == "approval" || name == "approval_done" {
+				id, _ := m["id"].(string)
+				seconds, _ := m["expires_s"].(float64)
+				approval = p.approval(id, seconds)
+			}
+			p.emit(Output{Kind: OutEvent, Data: m, Approval: approval}, true)
 		case "local_stop":
 			reason, _ := m["reason"].(string)
 			p.log.Warn("plugin latched the local stop", "reason", truncate(reason, 120))

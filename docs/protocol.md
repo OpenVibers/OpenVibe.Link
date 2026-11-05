@@ -170,7 +170,9 @@ applied the Node runs nothing but `halt` (`nack not_ready`), so that latch is in
 `desks.host`, `ai.host`, `bot.robot`): what the machine does for the network. The Node keeps them and applies the ones
 this machine was installed for; the local configuration always wins (a role never installs anything and never turns on
 a feature the owner turned off here), and a role the Node does not know is ignored.
-`estop` `latched:false` is the owner's clear: it clears the remote latch only, never the local kill switch.
+`estop` `latched:false` is the owner's clear: it clears the remote latch only, never the local kill switch. A computer
+plugin is the one exception to the remote latch's reach: an e-stop on a computer waits for `openvibe-node resume` on the
+machine, whatever the server clears (docs/computer.md).
 
 ### Device → server
 

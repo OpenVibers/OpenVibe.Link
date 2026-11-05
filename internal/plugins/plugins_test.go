@@ -555,3 +555,17 @@ exit 1`
 		}
 	}
 }
+
+func TestDuplicatePendingCannotReplaceRequest(t *testing.T) {
+	p := newPlugin(Spec{Name: "computer"}, slog.Default(), make(chan Output, 8))
+	p.state, p.queue = StateReady, make(chan line, 8)
+	p.Begin(context.Background(), "same", "exec", json.RawMessage(`{"argv":["first"]}`), 10000)
+	first := p.pending["same"]
+	wait := p.Begin(context.Background(), "same", "exec", json.RawMessage(`{"argv":["replacement"]}`), 10000)
+	if p.pending["same"] != first || len(p.queue) != 1 {
+		t.Fatal("duplicate replaced the in-flight request")
+	}
+	if r := wait(); r.OK || r.FaultCode == "" {
+		t.Fatal("duplicate was not refused", r)
+	}
+}

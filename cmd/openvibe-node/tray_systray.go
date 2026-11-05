@@ -26,11 +26,12 @@ type systrayUI struct {
 	header, level          *systray.MenuItem
 	stop, resume, panel    *systray.MenuItem
 	quit                   *systray.MenuItem
-	slots                  [traySlots]*systray.MenuItem
-	approve, deny          [traySlots]*systray.MenuItem
+	requests               *systray.MenuItem
+	slots                  []*systray.MenuItem
+	answers                chan trayAnswer
 	state, tooltip, headTx string
 	levelTx                string
-	labels                 []string
+	bindings               []traySlot
 	stopped, hasPanel      *bool
 }
 
@@ -41,12 +42,10 @@ func (u *systrayUI) build() {
 	u.level.Disable()
 	u.level.Hide()
 	systray.AddSeparator()
-	for i := 0; i < traySlots; i++ {
-		u.slots[i] = systray.AddMenuItem("", "Approve or deny what your agent asks")
-		u.approve[i] = u.slots[i].AddSubMenuItem("Approve", "Let it run")
-		u.deny[i] = u.slots[i].AddSubMenuItem("Deny", "Refuse it")
-		u.slots[i].Hide()
-	}
+	u.requests = systray.AddMenuItem("Waiting requests", "Approve or deny what your agent asks")
+	u.requests.Hide()
+	u.answers = make(chan trayAnswer, 16)
+
 	systray.AddSeparator()
 	u.stop = systray.AddMenuItem("Stop everything", "The kill switch: stop every actuator, observe only, until you resume")
 	u.resume = systray.AddMenuItem("Resume", "Release the stop")
@@ -119,20 +118,40 @@ func (u *systrayUI) SetStopped(stopped bool) {
 	}
 }
 
-func (u *systrayUI) SetSlots(labels []string) {
+func (u *systrayUI) SetSlots(slots []traySlot) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	if strings.Join(labels, "\x00") == strings.Join(u.labels, "\x00") && u.labels != nil {
+	same := len(slots) == len(u.bindings)
+	if same {
+		for i, slot := range slots {
+			if slot.Approval.ID != u.bindings[i].Approval.ID || slot.Label != u.bindings[i].Label {
+				same = false
+				break
+			}
+		}
+	}
+	if same {
 		return
 	}
-	u.labels = append([]string{}, labels...)
-	for i := 0; i < traySlots; i++ {
-		if i < len(labels) {
-			u.slots[i].SetTitle(labels[i])
-			u.slots[i].Show()
-		} else {
-			u.slots[i].Hide()
-		}
+	// Menu objects (and their click channels) are never reassigned to another
+	// nonce. An already queued click can therefore only answer the old request.
+	for _, item := range u.slots {
+		item.Remove()
+	}
+	u.slots = nil
+	u.bindings = append([]traySlot(nil), slots...)
+	for _, slot := range slots {
+		item := u.requests.AddSubMenuItem(slot.Label, "")
+		approve := item.AddSubMenuItem("Approve", "Let it run")
+		deny := item.AddSubMenuItem("Deny", "Refuse it")
+		u.slots = append(u.slots, item)
+		forwardTrayClicks(approve.ClickedCh, u.answers, slot.Approval.ID, true)
+		forwardTrayClicks(deny.ClickedCh, u.answers, slot.Approval.ID, false)
+	}
+	if len(slots) == 0 {
+		u.requests.Hide()
+	} else {
+		u.requests.Show()
 	}
 }
 
@@ -168,31 +187,16 @@ func runTray(g *globals) error {
 }
 
 func trayLoop(core *trayCore, ui *systrayUI, stopSig <-chan os.Signal, g *globals) {
-	for i := 0; i < traySlots; i++ {
-		i := i
-		go func() {
-			for range ui.approve[i].ClickedCh {
-				if a, ok := core.slotID(i); ok {
-					_ = core.answer(a, true)
-					core.tick()
-				}
-			}
-		}()
-		go func() {
-			for range ui.deny[i].ClickedCh {
-				if a, ok := core.slotID(i); ok {
-					_ = core.answer(a, false)
-					core.tick()
-				}
-			}
-		}()
-	}
+
 	t := time.NewTicker(trayPoll)
 	defer t.Stop()
 	answers := core.note.Answers()
 	for {
 		select {
 		case <-t.C:
+			core.tick()
+		case a := <-ui.answers:
+			_ = core.answerByID(a.ID, a.Approved)
 			core.tick()
 		case a := <-answers:
 			if err := core.answerByID(a.ID, a.Approved); err != nil {

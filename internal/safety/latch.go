@@ -22,6 +22,8 @@ import (
 //
 // Anything that moves is refused while either is set.
 type LatchState struct {
+	// Computer requires a local resume even after the robot remote latch clears.
+	Computer     bool      `json:"computer,omitempty"`
 	Remote       bool      `json:"remote"`
 	RemoteReason string    `json:"remote_reason,omitempty"`
 	RemoteAt     time.Time `json:"remote_at,omitempty"`
@@ -30,7 +32,8 @@ type LatchState struct {
 	LocalAt      time.Time `json:"local_at,omitempty"`
 }
 
-// Stopped reports whether anything is latched.
+// Stopped reports a global stop. Computer is checked separately for computer commands
+// so a remote clear can still release robot plugins.
 func (s LatchState) Stopped() bool { return s.Remote || s.Local }
 
 // Latch is the persisted latch. It survives restarts: a Node that was e-stopped comes back e-stopped.
@@ -133,7 +136,13 @@ func (l *Latch) persistLocked() error {
 
 // SetRemote latches the server e-stop.
 func (l *Latch) SetRemote(reason string) (LatchState, error) {
+	return l.SetRemoteWithComputer(reason, false)
+}
+
+// SetRemoteWithComputer persists both requirements atomically.
+func (l *Latch) SetRemoteWithComputer(reason string, computer bool) (LatchState, error) {
 	return l.update(func(s *LatchState) {
+		s.Computer = s.Computer || computer
 		if !s.Remote {
 			s.RemoteAt = time.Now().UTC()
 		}

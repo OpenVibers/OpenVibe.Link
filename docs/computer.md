@@ -72,7 +72,9 @@ that a request is waiting on the machine.
 
 **Kill switch:** `openvibe-node stop` (and an owner's e-stop) drops the plugin to `observe`: what runs is killed, what
 waits is denied, the agent's browser is closed, and the core also refuses `exec`, file writes, `input` and the browser's
-acting actions until `openvibe-node resume`. `halt` kills what runs.
+acting actions until `openvibe-node resume`. `halt` kills what runs. An e-stop on this computer always needs that local
+resume: the owner's remote clear (`estop` `latched:false`, or a config without `estop_latched`) releases the robot's remote
+latch, never this computer.
 
 ## What it does
 

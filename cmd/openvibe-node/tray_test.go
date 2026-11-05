@@ -60,7 +60,7 @@ func TestTrayPanelURLOnlyForTheBot(t *testing.T) {
 }
 
 func TestTraySlotLabel(t *testing.T) {
-	if got := slotLabel(node.Approval{Kind: "exec", Summary: "run  echo\nhi"}); got != "exec: run echo hi" {
+	if got := slotLabel(node.Approval{Kind: "exec", Summary: "run  echo\nhi"}); got != `exec: run  echo\u000ahi` {
 		t.Fatalf("label: %q", got)
 	}
 	long := slotLabel(node.Approval{Kind: "input", Summary: strings.Repeat("é", 100)})
@@ -166,14 +166,21 @@ type fakeUI struct {
 	state, tooltip, header, level string
 	stopped, panel                bool
 	slots                         []string
+	bindings                      []traySlot
 }
 
-func (u *fakeUI) SetIcon(s string)              { u.state = s }
-func (u *fakeUI) SetTooltip(s string)           { u.tooltip = s }
-func (u *fakeUI) SetHeader(s string)            { u.header = s }
-func (u *fakeUI) SetLevel(s string)             { u.level = s }
-func (u *fakeUI) SetStopped(b bool)             { u.stopped = b }
-func (u *fakeUI) SetSlots(l []string)           { u.slots = l }
+func (u *fakeUI) SetIcon(s string)    { u.state = s }
+func (u *fakeUI) SetTooltip(s string) { u.tooltip = s }
+func (u *fakeUI) SetHeader(s string)  { u.header = s }
+func (u *fakeUI) SetLevel(s string)   { u.level = s }
+func (u *fakeUI) SetStopped(b bool)   { u.stopped = b }
+func (u *fakeUI) SetSlots(l []traySlot) {
+	u.bindings = l
+	u.slots = nil
+	for _, s := range l {
+		u.slots = append(u.slots, s.Label)
+	}
+}
 func (u *fakeUI) SetPanel(b bool)               { u.panel = b }
 func (n *fakeNotes) Answers() <-chan trayAnswer { return nil }
 func (n *fakeNotes) Shut()                      { n.shut = true }
@@ -228,9 +235,9 @@ func TestTrayCoreAgainstANode(t *testing.T) {
 		t.Fatalf("asked again without a change: %v", notes.asked)
 	}
 
-	a, ok := core.slotID(0)
-	if !ok || a.ID != "c1" {
-		t.Fatalf("slot 0: %+v %v", a, ok)
+	a := ui.bindings[0].Approval
+	if a.ID != "c1" {
+		t.Fatalf("slot 0: %+v", a)
 	}
 	if err := core.answer(a, true); err == nil {
 		t.Fatal("the Node refused the approval; the tray should say so")
@@ -289,5 +296,27 @@ func TestTrayCoreAgainstANode(t *testing.T) {
 	core.tick()
 	if ui.state != trayDown {
 		t.Fatalf("the Node gone: %+v", ui)
+	}
+}
+
+func TestTrayClickRetainsRenderedNonce(t *testing.T) {
+	clicks := make(chan struct{}, 1)
+	answers := make(chan trayAnswer, 1)
+	forwardTrayClicks(clicks, answers, "old-nonce", true)
+	core := newTrayCore("", &fakeUI{}, nil)
+	core.view = trayView{Waiting: []node.Approval{{ID: "replacement-nonce"}}}
+	// A click queued while the old label was on screen is delivered after reorder.
+	clicks <- struct{}{}
+	close(clicks)
+	select {
+	case a := <-answers:
+		if a.ID != "old-nonce" {
+			t.Fatal("click rebound", a)
+		}
+		if err := core.answerByID(a.ID, a.Approved); err == nil {
+			t.Fatal("stale click accepted")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("click lost")
 	}
 }

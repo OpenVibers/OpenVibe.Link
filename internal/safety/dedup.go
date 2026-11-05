@@ -44,13 +44,20 @@ func (d *Dedup) Begin(id string) (e *Entry, first bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	now := d.now()
-	for f := d.order.Front(); f != nil; f = d.order.Front() {
+	// Capacity and TTL only retire completed requests. Pending work must keep
+	// its identity even when a peer floods the cache or its deadline passes.
+	for f := d.order.Front(); f != nil; {
+		next := f.Next()
 		old := f.Value.(*Entry)
-		if len(d.items) <= d.max && now.Sub(old.at) < d.ttl {
-			break
+		select {
+		case <-old.done:
+			if len(d.items) >= d.max || now.Sub(old.at) >= d.ttl {
+				d.order.Remove(f)
+				delete(d.items, old.id)
+			}
+		default:
 		}
-		d.order.Remove(f)
-		delete(d.items, old.id)
+		f = next
 	}
 	if e, ok := d.items[id]; ok {
 		return e, false
