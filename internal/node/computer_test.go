@@ -5,6 +5,7 @@ package node
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"github.com/OpenVibers/OpenVibe.Node/internal/localctl"
 	"github.com/OpenVibers/OpenVibe.Node/internal/plugins"
 	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Node/internal/safety"
 )
 
 // startComputer runs a Node with only the real Python computer plugin at the given control level, its roots the one
@@ -180,13 +182,13 @@ func TestComputerAskWaitsForTheOwnerOnTheMachine(t *testing.T) {
 			time.Sleep(50 * time.Millisecond)
 		}
 	}
-	if len(list) != 1 || list[0].ID != "a1" || list[0].Kind != protocol.KindExec || !strings.Contains(list[0].Summary, "echo approved") {
+	if len(list) != 1 || list[0].CommandID != "a1" || list[0].ID == "a1" || list[0].Kind != protocol.KindExec || !strings.Contains(list[0].Summary, "echo approved") {
 		t.Fatalf("approvals: %+v", list)
 	}
 	if r, _ := localctl.Call(e.paths.SocketPath(), localctl.Request{Cmd: localctl.CmdApprove, ID: "nope"}, 2*time.Second); r.OK {
 		t.Fatal("an unknown id was approved")
 	}
-	if r, err := localctl.Call(e.paths.SocketPath(), localctl.Request{Cmd: localctl.CmdApprove, ID: "a1"}, 2*time.Second); err != nil || !r.OK {
+	if r, err := localctl.Call(e.paths.SocketPath(), localctl.Request{Cmd: localctl.CmdApprove, ID: list[0].ID}, 2*time.Second); err != nil || !r.OK {
 		t.Fatal(err, r.Error)
 	}
 	r, err := e.conn.Reply("a1", 10*time.Second)
@@ -205,7 +207,7 @@ func TestComputerAskWaitsForTheOwnerOnTheMachine(t *testing.T) {
 	for time.Now().Before(deadline.Add(5*time.Second)) && len(e.node.Approvals()) == 0 {
 		time.Sleep(50 * time.Millisecond)
 	}
-	if r, err := localctl.Call(e.paths.SocketPath(), localctl.Request{Cmd: localctl.CmdDeny, ID: "a2"}, 2*time.Second); err != nil || !r.OK {
+	if r, err := localctl.Call(e.paths.SocketPath(), localctl.Request{Cmd: localctl.CmdDeny, ID: e.node.Approvals()[0].ID}, 2*time.Second); err != nil || !r.OK {
 		t.Fatal(err, r.Error)
 	}
 	r, err = e.conn.Reply("a2", 10*time.Second)
@@ -232,7 +234,7 @@ func TestComputerApproveWaitsOutTheMouse(t *testing.T) {
 	e.node.mu.Lock()
 	e.node.inputEnded = time.Now() // a click just ran
 	e.node.mu.Unlock()
-	r, err := localctl.Call(e.paths.SocketPath(), localctl.Request{Cmd: localctl.CmdApprove, ID: "g1"}, 2*time.Second)
+	r, err := localctl.Call(e.paths.SocketPath(), localctl.Request{Cmd: localctl.CmdApprove, ID: e.node.Approvals()[0].ID}, 2*time.Second)
 	if err == nil || r.OK || !strings.Contains(r.Error, "mouse or keyboard") {
 		t.Fatalf("approve right after a click: %+v %v", r, err)
 	}
@@ -243,13 +245,13 @@ func TestComputerApproveWaitsOutTheMouse(t *testing.T) {
 	e.node.inputs["i1"] = true // an input command in flight, not waiting for approval: it is running
 	e.node.inputEnded = time.Now().Add(-InputGuard - time.Second)
 	e.node.mu.Unlock()
-	if r, _ := localctl.Call(e.paths.SocketPath(), localctl.Request{Cmd: localctl.CmdApprove, ID: "g1"}, 2*time.Second); r.OK {
+	if r, _ := localctl.Call(e.paths.SocketPath(), localctl.Request{Cmd: localctl.CmdApprove, ID: e.node.Approvals()[0].ID}, 2*time.Second); r.OK {
 		t.Fatal("approved while an input command runs")
 	}
 	e.node.mu.Lock()
 	delete(e.node.inputs, "i1")
 	e.node.mu.Unlock()
-	if r, err := localctl.Call(e.paths.SocketPath(), localctl.Request{Cmd: localctl.CmdApprove, ID: "g1"}, 2*time.Second); err != nil || !r.OK {
+	if r, err := localctl.Call(e.paths.SocketPath(), localctl.Request{Cmd: localctl.CmdApprove, ID: e.node.Approvals()[0].ID}, 2*time.Second); err != nil || !r.OK {
 		t.Fatal(err, r.Error)
 	}
 	if d := dataOf(t, func() protocol.Message {
@@ -270,7 +272,7 @@ func TestComputerApproveWaitsOutTheMouse(t *testing.T) {
 	e.node.mu.Lock()
 	e.node.inputEnded = time.Now()
 	e.node.mu.Unlock()
-	if r, err := localctl.Call(e.paths.SocketPath(), localctl.Request{Cmd: localctl.CmdDeny, ID: "g2"}, 2*time.Second); err != nil || !r.OK {
+	if r, err := localctl.Call(e.paths.SocketPath(), localctl.Request{Cmd: localctl.CmdDeny, ID: e.node.Approvals()[0].ID}, 2*time.Second); err != nil || !r.OK {
 		t.Fatal("deny is never held back:", err, r.Error)
 	}
 }
@@ -343,5 +345,140 @@ func TestComputerKindsNeedTheComputerPlugin(t *testing.T) {
 	e := start(t)
 	if nk := nackOf(t, e.cmd(protocol.KindExec, `{"argv":["true"]}`, 5000)); nk.FaultCode != protocol.FaultUnsupported {
 		t.Fatalf("exec without the computer plugin: %+v", nk)
+	}
+}
+
+func TestComputerRemoteStopRequiresLocalResume(t *testing.T) {
+	for _, level := range []string{"ask", "trusted", "full"} {
+		t.Run(level, func(t *testing.T) {
+			e, work := startComputer(t, level)
+			e.node.Frame(protocol.Frame{Msg: protocol.Estop{Latched: true, By: "server"}})
+			e.node.Frame(protocol.Frame{Msg: protocol.Estop{Latched: false, By: "server"}})
+			e.node.applyConfig(protocol.Config{}) // absent estop_latched
+			e.node.applyConfig(protocol.Config{EstopLatched: false})
+			if st := e.node.latch.State(); !st.Computer || st.Remote {
+				t.Fatalf("remote clear released computer: %+v", st)
+			}
+			e.conn.Close()
+			e.conn = e.nextConn()
+			e.stop()
+			// Reopen exactly the same local config and persisted latch after a Node restart.
+			n, err := New(e.node.opt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			e.node = n
+			ctx, cancel := context.WithCancel(context.Background())
+			e.cancel = cancel
+			e.done = make(chan struct{})
+			go func() { n.Run(ctx); close(e.done) }()
+			e.conn = e.nextConn()
+			if _, err := e.conn.Expect(protocol.TypeStatus, 20*time.Second, func(m protocol.Message) bool {
+				s := m.(protocol.Status)
+				return len(s.Drivers) > 0 && s.Drivers[0].State == plugins.StateReady
+			}); err != nil {
+				t.Fatal(err)
+			}
+			for i, c := range []struct {
+				kind  string
+				value any
+			}{
+				{"exec", map[string]any{"argv": []string{"echo", "bad"}}},
+				{"fs", map[string]any{"op": "write", "path": filepath.Join(work, "bad"), "content_b64": "YmFk"}},
+				{"input", map[string]any{"op": "key", "key": "a"}},
+				{"browser", map[string]any{"op": "navigate", "url": "https://example.com"}},
+				{"desk", map[string]any{"op": "create"}},
+				{"screen_stream", map[string]any{"action": "start"}},
+			} {
+				r := e.computerCmd(fmt.Sprintf("stopped-%d", i), c.kind, c.value, 5*time.Second)
+				if nk, ok := r.(protocol.Nack); !ok || (nk.FaultCode != protocol.FaultLocalStop && nk.FaultCode != protocol.FaultEstopped) {
+					t.Fatalf("%s released: %#v", c.kind, r)
+				}
+			}
+			if r := n.control(localctl.Request{Cmd: localctl.CmdResume}); !r.OK {
+				t.Fatal(r)
+			}
+			if level == "ask" {
+				b, _ := json.Marshal(map[string]any{"op": "write", "path": filepath.Join(work, "after"), "content_b64": "b2s="})
+				if err := e.conn.Command(protocol.Command{ID: "after-resume", Kind: "fs", Value: b}, 20000); err != nil {
+					t.Fatal(err)
+				}
+				deadline := time.Now().Add(5 * time.Second)
+				for len(n.Approvals()) == 0 && time.Now().Before(deadline) {
+					time.Sleep(10 * time.Millisecond)
+				}
+				if len(n.Approvals()) != 1 {
+					t.Fatal("local resume did not restore ask")
+				}
+				if r := n.control(localctl.Request{Cmd: localctl.CmdApprove, ID: n.Approvals()[0].ID}); !r.OK {
+					t.Fatal(r)
+				}
+				r, err := e.conn.Reply("after-resume", 5*time.Second)
+				if err != nil {
+					t.Fatal(err)
+				}
+				dataOf(t, r)
+				return
+			}
+			r := e.computerCmd("resumed", "fs", map[string]any{"op": "write", "path": filepath.Join(work, "after"), "content_b64": "b2s="}, 5*time.Second)
+			dataOf(t, r)
+		})
+	}
+}
+
+func TestStopSaveFailureIsNotOK(t *testing.T) {
+	e := start(t)
+	if err := os.Mkdir(e.paths.LatchFile()+".tmp", 0700); err != nil {
+		t.Fatal(err)
+	}
+	r := e.node.control(localctl.Request{Cmd: localctl.CmdStop})
+	if r.OK || !strings.Contains(r.Error, "could not be saved") {
+		t.Fatalf("false durability acknowledgement: %+v", r)
+	}
+	if !e.node.latch.State().Local {
+		t.Fatal("in-memory stop lost")
+	}
+	l, _ := safety.OpenLatch(e.paths.LatchFile())
+	if l.State().Local {
+		t.Fatal("fixture did not fail persistence")
+	}
+}
+
+func TestComputerApprovalNonceSurvivesFloodReplay(t *testing.T) {
+	e, _ := startComputer(t, "ask")
+	e.node.dedup = safety.NewDedup(2, time.Minute)
+	send := func(id, text string) {
+		b, _ := json.Marshal(map[string]any{"argv": []string{"echo", text}})
+		if err := e.conn.Command(protocol.Command{ID: id, Kind: "exec", Value: b}, 20000); err != nil {
+			t.Fatal(err)
+		}
+	}
+	send("original", "first")
+	for deadline := time.Now().Add(5 * time.Second); len(e.node.Approvals()) == 0 && time.Now().Before(deadline); {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(e.node.Approvals()) != 1 {
+		t.Fatal("no approval")
+	}
+	a := e.node.Approvals()[0]
+	for _, id := range []string{"b", "c", "d", "e"} {
+		e.computerCmd(id, "fs", map[string]any{"op": "list", "path": e.node.opt.Config.Plugins[0].Config["roots"].([]string)[0]}, 5*time.Second)
+	}
+	send("original", "replacement")
+	if r := e.node.control(localctl.Request{Cmd: localctl.CmdApprove, ID: "original"}); r.OK {
+		t.Fatal("cloud ID accepted as local approval")
+	}
+	if r := e.node.control(localctl.Request{Cmd: localctl.CmdApprove, ID: a.ID}); !r.OK {
+		t.Fatal(r)
+	}
+	reply, err := e.conn.Reply("original", 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := dataOf(t, reply); d["stdout"] != "first\n" {
+		t.Fatalf("replacement ran: %v", d)
+	}
+	if r := e.node.control(localctl.Request{Cmd: localctl.CmdApprove, ID: a.ID}); r.OK {
+		t.Fatal("old nonce reused")
 	}
 }

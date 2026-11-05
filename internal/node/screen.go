@@ -93,8 +93,8 @@ func (n *Node) screenCommand(c protocol.Command, entry *safety.Entry, received m
 		return
 	}
 	st := n.latch.State()
-	if st.Local {
-		nack(protocol.FaultLocalStop, "stopped on the machine with `openvibe-node stop`")
+	if st.Local || st.Computer {
+		nack(protocol.FaultLocalStop, "stopped on the machine: `openvibe-node resume` on this machine is required")
 		return
 	}
 	if st.Remote {
@@ -186,7 +186,7 @@ func (n *Node) startScreen(whip string, key credentials.Secret, seconds, fps int
 			case now := <-t.C:
 				st := n.latch.State()
 				switch {
-				case st.Local || st.Remote:
+				case st.Local || st.Remote || st.Computer:
 					n.endScreen(s, "stopped on the machine")
 					return
 				case now.After(until.Add(3 * time.Second)):

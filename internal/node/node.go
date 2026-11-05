@@ -138,12 +138,14 @@ const (
 
 // Approval is one computer command waiting for its owner's answer on the machine.
 type Approval struct {
-	ID       string `json:"id"`
-	Plugin   string `json:"plugin"`
-	Kind     string `json:"kind,omitempty"`
-	Summary  string `json:"summary,omitempty"`
-	At       int64  `json:"at"`
-	ExpiresS int64  `json:"expires_s,omitempty"`
+	ID        string `json:"id"` // local approval nonce
+	CommandID string `json:"command_id"`
+	binding   *plugins.ApprovalRequest
+	Plugin    string `json:"plugin"`
+	Kind      string `json:"kind,omitempty"`
+	Summary   string `json:"summary,omitempty"`
+	At        int64  `json:"at"`
+	ExpiresS  int64  `json:"expires_s,omitempty"`
 }
 
 // New builds a Node. Run starts it.
@@ -187,6 +189,12 @@ func New(opt Options) (*Node, error) {
 		specs = append(specs, plugins.Spec{Name: p.Name, Argv: opt.Config.PluginCommand(p, opt.Paths), Env: env, Dir: p.Dir, Config: cfg, StrictTiming: p.StrictTiming})
 	}
 	n.mgr = plugins.NewManager(specs, opt.Log)
+	// Upgrade a pre-existing remote stop to the computer's local-resume policy.
+	if st := latch.State(); st.Remote && n.hasComputer() && !st.Computer {
+		if _, err := latch.SetRemoteWithComputer(st.RemoteReason, true); err != nil {
+			n.log.Error("could not persist computer stop", "err", err)
+		}
+	}
 
 	// Codes C9c: the same Codes runner the worker runs, asked for its logins instead of a job. The probe runs as the
 	// Node's user, the home worker.plan_logins names are under, and only its answer (labels, numbers, times) leaves.
@@ -263,14 +271,11 @@ func (n *Node) Run(parent context.Context) error {
 	pctx, cancelPlugins := context.WithCancel(context.Background())
 	// A stop latched on disk is set on every plugin before any starts: each process's first lines are then hello and
 	// the e-stop replayed (cause latched, first_cause what set it), before it can be routed any command.
-	if st := n.latch.State(); st.Stopped() {
-		n.log.Warn("starting with the stop latched", "remote", st.Remote, "local", st.Local)
-		first := plugins.EstopLocal
-		if st.Remote {
-			first = plugins.EstopRemote
-		}
-		n.mgr.EstopAll(first, latchReason(st))
+	if st := n.latch.State(); st.Stopped() || st.Computer {
+		n.log.Warn("starting with the stop latched", "remote", st.Remote, "local", st.Local, "computer", st.Computer)
 	}
+	n.applyPluginLatch(n.latch.State(), false)
+
 	n.mgr.Start(pctx)
 
 	var wg sync.WaitGroup
@@ -364,7 +369,7 @@ func (n *Node) Frame(f protocol.Frame) {
 func (n *Node) remoteEstop(reason, by string) {
 	n.log.Warn("e-stop from the server", "by", by)
 	n.mgr.EstopAll(plugins.EstopRemote, safety.CleanReason(reason)) // at once, before the disk write
-	if _, err := n.latch.SetRemote(reason); err != nil {
+	if _, err := n.latch.SetRemoteWithComputer(reason, n.hasComputer()); err != nil {
 		n.log.Error("could not persist the e-stop (it is held in memory)", "err", err)
 	}
 }
@@ -747,6 +752,10 @@ func (n *Node) computer(c protocol.Command, entry *safety.Entry, sentMS int64, r
 			nack(protocol.FaultLocalStop, "stopped on the machine with `openvibe-node stop`: observe only")
 			return
 		}
+		if st.Computer {
+			nack(protocol.FaultLocalStop, "the emergency stop on this computer needs a local `openvibe-node resume`: observe only")
+			return
+		}
 		if st.Remote {
 			nack(protocol.FaultEstopped, st.RemoteReason)
 			return
@@ -846,10 +855,14 @@ func ceilMS(d time.Duration) int64 {
 
 // latchReason is the reason a latched stop gives a driver: the remote one when the platform set it, else the local one.
 func latchReason(st safety.LatchState) string {
-	if st.Remote {
+	switch {
+	case st.Remote:
 		return st.RemoteReason
+	case st.Local:
+		return st.LocalReason
+	default:
+		return "the computer's emergency stop: `openvibe-node resume` on this machine releases it"
 	}
-	return st.LocalReason
 }
 
 // serverNow is the server's clock (epoch ns) when a frame stamped sentMS was received: the link's estimate, else the
@@ -877,21 +890,44 @@ func (n *Node) send(m protocol.Message) {
 
 // ---- latch ----
 
+// Computer stop is independent of the robot protocol's remotely cleared latch.
+func (n *Node) hasComputer() bool {
+	if n.opt.Config == nil {
+		return false
+	}
+	for _, p := range n.opt.Config.Plugins {
+		if p.Name == "computer" && !p.Disabled {
+			return true
+		}
+	}
+	return false
+}
+
+func (n *Node) applyPluginLatch(st safety.LatchState, resume bool) {
+	for _, p := range n.mgr.Plugins() {
+		if st.Stopped() || (st.Computer && p.Name() == "computer") {
+			cause := plugins.EstopRemote
+			if st.Local || st.Computer && p.Name() == "computer" {
+				cause = plugins.EstopLocal
+			}
+			p.Estop(cause, latchReason(st))
+		} else if resume {
+			p.Resume()
+		}
+	}
+}
+
 func (n *Node) onLatch(st safety.LatchState) {
 	if n.worker != nil {
 		n.worker.SetStopped(stopFault(st)) // kills every job at once while stopped
 	}
-	if st.Stopped() {
-		n.log.Warn("stop latched", "remote", st.Remote, "local", st.Local)
-		cause := plugins.EstopRemote
-		if st.Local {
-			cause = plugins.EstopLocal
-		}
-		n.mgr.EstopAll(cause, latchReason(st))
+	if st.Stopped() || st.Computer {
+		n.log.Warn("stop latched", "remote", st.Remote, "local", st.Local, "computer", st.Computer)
 	} else {
 		n.log.Warn("stop cleared; motion allowed again")
-		n.mgr.ResumeAll()
 	}
+	n.applyPluginLatch(st, true)
+
 	n.sendEstopState()
 	n.sendStatus()
 }
@@ -986,7 +1022,7 @@ func (n *Node) output(o plugins.Output) {
 			sid, _ := o.Data["sid"].(string)
 			n.screenEnded(o.Plugin, sid)
 		}
-		n.trackApproval(o.Plugin, name, o.Data, o.At)
+		n.trackApproval(o.Plugin, name, o.Data, o.At, o.Approval)
 		n.mu.Lock()
 		n.events = append(n.events, protocol.Event{Name: name, Driver: o.Plugin, TS: o.At.UnixMilli(), Fields: fields})
 		n.mu.Unlock()
@@ -1305,21 +1341,30 @@ func (n *Node) sendStatus() {
 }
 
 // trackApproval keeps the list `openvibe-node approvals` shows from the computer plugin's approval events.
-func (n *Node) trackApproval(plugin, name string, data map[string]any, at time.Time) {
+func (n *Node) trackApproval(plugin, name string, data map[string]any, at time.Time, binding *plugins.ApprovalRequest) {
 	id, _ := data["id"].(string)
-	if id == "" || (name != "approval" && name != "approval_done") {
+	if id == "" || binding == nil || (name != "approval" && name != "approval_done") {
 		return
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if name == "approval_done" {
-		delete(n.approvals, id)
+		if a, ok := n.approvals[id]; ok && a.binding == binding {
+			delete(n.approvals, id)
+		}
+		return
+	}
+	p := n.mgr.Get(plugin)
+	if p == nil || !p.ApprovalValid(binding) {
+		return
+	}
+	if _, exists := n.approvals[id]; exists {
 		return
 	}
 	if len(n.approvals) >= 64 {
 		return
 	}
-	a := Approval{ID: id, Plugin: plugin, At: at.UnixMilli()}
+	a := Approval{ID: binding.Nonce, CommandID: id, binding: binding, Plugin: plugin, At: at.UnixMilli()}
 	a.Kind, _ = data["kind"].(string)
 	a.Summary, _ = data["summary"].(string)
 	if e, ok := data["expires_s"].(float64); ok {
@@ -1333,7 +1378,12 @@ func (n *Node) Approvals() []Approval {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	out := make([]Approval, 0, len(n.approvals))
-	for _, a := range n.approvals {
+	for id, a := range n.approvals {
+		p := n.mgr.Get(a.Plugin)
+		if p == nil || !p.ApprovalValid(a.binding) {
+			delete(n.approvals, id)
+			continue
+		}
 		out = append(out, a)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].At < out[j].At || (out[i].At == out[j].At && out[i].ID < out[j].ID) })
@@ -1386,13 +1436,20 @@ func (n *Node) control(r localctl.Request) localctl.Response {
 		return localctl.Response{OK: true, Data: b}
 	case localctl.CmdApprove, localctl.CmdDeny:
 		n.mu.Lock()
-		a, ok := n.approvals[r.ID]
+		var a Approval
+		ok := false
+		for _, candidate := range n.approvals {
+			if candidate.ID == r.ID {
+				a, ok = candidate, true
+				break
+			}
+		}
 		if ok && r.Cmd == localctl.CmdApprove && n.drivingLocked() {
 			n.mu.Unlock()
 			return localctl.Response{Error: "the agent is using the mouse or keyboard (or just did): answer again in a moment, so that its click cannot approve this"}
 		}
 		if ok {
-			delete(n.approvals, r.ID)
+			delete(n.approvals, a.CommandID)
 		}
 		n.mu.Unlock()
 		if !ok {
@@ -1402,7 +1459,7 @@ func (n *Node) control(r localctl.Request) localctl.Response {
 		if p == nil {
 			return localctl.Response{Error: "the plugin that asked is gone"}
 		}
-		if err := p.Answer(a.ID, r.Cmd == localctl.CmdApprove); err != nil {
+		if err := p.Answer(a.binding, r.Cmd == localctl.CmdApprove); err != nil {
 			return localctl.Response{Error: err.Error()}
 		}
 		return localctl.Response{OK: true}
@@ -1412,7 +1469,7 @@ func (n *Node) control(r localctl.Request) localctl.Response {
 	case localctl.CmdStop:
 		n.mgr.EstopAll(plugins.EstopLocal, "openvibe-node stop") // at once, then persist
 		if _, err := n.latch.SetLocalWith("openvibe-node stop"); err != nil {
-			return localctl.Response{OK: true, Error: "stopped, but the latch could not be saved: " + err.Error()}
+			return localctl.Response{Error: "stopped, but the latch could not be saved: " + err.Error()}
 		}
 		return localctl.Response{OK: true}
 	case localctl.CmdQuit:

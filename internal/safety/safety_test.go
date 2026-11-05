@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -181,7 +182,8 @@ func TestDedup(t *testing.T) {
 	}
 	d.Begin("b")
 	d.Begin("c")
-	d.Begin("d")
+	last, _ := d.Begin("d")
+	d.Complete(last, protocol.Ack{ID: "d"})
 	if _, first := d.Begin("a"); !first {
 		t.Fatal("capacity not enforced")
 	}
@@ -211,5 +213,19 @@ func TestReloadNeverUndoesConcurrentStop(t *testing.T) {
 		if !l2.State().Local {
 			t.Fatalf("iteration %d: local stop lost on disk", i)
 		}
+	}
+}
+
+func TestDedupPendingSurvivesFloodAndTTL(t *testing.T) {
+	d := NewDedup(4096, time.Millisecond)
+	original, _ := d.Begin("waiting")
+	for i := 0; i < 4200; i++ {
+		id := strconv.Itoa(i)
+		e, _ := d.Begin(id)
+		d.Complete(e, protocol.Ack{ID: id})
+	}
+	d.now = func() time.Time { return time.Now().Add(time.Hour) }
+	if got, first := d.Begin("waiting"); first || got != original {
+		t.Fatal("unfinished entry was evicted")
 	}
 }

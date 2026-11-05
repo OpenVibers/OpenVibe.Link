@@ -32,7 +32,7 @@ const (
 
 type Request struct {
 	Cmd string `json:"cmd"`
-	ID  string `json:"id,omitempty"` // approve and deny: the command id the plugin asked about
+	ID  string `json:"id,omitempty"` // approve and deny: the locally minted approval nonce (never the cloud command ID)
 	On  bool   `json:"on,omitempty"` // tray: the tray is running
 }
 
@@ -104,8 +104,11 @@ func Call(path string, req Request, timeout time.Duration) (Response, error) {
 	if err := json.NewDecoder(c).Decode(&resp); err != nil {
 		return resp, err
 	}
-	if !resp.OK && resp.Error != "" {
+	if resp.Error != "" {
 		return resp, errors.New(resp.Error)
+	}
+	if !resp.OK {
+		return resp, errors.New("local control request failed")
 	}
 	return resp, nil
 }

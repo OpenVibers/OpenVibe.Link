@@ -20,6 +20,12 @@ func TestServeCall(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		done <- Serve(ctx, path, func(r Request) Response {
+			if r.Cmd == "partial" {
+				return Response{OK: true, Error: "could not save latch"}
+			}
+			if r.Cmd == "failed" {
+				return Response{}
+			}
 			if r.Cmd == CmdStop {
 				return Response{OK: true, Data: []byte(`"stopped"`)}
 			}
@@ -46,6 +52,11 @@ func TestServeCall(t *testing.T) {
 	}
 	if _, err := Call(path, Request{Cmd: "nope"}, time.Second); err == nil {
 		t.Fatal("unknown accepted")
+	}
+	for _, cmd := range []string{"partial", "failed"} {
+		if _, err := Call(path, Request{Cmd: cmd}, time.Second); err == nil {
+			t.Fatalf("%s failure ignored", cmd)
+		}
 	}
 	// A second server refuses to start.
 	if err := Serve(context.Background(), path, nil); err == nil {
