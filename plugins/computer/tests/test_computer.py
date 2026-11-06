@@ -232,7 +232,11 @@ class ComputerTest(unittest.TestCase):
         return prompts
 
     def test_the_notification_approves_and_denies(self):
-        self.boot("ask")
+        # The notification offers its buttons only when the whole request fits on the surface, so the folder here is a
+        # short one: the request's summary then fits on every machine (a long path makes it too long to show whole).
+        short = tempfile.mkdtemp(prefix="ov-c-", dir="/tmp" if os.path.isdir("/tmp") else None)
+        self.addCleanup(lambda: __import__("shutil").rmtree(short, ignore_errors=True))
+        self.boot("ask", roots=[short])
         prompts = self.desktop()
         cid = self.cmd("exec", {"argv": ["echo", "from the desktop"]})
         self.out.wait_for(lambda m: m.get("name") == "approval" and m.get("id") == cid)
@@ -242,11 +246,11 @@ class ComputerTest(unittest.TestCase):
         self.assertEqual(argv[-3:-1], ["--", "OpenVibe: your agent asks"])
         prompts[0].answer("approve\n")
         self.assertEqual(reply(self.out, cid)["data"]["stdout"], "from the desktop\n")
-        cid = self.cmd("fs", {"op": "write", "path": os.path.join(self.dir, "no.txt"), "content_b64": "eA=="})
+        cid = self.cmd("fs", {"op": "write", "path": os.path.join(short, "no.txt"), "content_b64": "eA=="})
         self.out.wait_for(lambda m: m.get("name") == "approval" and m.get("id") == cid)
         prompts[1].answer("deny\n")
         self.assertEqual(reply(self.out, cid)["fault_code"], "not_allowed")
-        self.assertFalse(os.path.exists(os.path.join(self.dir, "no.txt")))
+        self.assertFalse(os.path.exists(os.path.join(short, "no.txt")))
 
     def test_an_answer_elsewhere_takes_the_notification_down(self):
         self.boot("ask")
@@ -700,7 +704,7 @@ class ComputerTest(unittest.TestCase):
         cid = self.cmd("fs", {"op": "write", "path": target, "content_b64": base64.b64encode(data).decode()})
         ev = self.out.wait_for(lambda m: m.get("name") == "approval" and m.get("id") == cid)
         summary = ev["summary"]
-        for part in (target, "create", "%d bytes" % len(data), hashlib.sha256(data).hexdigest()[:16]):
+        for part in (os.path.realpath(target), "create", "%d bytes" % len(data), hashlib.sha256(data).hexdigest()[:16]):
             self.assertIn(part, summary)
         self.assertNotIn("hidden bytes", summary)
         self.boot_input("ask")
@@ -874,6 +878,8 @@ class ComputerTest(unittest.TestCase):
 
     def test_root_after_setup_is_refused_at_the_execution_gate(self):
         # F9: the effective UID is revalidated at every execution gate, not only at setup.
+        if not hasattr(os, "geteuid"):
+            self.skipTest("no effective UID on this platform (Windows)")
         self.boot("trusted")
         target = os.path.join(self.dir, "root-write")
         with mock.patch("openvibe_computer.os.geteuid", return_value=0):

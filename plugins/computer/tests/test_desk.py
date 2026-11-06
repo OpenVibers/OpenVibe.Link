@@ -386,7 +386,8 @@ class DeskPluginTest(unittest.TestCase):
         self.assertTrue(made[0].profile.endswith("-desk"), "the private desk keeps its profile from before v0.9.0")
         self.assertTrue(made[1].profile.endswith("-desk-a"))
         self.assertEqual([b.headless for b in made], [False, False], "shown on the desk")
-        self.assertEqual(made[1].download_dir, os.path.join(self.desk_dir, "desk-a", "downloads"))
+        self.assertEqual(made[1].download_dir, os.path.realpath(os.path.join(self.desk_dir, "desk-a", "downloads")),
+                         "the folder it resolves to (a link out of the roots is not used)")
         self.assertNotEqual(made[0].download_dir, made[1].download_dir)
         self.assertNotEqual(made[0].env["DISPLAY"], made[1].env["DISPLAY"])
 
