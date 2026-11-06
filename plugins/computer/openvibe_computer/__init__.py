@@ -2361,7 +2361,10 @@ class Computer(Plugin):
             status = self.desks.status(desk)
             width, height = status.get("width") or 1280, status.get("height") or 800
             browser = self._desk_browser(desk)
-            screencast = PageScreencast(browser, width=width, height=height).start()
+            try:
+                screencast = PageScreencast(browser, width=width, height=height).start()
+            except ValueError as e:
+                raise Fault("unsupported", str(e))
             capture = {"kind": "browser", "pipe": screencast.fifo, "width": width, "height": height}
         else:
             if desk == "main":

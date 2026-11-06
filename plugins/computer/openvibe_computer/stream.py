@@ -82,6 +82,8 @@ class PageScreencast:
     """Write a browser desk's page into a FIFO as JPEGs for the core's ffmpeg (image2pipe)."""
 
     def __init__(self, browser, width=PAGE_STREAM_WIDTH, height=800, fps=PAGE_STREAM_FPS, clock=time.monotonic):
+        if not hasattr(os, "mkfifo"):
+            raise ValueError("a browser desk's stream needs a named pipe (Linux or macOS), which this system has not")
         self.browser = browser
         self.width = width
         self.height = height

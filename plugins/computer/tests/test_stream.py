@@ -157,6 +157,8 @@ class CaptureTest(unittest.TestCase):
             desktop_capture("linux", {}, 1280, 800)
 
     def test_browser_screencast_writes_jpeg_frames(self):
+        if not hasattr(os, "mkfifo"):
+            self.skipTest("a named pipe is Linux/macOS only")
         try:
             from PIL import Image
         except ImportError:
