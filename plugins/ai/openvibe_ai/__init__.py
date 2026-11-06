@@ -11,7 +11,7 @@ never queued. The owner turns it on twice: by adding the plugin here, and by "Le
 openvibe.bot/machines.
 
 Offer to the network (the /sell settings, plugin 0.3.0): ``offer.enabled`` lets other people's requests that opt in to
-community capacity run here; the plugin advertises the offer in ``describe`` (status.capabilities.ai.offer), Bot
+community capacity run here; the plugin advertises the offer in ``describe`` (status.capabilities.ai.ai.offer), Bot
 publishes it as a Network user-owned offer, and OpenVibe.AI places verified, opted-in requests on it. The plugin
 enforces enabled, the local-time ``hours``, the ``models`` offered and ``concurrency``; the router enforces
 ``audience`` (everyone, followers, or one group) because only it can resolve a requester's followers. The prompt is
