@@ -67,6 +67,9 @@ type Publisher struct {
 	pause atomic.Bool
 	mute  atomic.Bool
 	key   atomic.Value // credentials.Secret: the publish ticket, replaceable by renewal
+
+	// voice holds the agent voice sink (S4): the Opus frames it hands over replace the silence frames.
+	voice atomic.Pointer[voiceSinkHolder]
 }
 
 func NewPublisher(opt Options) *Publisher {
@@ -169,6 +172,22 @@ func (p *Publisher) write(s Sample) {
 	}
 }
 
+// SetVoiceSink gives the publisher the agent's voice (S4): the frames it hands over are played in the audio track.
+func (p *Publisher) SetVoiceSink(sink func() []byte) {
+	p.voice.Store(&voiceSinkHolder{sink: sink})
+}
+
+// voiceFrame returns the next voice frame, or nil when the agent is not speaking.
+func (p *Publisher) voiceFrame() []byte {
+	holder := p.voice.Load()
+	if holder == nil || holder.sink == nil {
+		return nil
+	}
+	return holder.sink()
+}
+
+type voiceSinkHolder struct{ sink func() []byte }
+
 // OpusSilence is one 20 ms silence frame (pion/webrtc e2e_test.go's silentOpusFrame: 8 kHz mono, 20 ms).
 var OpusSilence = []byte{0xf8, 0xff, 0xfe}
 
@@ -181,6 +200,12 @@ func (p *Publisher) sendSilence(ctx context.Context, track *webrtc.TrackLocalSta
 			return
 		case <-tick.C:
 			if p.mute.Load() {
+				continue
+			}
+			// S4: while the agent speaks, its Opus frames go out instead of the silence frames; the voice is
+			// mixed into the same track, so the viewers hear one stream of sound.
+			if frame := p.voiceFrame(); frame != nil {
+				_ = track.WriteSample(media.Sample{Data: frame, Duration: 20 * time.Millisecond})
 				continue
 			}
 			_ = track.WriteSample(media.Sample{Data: OpusSilence, Duration: 20 * time.Millisecond})

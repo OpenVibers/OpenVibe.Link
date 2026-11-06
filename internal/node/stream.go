@@ -18,6 +18,7 @@ import (
 	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
 	"github.com/OpenVibers/OpenVibe.Node/internal/safety"
 	"github.com/OpenVibers/OpenVibe.Node/internal/stream"
+	"github.com/OpenVibers/OpenVibe.Node/internal/voice"
 )
 
 // The agent desk stream (Agent Streams S1, live.agent-stream@1): the core mints the stream and its wpt_ ticket on
@@ -182,6 +183,8 @@ func (n *Node) deskStreamCommand(c protocol.Command, entry *safety.Entry, receiv
 			enc.Width, enc.Height = got.Capture.Width, got.Capture.Height
 		}
 		agent, err := stream.NewAgent(stream.AgentOptions{
+			// S4: the desk speaks the lines Live wrote, in the person's own voice (Chat's TTS).
+			Voice:  n.deskVoice(),
 			Client: client, ID: created.Stream.ID, Publish: created.Publish, Capture: got.Capture, Encode: enc,
 			FFmpeg: n.opt.Config.Video.FFmpeg, Log: n.log, Plugin: p.Name(),
 			Snapshot: n.deskSnapshotFunc(p, v.Desk),
@@ -360,4 +363,30 @@ func (n *Node) currentDeskStream() *stream.Agent {
 	n.deskMu.Lock()
 	defer n.deskMu.Unlock()
 	return n.deskStream
+}
+
+// deskVoice returns the desk's voice (Agent Streams S4): the player that asks Chat for the sound of a line with
+// the person's own token and plays it into the stream's Opus track. Nil when the machine has no Chat token (the
+// desk stays silent, which is the S1 behaviour).
+func (n *Node) deskVoice() *voice.Player {
+	if n.chatTokens == nil {
+		return nil
+	}
+	return voice.New(voice.Options{
+		TTS: &voice.ChatClient{
+			URL:   n.opt.Config.Voice.ChatSpeakURL(),
+			Token: n.chatToken,
+		},
+		Encoder: &voice.FFmpegEncoder{Binary: n.opt.Config.Video.FFmpeg},
+		Log:     n.log,
+	})
+}
+
+// chatToken is the person's own node token for Chat.
+func (n *Node) chatToken(ctx context.Context) (string, error) {
+	tok, err := n.chatTokens.Token(ctx)
+	if err != nil {
+		return "", err
+	}
+	return tok.Reveal(), nil
 }

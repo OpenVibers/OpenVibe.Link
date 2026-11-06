@@ -9,6 +9,7 @@ import (
 
 	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
 	"github.com/OpenVibers/OpenVibe.Node/internal/video"
+	"github.com/OpenVibers/OpenVibe.Node/internal/voice"
 )
 
 // liveAPI is the part of Client the agent uses; tests substitute it.
@@ -62,6 +63,8 @@ type AgentOptions struct {
 	CurtainLostAfter time.Duration
 	CurtainClearHold time.Duration
 
+	// Voice is the agent voice (S4): the desk speaks the lines Live wrote, in the person own voice.
+	Voice *voice.Player
 	// NewPublisher and NewSource are for tests; production uses video.NewPublisher and FFmpegSource.
 	NewPublisher func(video.Options) publisher
 	NewSource    func(Capture, EncodeOptions) video.Source
@@ -183,6 +186,13 @@ func (a *Agent) Run(parent context.Context) error {
 	}
 	defer cancel()
 	go pub.Run(ctx, a.ds)
+	// S4: the agent voice rides the same audio track: the publisher asks the player for the next Opus
+	// frame every 20 ms, and the silence frames carry on when the agent is quiet.
+	if a.opt.Voice != nil {
+		if vs, ok := pub.(interface{ SetVoiceSink(func() []byte) }); ok {
+			vs.SetVoiceSink(a.opt.Voice.Next)
+		}
+	}
 
 	state := time.NewTicker(a.opt.StateEvery)
 	defer state.Stop()
@@ -247,6 +257,14 @@ func (a *Agent) poll(ctx context.Context) error {
 	}
 	if st.Encode != a.encodeNow() {
 		a.SetEncode(st.Encode)
+	}
+	// S4: the voice. The mute is a kill switch and the curtain password-field reason silences the voice;
+	// both are applied before any line is spoken.
+	if a.opt.Voice != nil {
+		a.opt.Voice.SetMuted(st.Voice.Muted)
+		if err := a.opt.Voice.Poll(ctx, st.Lines, st.Voice, VoiceCurtain(st.Curtain)); err != nil && !errors.Is(err, voice.ErrMuted) && !errors.Is(err, voice.ErrCurtain) {
+			a.log.Warn("desk voice failed", "err", err)
+		}
 	}
 	a.checkBandwidth()
 	if st.EndsAt != nil && !st.EndsAt.After(a.opt.Now()) {

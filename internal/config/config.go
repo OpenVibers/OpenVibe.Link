@@ -111,6 +111,7 @@ type Config struct {
 	Plugins    []PluginConfig `json:"plugins"`
 	Video      VideoConfig    `json:"video"`
 	Stream     StreamConfig   `json:"stream,omitzero"`
+	Voice      VoiceConfig    `json:"voice,omitempty"`
 	// Limits are the local owner's caps, applied on top of the server's (the stricter value wins).
 	Limits LocalLimits `json:"limits"`
 	// Python is the interpreter for plugins without an explicit command (default: <state>/venv/bin/python, then python3).
@@ -333,6 +334,25 @@ type PluginConfig struct {
 	// it is refused (timing_unavailable), never downgraded to deadline_ms alone. For deployments that require it
 	// (Windows 10 robots: the shared clock is QueryPerformanceCounter from Node v0.30.0).
 	StrictTiming bool `json:"strict_timing,omitempty"`
+}
+
+// VoiceConfig is the agent's voice (Agent Streams S4): where the desk asks OpenVibe.Chat for the sound of a line.
+// ChatURL is the origin; the route is /api/agent-voice/speak.
+type VoiceConfig struct {
+	ChatOriginURL string `json:"chat_url,omitempty"`
+}
+
+// ChatOrigin is Chat's origin for the voice route, production unless configured.
+func (c VoiceConfig) ChatOrigin() string {
+	if c.ChatOriginURL != "" {
+		return c.ChatOriginURL
+	}
+	return "https://openvibe.chat"
+}
+
+// ChatURL is the full URL of the machine TTS route.
+func (c VoiceConfig) ChatSpeakURL() string {
+	return strings.TrimSuffix(c.ChatOrigin(), "/") + "/api/agent-voice/speak"
 }
 
 // StreamConfig is the agent desk stream (Agent Streams S1). LiveURL is where POST /api/streams/agent and the state,

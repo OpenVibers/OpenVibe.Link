@@ -85,6 +85,9 @@ type Node struct {
 	deskMu     sync.Mutex
 	deskStream *stream.Agent
 	// liveTokens buys node tokens for openvibe.live (Agent Streams S1). Nil unless this machine is Network-paired.
+	// chatTokens buys node tokens for openvibe.chat (Agent Streams S4): the desk asks Chat for the sound of a
+	// line, with the person's own token.
+	chatTokens *link.TokenSource
 	liveTokens *link.TokenSource
 
 	ctx context.Context
@@ -239,6 +242,8 @@ func New(opt Options) (*Node, error) {
 			// Agent Streams S1: a Node principal acting for its owner calls openvibe.live. Network grants it
 			// live.agent-stream.publish for its owner.
 			n.liveTokens = link.NewTokenSourceFor(opt.Creds, nil, lo.UserAgent, "openvibe.live")
+			// S4: the desk's voice is the person's own, so the token names them.
+			n.chatTokens = link.NewTokenSourceFor(opt.Creds, nil, lo.UserAgent, "openvibe.chat")
 		}
 		// The WHIP endpoint is the pairing's whip_url (built by Bot from the publish key) unless the config sets one.
 		whip := opt.Config.Video.WHIPURL

@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/OpenVibers/OpenVibe.Node/internal/voice"
 	"io"
 	"net"
 	"net/http"
@@ -100,6 +101,16 @@ type State struct {
 	Encode  bool       `json:"encode"`
 	Curtain Curtain    `json:"curtain"`
 	EndsAt  *time.Time `json:"ends_at"`
+
+	// Lines are the lines the agent said (S4): the desk speaks them, one at a time, in its own voice.
+	Lines []voice.Line `json:"lines"`
+	// Voice is the voice the agent speaks in: the mode, the personality, the voice and the mute.
+	Voice voice.State `json:"voice"`
+}
+
+// VoiceCurtain is the curtain as the voice sees it: the password-field reason is the one that silences the voice.
+func VoiceCurtain(c Curtain) voice.Curtain {
+	return voice.Curtain{Up: c.Up, Reason: c.Reason}
 }
 
 // CreateResult is the 201 answer of POST /api/streams/agent.
