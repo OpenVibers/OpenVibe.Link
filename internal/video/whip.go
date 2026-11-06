@@ -37,6 +37,11 @@ type Options struct {
 	// IncludeLoopback offers loopback ICE candidates (tests on one machine).
 	IncludeLoopback bool
 	ConnectTimeout  time.Duration
+	// Audio adds a silent Opus track (Agent Streams S1): S4's voice then needs no renegotiation. The packets are the
+	// 20 ms silence frame from pion's own e2e test, sent whether or not video is flowing.
+	Audio bool
+	// UserAgent names the Node on the WHIP request.
+	UserAgent string
 }
 
 // States reported by Publisher.State.
@@ -59,6 +64,9 @@ type Publisher struct {
 	track *webrtc.TrackLocalStaticSample
 	needK bool
 	src   Source
+	pause atomic.Bool
+	mute  atomic.Bool
+	key   atomic.Value // credentials.Secret: the publish ticket, replaceable by renewal
 }
 
 func NewPublisher(opt Options) *Publisher {
@@ -74,16 +82,34 @@ func NewPublisher(opt Options) *Publisher {
 	p := &Publisher{opt: opt, log: opt.Log.With("component", "video")}
 	p.state.Store(StateOff)
 	p.lastEr.Store("")
+	p.key.Store(opt.PublishKey)
 	return p
 }
 
 // State is off, connecting, live or retrying.
 func (p *Publisher) State() string { return p.state.Load().(string) }
 
-// Frames counts samples written to a live session.
+// Frames counts video samples written to a live session.
 func (p *Publisher) Frames() int64 { return p.frames.Load() }
 
 func (p *Publisher) LastError() string { return p.lastEr.Load().(string) }
+
+// SetPaused stops sending video samples while keeping the WHIP session and its audio track up. Snapshot mode uses it:
+// Live asked for no encoding, but the stream must not look dropped.
+func (p *Publisher) SetPaused(paused bool) { p.pause.Store(paused) }
+
+// SetMuted stops the audio track's packets. The curtain calls it: a desk whose screen is blanked must not carry the
+// desk's sound either (S1's track is silent, but S4's voice uses the same switch).
+func (p *Publisher) SetMuted(muted bool) { p.mute.Store(muted) }
+
+// SetPublishKey replaces the ticket a renewed stream reconnects with. It is never logged.
+func (p *Publisher) SetPublishKey(k credentials.Secret) {
+	if !k.IsZero() {
+		p.key.Store(k)
+	}
+}
+
+func (p *Publisher) publishKey() credentials.Secret { return p.key.Load().(credentials.Secret) }
 
 // Run publishes src until ctx ends, reconnecting with backoff.
 func (p *Publisher) Run(ctx context.Context, src Source) {
@@ -107,7 +133,7 @@ func (p *Publisher) Run(ctx context.Context, src Source) {
 		}
 		msg := "ended"
 		if err != nil {
-			msg = scrub(err.Error(), p.opt.PublishKey)
+			msg = scrub(err.Error(), p.publishKey())
 		}
 		p.lastEr.Store(msg)
 		p.state.Store(StateRetrying)
@@ -135,11 +161,30 @@ func (p *Publisher) write(s Sample) {
 		needK = false
 	}
 	p.mu.Unlock()
-	if track == nil || needK {
+	if track == nil || needK || p.pause.Load() {
 		return
 	}
 	if err := track.WriteSample(media.Sample{Data: s.Data, Duration: s.Duration}); err == nil {
 		p.frames.Add(1)
+	}
+}
+
+// OpusSilence is one 20 ms silence frame (pion/webrtc e2e_test.go's silentOpusFrame: 8 kHz mono, 20 ms).
+var OpusSilence = []byte{0xf8, 0xff, 0xfe}
+
+func (p *Publisher) sendSilence(ctx context.Context, track *webrtc.TrackLocalStaticSample) {
+	tick := time.NewTicker(20 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+			if p.mute.Load() {
+				continue
+			}
+			_ = track.WriteSample(media.Sample{Data: OpusSilence, Duration: 20 * time.Millisecond})
+		}
 	}
 }
 
@@ -161,6 +206,15 @@ func (p *Publisher) newAPI() (*webrtc.API, error) {
 		PayloadType: 102,
 	}, webrtc.RTPCodecTypeVideo); err != nil {
 		return nil, err
+	}
+	if p.opt.Audio {
+		if err := m.RegisterCodec(webrtc.RTPCodecParameters{
+			RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2,
+				SDPFmtpLine: "minptime=10;useinbandfec=1"},
+			PayloadType: 111,
+		}, webrtc.RTPCodecTypeAudio); err != nil {
+			return nil, err
+		}
 	}
 	ir := &interceptor.Registry{}
 	if err := webrtc.RegisterDefaultInterceptors(m, ir); err != nil {
@@ -197,6 +251,18 @@ func (p *Publisher) session(ctx context.Context) error {
 	tr, err := pc.AddTransceiverFromTrack(track, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendonly})
 	if err != nil {
 		return err
+	}
+	var audio *webrtc.TrackLocalStaticSample
+	var silenceOnce sync.Once
+	if p.opt.Audio {
+		audio, err = webrtc.NewTrackLocalStaticSample(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus,
+			ClockRate: 48000, Channels: 2, SDPFmtpLine: "minptime=10;useinbandfec=1"}, "audio", "openvibe-node")
+		if err != nil {
+			return err
+		}
+		if _, err := pc.AddTransceiverFromTrack(audio, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendonly}); err != nil {
+			return err
+		}
 	}
 	go func() { // RTCP: a viewer's PLI or FIR asks for a keyframe.
 		for {
@@ -267,8 +333,11 @@ func (p *Publisher) session(ctx context.Context) error {
 				p.track, p.needK = track, true
 				p.mu.Unlock()
 				p.requestKeyframe()
+				if audio != nil {
+					silenceOnce.Do(func() { go p.sendSilence(ctx, audio) })
+				}
 				p.state.Store(StateLive)
-				p.log.Info("video live", "whip", scrub(redactURL(p.opt.WHIPURL), p.opt.PublishKey))
+				p.log.Info("video live", "whip", scrub(redactURL(p.opt.WHIPURL), p.publishKey()))
 			case webrtc.PeerConnectionStateDisconnected:
 				disconnectedAt = time.Now()
 			case webrtc.PeerConnectionStateFailed, webrtc.PeerConnectionStateClosed:
@@ -288,17 +357,21 @@ func (p *Publisher) post(ctx context.Context, sdp string) (answer, resource stri
 		return "", "", err
 	}
 	req.Header.Set("Content-Type", "application/sdp")
-	if !p.opt.PublishKey.IsZero() {
-		req.Header.Set("Authorization", "Bearer "+p.opt.PublishKey.Reveal())
+	key := p.publishKey()
+	if !key.IsZero() {
+		req.Header.Set("Authorization", "Bearer "+key.Reveal())
+	}
+	if p.opt.UserAgent != "" {
+		req.Header.Set("User-Agent", p.opt.UserAgent)
 	}
 	resp, err := p.opt.HTTPClient.Do(req)
 	if err != nil {
-		return "", "", fmt.Errorf("whip: %s", scrub(err.Error(), p.opt.PublishKey))
+		return "", "", fmt.Errorf("whip: %s", scrub(err.Error(), key))
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("whip: HTTP %d %s", resp.StatusCode, scrub(string(bytes.TrimSpace(body[:min(len(body), 200)])), p.opt.PublishKey))
+		return "", "", fmt.Errorf("whip: HTTP %d %s", resp.StatusCode, scrub(string(bytes.TrimSpace(body[:min(len(body), 200)])), key))
 	}
 	loc := resp.Header.Get("Location")
 	if loc != "" {
@@ -321,9 +394,10 @@ func (p *Publisher) delete(resource string) {
 	if err != nil {
 		return
 	}
-	// The publish key goes only to the WHIP endpoint's own origin, whatever Location the server returned.
-	if !p.opt.PublishKey.IsZero() && sameOrigin(resource, p.opt.WHIPURL) {
-		req.Header.Set("Authorization", "Bearer "+p.opt.PublishKey.Reveal())
+	// The ticket goes only to the WHIP endpoint's own origin, whatever Location the server returned.
+	key := p.publishKey()
+	if !key.IsZero() && sameOrigin(resource, p.opt.WHIPURL) {
+		req.Header.Set("Authorization", "Bearer "+key.Reveal())
 	}
 	if resp, err := p.opt.HTTPClient.Do(req); err == nil {
 		resp.Body.Close()

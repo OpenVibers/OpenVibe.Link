@@ -35,6 +35,7 @@ import (
 	"github.com/OpenVibers/OpenVibe.Node/internal/plugins"
 	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
 	"github.com/OpenVibers/OpenVibe.Node/internal/safety"
+	"github.com/OpenVibers/OpenVibe.Node/internal/stream"
 	"github.com/OpenVibers/OpenVibe.Node/internal/video"
 	"github.com/OpenVibers/OpenVibe.Node/internal/worker"
 )
@@ -79,6 +80,11 @@ type Node struct {
 	pub   *video.Publisher
 	// screen is the owner's live view of the machine's screen (screen.go), apart from a robot's camera.
 	screen screenState
+	// deskStream is the agent's desk stream (stream.go, Agent Streams S1); one at a time.
+	deskMu     sync.Mutex
+	deskStream *stream.Agent
+	// liveTokens buys node tokens for openvibe.live (Agent Streams S1). Nil unless this machine is Network-paired.
+	liveTokens *link.TokenSource
 
 	ctx context.Context
 	// quit ends Run on `openvibe-node quit` (control), and quitting tells Run to answer ErrQuit.
@@ -228,6 +234,11 @@ func New(opt Options) (*Node, error) {
 			}
 		}
 		n.link = link.New(lo, n)
+		if opt.Creds.NetworkPaired() {
+			// Agent Streams S1: a Node principal acting for its owner calls openvibe.live. Network grants it
+			// live.agent-stream.publish for its owner.
+			n.liveTokens = link.NewTokenSourceFor(opt.Creds, nil, lo.UserAgent, "openvibe.live")
+		}
 		// The WHIP endpoint is the pairing's whip_url (built by Bot from the publish key) unless the config sets one.
 		whip := opt.Config.Video.WHIPURL
 		if whip == "" {
@@ -302,6 +313,7 @@ func (n *Node) Run(parent context.Context) error {
 	}
 	<-ctx.Done()
 	n.log.Info("shutting down: stopping every actuator")
+	n.stopDeskStream(false)
 	n.mgr.StopAll(plugins.StopShutdown)
 	if n.worker != nil {
 		n.worker.Close()
@@ -747,6 +759,10 @@ func (n *Node) computer(c protocol.Command, entry *safety.Entry, sentMS int64, r
 		n.screenCommand(c, entry, received, nack)
 		return
 	}
+	if c.Kind == protocol.KindDeskStream {
+		n.deskStreamCommand(c, entry, received, nack)
+		return
+	}
 	if protocol.ComputerActs(c.Kind, c.Value) {
 		st := n.latch.State()
 		if st.Local {
@@ -928,6 +944,9 @@ func (n *Node) onLatch(st safety.LatchState) {
 		n.log.Warn("stop cleared; motion allowed again")
 	}
 	n.applyPluginLatch(st, true)
+	if st.Stopped() || st.Computer {
+		n.stopDeskStream(true) // the kill switch: Live ends the WHIP session at once
+	}
 
 	n.sendEstopState()
 	n.sendStatus()
@@ -1009,6 +1028,12 @@ func (n *Node) output(o plugins.Output) {
 			n.tellVoice(n.mgr.Get(o.Plugin))
 			return
 		}
+		if name == "curtain" {
+			n.deskCurtainEvent(o.Plugin, o.Data)
+			if heartbeat, _ := o.Data["heartbeat"].(bool); heartbeat {
+				return // the stream's one-second liveness beat, not an event for the log or Bot
+			}
+		}
 		fields := map[string]any{}
 		for k, v := range o.Data {
 			if k != "name" {
@@ -1052,7 +1077,11 @@ func (n *Node) output(o plugins.Output) {
 		if _, err := n.latch.SetLocalWith(reason); err != nil {
 			n.log.Error("a plugin latched the local stop, but the latch could not be saved", "plugin", o.Plugin, "err", err)
 		}
-	case plugins.OutFault, plugins.OutState:
+	case plugins.OutState:
+		n.deskPluginState(o)
+		n.sendStatus()
+	case plugins.OutFault:
+		n.deskPluginFault(o)
 		n.sendStatus()
 	}
 }
@@ -1221,21 +1250,23 @@ func strSlice(v any) []string {
 
 // Status is what `openvibe-node status` prints. It never contains the credential or the publish key.
 type Status struct {
-	Version   string             `json:"version"`
-	DeviceID  string             `json:"device_id,omitempty"`
-	Principal string             `json:"principal,omitempty"` // nod_… of a Network-paired machine
-	Server    string             `json:"server,omitempty"`
-	Paired    bool               `json:"paired"`
-	Uptime    string             `json:"uptime"`
-	Link      LinkStatus         `json:"link"`
-	Latch     safety.LatchState  `json:"latch"`
-	Limits    safety.Limits      `json:"limits"`
-	Plugins   []PluginStatus     `json:"plugins"`
-	Video     VideoStatus        `json:"video"`
-	Screen    ScreenStatus       `json:"screen"`
-	ConfigDir string             `json:"config_dir"`
-	StateDir  string             `json:"state_dir"`
-	Telemetry protocol.Telemetry `json:"telemetry"`
+	Version   string            `json:"version"`
+	DeviceID  string            `json:"device_id,omitempty"`
+	Principal string            `json:"principal,omitempty"` // nod_… of a Network-paired machine
+	Server    string            `json:"server,omitempty"`
+	Paired    bool              `json:"paired"`
+	Uptime    string            `json:"uptime"`
+	Link      LinkStatus        `json:"link"`
+	Latch     safety.LatchState `json:"latch"`
+	Limits    safety.Limits     `json:"limits"`
+	Plugins   []PluginStatus    `json:"plugins"`
+	Video     VideoStatus       `json:"video"`
+	Screen    ScreenStatus      `json:"screen"`
+	// Desk stream is the agent's own stream, when one is running (Agent Streams S1).
+	DeskStream *stream.Status     `json:"desk_stream,omitempty"`
+	ConfigDir  string             `json:"config_dir"`
+	StateDir   string             `json:"state_dir"`
+	Telemetry  protocol.Telemetry `json:"telemetry"`
 	// Jobs are the worker's jobs not ended yet; empty when the worker is off.
 	Jobs []worker.JobInfo `json:"jobs"`
 	// Roles are what the machine does for the network, as the owner set them on the hub (plan L34): the ids of the
@@ -1296,6 +1327,7 @@ func (n *Node) Status() Status {
 		s.Jobs = n.worker.Jobs()
 	}
 	s.Screen = n.screenStatus()
+	s.DeskStream = n.deskStreamStatus()
 	s.Video.State = video.StateOff
 	if n.pub != nil {
 		s.Video.State, s.Video.Frames, s.Video.LastError = n.pub.State(), n.pub.Frames(), n.pub.LastError()

@@ -17,9 +17,10 @@ import (
 type WHIPReceiver struct {
 	PublishKey string
 
-	Packets atomic.Int64
-	Deletes atomic.Int64
-	BadAuth atomic.Int64
+	Packets      atomic.Int64
+	AudioPackets atomic.Int64
+	Deletes      atomic.Int64
+	BadAuth      atomic.Int64
 
 	mu  sync.Mutex
 	pcs map[string]*webrtc.PeerConnection
@@ -78,11 +79,15 @@ func (w *WHIPReceiver) post(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pc.OnTrack(func(t *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
+		audio := t.Kind() == webrtc.RTPCodecTypeAudio
 		for {
 			if _, _, err := t.ReadRTP(); err != nil {
 				return
 			}
 			w.Packets.Add(1)
+			if audio {
+				w.AudioPackets.Add(1)
+			}
 		}
 	})
 	if err := pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: string(offer)}); err != nil {

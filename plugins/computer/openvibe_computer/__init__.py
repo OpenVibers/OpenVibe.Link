@@ -69,6 +69,14 @@ Command kinds and their answers (the ack's ``data``):
   against ``max_desks``. ``describe`` lists the kinds this machine runs (``desk.kinds``). Starting and stopping act
   (refused at observe, approved at ask), ``status`` runs at every level, and the kill switch stops the desk. Whole desks
   need Linux with Xvfb, browser desks a Chromium-family browser; config ``allow_desk: false`` turns both off.
+* ``desk.stream`` ``{"action": "start"|"stop"|"status"|"curtain", "desk"?, "allow_sites"?, "up"?, "reason"?}``
+  (Agent Streams S1, ``stream.py`` and ``curtain.py``): the agent's own stream on OpenVibe.Live. ``start`` answers
+  ``{streaming, sid, capture, curtain, detectors}`` with the capture source the core's ffmpeg should use (x11grab,
+  PipeWire, ddagrab, AVFoundation, or a browser desk's page through a FIFO); the core mints the stream and the ``wpt_``
+  ticket on Live, so neither reaches this plugin. The privacy curtain's detectors (password field, secret-named
+  window/file, an environment print, the hotkey, the browser's allow-list) run here and report ``curtain`` events;
+  a detector that fails or is unsure puts the curtain up and never down. Config ``allow_desk_stream: false`` turns it
+  off. The core publishes over WHIP and snapshots while nobody watches.
 * **A desk host for other people** (``desk_isolation: "sandbox"``, Node v0.32, Desks plan D5): every desk is a browser
   desk whose browser runs under ``openvibe-node desk-sandbox`` (the jobs' sandbox: its own namespaces and cgroup as
   ``worker.run_as``, ``desk_memory_mb``, ``desk_cpu_millis``, ``desk_disk_mb`` and ``desk_pids`` each, only the public
@@ -108,10 +116,16 @@ import urllib.parse
 from openvibe_plugin import Deferred, Fault, Plugin
 
 from .browser import KEY_CODES, Browser, BrowserError, find_binary
+from .curtain import (Curtain, EnvPrintDetector, Hotkey, PasswordFieldDetector, SecretFileDetector, SiteDetector,
+                      _active_window, install_sigusr1)
 from .desk import MAX_DESKS_CAP, BrowserDesk, Desks, PrivateDesk, default_max_desks
 from .egress import EgressProxy, not_public
+from .stream import PageScreencast, capture_kinds, desktop_capture
 from .files import Files, Handles
 
+# The desk stream's curtain heartbeat: the core declares the curtain lost if it hears nothing for two seconds, so this
+# must stay well under that (and the test patches it to run fast).
+DESK_STREAM_HEARTBEAT_S = 1.0
 LEVELS = ("observe", "ask", "trusted", "full")
 RANK = {name: i for i, name in enumerate(LEVELS)}
 READ_OPS = frozenset({"list", "stat", "read"})
@@ -366,6 +380,14 @@ class Computer(Plugin):
         self.allow_screen_stream = True
         self.stream = None  # the live screen: {"sid", "until", "fps", "tool", "dir", "stop": Event}
         self.stream_mu = threading.Lock()
+        # The agent's desk stream (Agent Streams S1): capture, the curtain's detectors and the hotkey.
+        self.allow_desk_stream = True
+        self.desk_stream = None
+        self.desk_stream_mu = threading.Lock()
+        self.desk_stream_allow_sites = []
+        self.desk_stream_hotkey = "ctrl+alt+p"
+        self.desk_stream_detectors = None
+        self._sigusr1_old = None
         self.browser_mu = threading.Lock()
         self.browser_op_mu = threading.Lock()
         self.browser_factory = browser_factory or self._new_browser
@@ -428,6 +450,18 @@ class Computer(Plugin):
         self.notify = config.get("notify", True) is not False
         self.allow_browser = config.get("allow_browser", True) is not False
         self.allow_screen_stream = config.get("allow_screen_stream", True) is not False
+        self.allow_desk_stream = config.get("allow_desk_stream", True) is not False
+        self.desk_stream_hotkey = str(config.get("desk_stream_hotkey") or "ctrl+alt+p")
+        sites = config.get("desk_stream_allow_sites") or []
+        if not isinstance(sites, list) or not all(isinstance(u, str) and u for u in sites) or len(sites) > 50:
+            raise Fault("bad_value", "desk_stream_allow_sites is a list of up to 50 URLs")
+        self.desk_stream_allow_sites = list(sites)
+        dets = config.get("desk_stream_detectors")
+        if dets is not None:
+            known = ("password_field", "secret_file", "env_print", "manual", "site")
+            if not isinstance(dets, list) or not all(d in known for d in dets):
+                raise Fault("bad_value", "desk_stream_detectors is a list of %s" % ", ".join(known))
+            self.desk_stream_detectors = list(dets)
         self.allow_desk = config.get("allow_desk", True) is not False
         self.desks.max_desks = _int(config.get("max_desks"), "max_desks", 1, MAX_DESKS_CAP, default_max_desks())
         self.desk_idle_s = _int(config.get("desk_idle_s"), "desk_idle_s", 60, 86400, 900)
@@ -492,6 +526,10 @@ class Computer(Plugin):
             caps["browser"] = {"level": self.level, "browser": os.path.basename(binary), "headless": self.browser_headless,
                                "egress": self.browser_egress}
         kinds = self._desk_kinds()
+        if self.allow_desk_stream and (kinds or tool):
+            caps["desk.stream"] = {"capture": capture_kinds(self.platform), "browser": "browser" in kinds,
+                                   "curtain": ["password_field", "secret_file", "env_print", "manual", "site", "detector"],
+                                   "hotkey": self.desk_stream_hotkey, "allow_sites": True}
         if kinds:
             # A browser desk's screen and input are its page's own (the browser's pipe); a whole desk's need X tools.
             whole, page = "desktop" in kinds, "browser" in kinds
@@ -941,6 +979,8 @@ class Computer(Plugin):
             return self._start(cmd, lambda: self._screen(tool, width, env=desk_env))
         if cmd.kind == "screen_stream":
             return self._screen_stream(v, env=desk_env, desk=desk_name, page=page)
+        if cmd.kind == "desk.stream":
+            return self._desk_stream_op(cmd, v, level)
         if cmd.kind == "fs":
             op = v.get("op")
             if op in READ_OPS:
@@ -988,7 +1028,7 @@ class Computer(Plugin):
             return
         if kind in SHARED_DESK_KINDS and v.get("desk", "main") != "main":
             return
-        if kind == "screen_stream":
+        if kind in ("screen_stream", "desk.stream"):
             raise Fault("not_allowed", "this desk host shows a desk as pictures (screen), not live: its one stream is its operator's")
         raise Fault("not_allowed", "this machine is a desk host for other people: only its browser desks take commands")
 
@@ -1646,7 +1686,10 @@ class Computer(Plugin):
             left = deadline - self._deadline_clock()() - 1.0
             if left < 1:
                 raise Fault("expired", "no time was left to run it")
-            return self._exec(argv, cwd, stdin, min(timeout, left), env=env)
+            out = self._exec(argv, cwd, stdin, min(timeout, left), env=env)
+            # The desk stream's environment-print detector sees the output before it leaves the machine.
+            self._desk_stream_saw_output(argv, out)
+            return out
 
         return run, self._exec_summary(argv, cwd.path if cwd is not None else None, stdin, desk)
 
@@ -1852,6 +1895,7 @@ class Computer(Plugin):
         offset = _int(v.get("offset"), "offset", 0, 2 ** 53, 0)
         length = _int(v.get("length"), "length", 0, self.max_read, self.max_read)
         data, size = target.read(offset, length)
+        self._desk_stream_saw_path(target.path)
         return {"path": target.path, "size": size, "offset": offset, "length": len(data),
                 "truncated": offset + len(data) < size, "content_b64": base64.b64encode(data).decode("ascii")}
 
@@ -1990,18 +2034,22 @@ class Computer(Plugin):
             try:
                 with lock():   # one action at a time in each browser; two desks' browsers act in parallel
                     if action == "open":
-                        return b.open(url)
-                    if action == "read":
-                        return b.read()
-                    if action == "screenshot":
-                        return b.screenshot(width)
-                    if action == "click":
-                        return b.click(selector=selector, text=None if selector else text)
-                    if action == "fill":
-                        return b.fill(selector, text)
-                    if action == "press":
-                        return b.press(key)
-                    return b.back()
+                        out = b.open(url)
+                    elif action == "read":
+                        out = b.read()
+                    elif action == "screenshot":
+                        out = b.screenshot(width)
+                    elif action == "click":
+                        out = b.click(selector=selector, text=None if selector else text)
+                    elif action == "fill":
+                        out = b.fill(selector, text)
+                    elif action == "press":
+                        out = b.press(key)
+                    else:
+                        out = b.back()
+                    if isinstance(out, dict):
+                        self._desk_stream_saw_url(out.get("url"))
+                    return out
             except BrowserError as e:
                 raise Fault(e.code, e.message)
 
@@ -2272,6 +2320,206 @@ class Computer(Plugin):
 
     def _stream_capable(self, tool):
         return self._have_pillow() or self._native_jpeg(tool, "x.jpg") is not None
+
+    # ---- the agent's desk stream (Agent Streams S1) ---------------------------------------------------------------
+    def _desk_stream_op(self, cmd, v, level):
+        """desk.stream: start/stop/status/curtain one agent stream. The core mints the wpt_ ticket and publishes; the
+        plugin says how to capture and runs the curtain's detectors (fail closed)."""
+        action = v.get("action")
+        if action == "status":
+            return self._desk_stream_status()
+        if action == "stop":
+            return {"streaming": False, "stopped": self._stop_desk_stream("stopped by its owner")}
+        if action == "curtain":
+            with self.desk_stream_mu:
+                st = self.desk_stream
+            if st is None:
+                raise Fault("not_ready", "no desk stream is running")
+            up = v.get("up") is True
+            reason = v.get("reason") if v.get("reason") in ("manual", "site", "detector") else "manual"
+            if up:
+                st["curtain"].raise_(reason)
+            else:
+                st["curtain"].lower()
+            return self._desk_stream_status()
+        if action != "start":
+            raise Fault("bad_value", "action is start, stop, status or curtain")
+        if not self.allow_desk_stream:
+            raise Fault("unsupported", "this machine does not stream its desks (allow_desk_stream is off)")
+        if self._shared():
+            raise Fault("not_allowed", "a desk host for other people shows a desk as pictures, never live")
+        desk = v.get("desk") or "main"
+        if desk != "main":
+            self.desks.check(desk)
+            if not self.desks.status(desk).get("running"):
+                raise Fault("not_ready", "start the desk first (desk start, desk %s)" % desk)
+        allow_sites = v.get("allow_sites")
+        if not isinstance(allow_sites, list):
+            allow_sites = self.desk_stream_allow_sites
+        allow_sites = [u for u in allow_sites if isinstance(u, str) and u][:50]
+        self._stop_desk_stream("replaced")
+        browser_desk = desk != "main" and self.desks.kind(desk) == "browser"
+        screencast = None
+        if browser_desk:
+            status = self.desks.status(desk)
+            width, height = status.get("width") or 1280, status.get("height") or 800
+            browser = self._desk_browser(desk)
+            try:
+                screencast = PageScreencast(browser, width=width, height=height).start()
+            except ValueError as e:
+                raise Fault("unsupported", str(e))
+            capture = {"kind": "browser", "pipe": screencast.fifo, "width": width, "height": height}
+        else:
+            if desk == "main":
+                if not self.allow_screen_stream:
+                    raise Fault("unsupported", "this machine does not show its screen (allow_screen_stream is off)")
+                if not self._screen_tool():
+                    raise Fault("unsupported", "no screen capture tool on this machine")
+                env = self.env
+                width, height = self._display_size(env)
+            else:
+                status = self.desks.status(desk)
+                env = self.desks.env(desk)
+                width, height = status.get("width") or 1280, status.get("height") or 800
+            try:
+                capture = desktop_capture(self.platform, env, width, height,
+                                          ffmpeg=self.which("ffmpeg") or "ffmpeg")
+            except ValueError as e:
+                raise Fault("unsupported", str(e))
+        current_url = (lambda: browser.last_navigation) if browser_desk else None
+        detectors = self._desk_stream_detectors(allow_sites, env if not browser_desk else None, current_url)
+        curtain = Curtain(detectors=list(detectors.values()), on_change=self._desk_stream_curtain_changed)
+        # Fail closed: the picture starts blank and only clears after every detector has been clear for two seconds.
+        curtain.raise_("detector")
+        curtain.start()
+        hotkey = Hotkey(self._desk_stream_toggle, self.desk_stream_hotkey)
+        hotkey.start()
+        self._sigusr1_old = install_sigusr1(self._desk_stream_toggle)
+        st = {"sid": os.urandom(8).hex(), "desk": desk, "capture": capture, "screencast": screencast,
+              "curtain": curtain, "hotkey": hotkey, "detectors": detectors, "allow_sites": allow_sites,
+              "since": self.clock()}
+        stop = threading.Event()
+        st["heartbeat"], st["heartbeat_thread"] = stop, threading.Thread(
+            target=self._desk_stream_heartbeat, args=(st, stop), name="computer-curtain-beat", daemon=True)
+        with self.desk_stream_mu:
+            self.desk_stream = st
+        st["heartbeat_thread"].start()
+        return {"streaming": True, "sid": st["sid"], "capture": capture, "curtain": curtain.snapshot(),
+                "detectors": sorted(detectors), "hotkey": self.desk_stream_hotkey}
+
+    def _desk_stream_heartbeat(self, st, stop):
+        """Tell the core the curtain state every second. Its watchdog blanks the desk if this goes quiet for two
+        seconds, so a hung plugin cannot leave a picture up; a clear state still has to last two seconds there."""
+        while not stop.is_set():
+            snap = st["curtain"].snapshot()
+            try:
+                self.emit_event("curtain", up=bool(snap["up"]), reason=snap["reason"] or "detector", heartbeat=True)
+            except Exception:
+                pass
+            stop.wait(DESK_STREAM_HEARTBEAT_S)
+
+    def _desk_stream_status(self):
+        with self.desk_stream_mu:
+            st = self.desk_stream
+        if st is None:
+            return {"streaming": False}
+        out = {"streaming": True, "sid": st["sid"], "desk": st["desk"], "capture": st["capture"],
+               "curtain": st["curtain"].snapshot(), "detectors": sorted(st["detectors"]), "allow_sites": st["allow_sites"]}
+        cast = st.get("screencast")
+        if cast is not None:
+            out["page"] = cast.status()
+        return out
+
+    def _stop_desk_stream(self, reason):
+        with self.desk_stream_mu:
+            st, self.desk_stream = self.desk_stream, None
+        if st is None:
+            return False
+        cast = st.get("screencast")
+        if cast is not None:
+            cast.stop()
+        beat = st.get("heartbeat")
+        if beat is not None:
+            beat.set()
+        thread = st.get("heartbeat_thread")
+        if thread is not None and thread is not threading.current_thread() and thread.is_alive():
+            thread.join(1.0)
+        st["hotkey"].stop()
+        st["curtain"].stop()
+        if self._sigusr1_old is not None:
+            try:
+                signal.signal(signal.SIGUSR1, self._sigusr1_old)
+            except (ValueError, OSError):
+                pass
+            self._sigusr1_old = None
+        self.log("desk stream ended (%s)", reason)
+        return True
+
+    def _desk_stream_detectors(self, allow_sites, env=None, current_url=None):
+        wanted = self.desk_stream_detectors or ("password_field", "secret_file", "env_print", "site")
+        out = {}
+        if "password_field" in wanted:
+            out["password_field"] = PasswordFieldDetector()
+        if "secret_file" in wanted:
+            out["secret_file"] = SecretFileDetector(window=(lambda: _active_window(env)) if env else None)
+        if "env_print" in wanted:
+            out["env_print"] = EnvPrintDetector()
+        if "site" in wanted and allow_sites:
+            out["site"] = SiteDetector(allow_sites, current_url=current_url)
+        return out
+
+    def _desk_stream_curtain_changed(self, up, reason):
+        self.emit_event("curtain", up=bool(up), reason=reason)
+        self.log("curtain %s (%s)", "up" if up else "down", reason)
+
+    def _desk_stream_toggle(self, _reason="manual"):
+        with self.desk_stream_mu:
+            st = self.desk_stream
+        if st is None:
+            return
+        if st["curtain"].snapshot()["up"]:
+            st["curtain"].lower()
+        else:
+            st["curtain"].raise_("manual")
+
+    def _desk_stream_saw_path(self, path):
+        with self.desk_stream_mu:
+            st = self.desk_stream
+        if st is not None and "secret_file" in st["detectors"]:
+            st["detectors"]["secret_file"].saw_path(path)
+
+    def _desk_stream_saw_output(self, argv, out):
+        with self.desk_stream_mu:
+            st = self.desk_stream
+        if st is None or "env_print" not in st["detectors"]:
+            return
+        text = ""
+        if isinstance(out, dict):
+            text = (out.get("stdout") or "") + "\n" + (out.get("stderr") or "")
+        st["detectors"]["env_print"].saw_output(argv, text)
+        if "secret_file" in st["detectors"]:
+            for a in argv:
+                st["detectors"]["secret_file"].saw_path(a)
+
+    def _desk_stream_saw_url(self, url):
+        with self.desk_stream_mu:
+            st = self.desk_stream
+        if st is not None and "site" in st["detectors"]:
+            st["detectors"]["site"].saw_url(url)
+
+    def _display_size(self, env):
+        """The display's pixel size for x11grab, or 1920×1080 where there is no xdotool."""
+        if not (env or {}).get("DISPLAY"):
+            return 1920, 1080
+        try:
+            r = subprocess.run(["xdotool", "getdisplaygeometry"], capture_output=True, text=True, timeout=3,
+                               env=self._child_env(env) if env is not None else None)
+            w, h = [int(x) for x in r.stdout.split()]
+            if w >= 320 and h >= 180:
+                return w, h
+        except (OSError, ValueError, subprocess.SubprocessError):
+            pass
+        return 1920, 1080
 
     def _screen_stream(self, v, env=None, desk=None, page=False):
         action = v.get("action")
