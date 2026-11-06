@@ -99,11 +99,12 @@ async def run_whep(args):
                     img = frame.to_ndarray(format="bgr24")
                 except Exception:
                     continue
-                ok, decoded, *_ = decoder.detectAndDecode(img)
-                if not ok or not decoded:
+                # detectAndDecode returns (decoded_info, points, straight_qrcode): points is an array, so test the string.
+                decoded, *_ = decoder.detectAndDecode(img)
+                if not decoded:
                     continue
                 try:
-                    sent = int(decoded.strip())
+                    sent = int(str(decoded).strip())
                 except ValueError:
                     continue
                 seen["qr"] += 1

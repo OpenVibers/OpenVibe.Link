@@ -15,9 +15,9 @@ if [ ! -x "$venv/bin/python" ]; then
     }
 fi
 
-if ! "$venv/bin/python" -c 'import aiortc, cv2, numpy' >/dev/null 2>&1; then
-    echo "stream-viewer: installing aiortc and OpenCV once into $venv" >&2
-    "$venv/bin/python" -m pip install --quiet --disable-pip-version-check aiortc opencv-python-headless numpy || {
+if ! "$venv/bin/python" -c 'import aiortc, aiohttp, cv2, numpy' >/dev/null 2>&1; then
+    echo "stream-viewer: installing aiortc, aiohttp and OpenCV once into $venv" >&2
+    "$venv/bin/python" -m pip install --quiet --disable-pip-version-check aiortc aiohttp opencv-python-headless numpy || {
         echo "stream-viewer: pip install failed (no network?)" >&2
         exit 2
     }
