@@ -677,10 +677,21 @@ class Computer(Plugin):
         gen = self._gate_generation()
         return gen is not None and gen != self.generation
 
-    def _authorized(self, run, expires=None, generation=None):
+    def _deadline_clock(self):
+        """The clock a command's deadline is counted on: the runtime's (a deadline is an instant on it, taken from the
+        moment its line arrived). The plugin's own clock may be another one (a test's, a host's), and a deadline read
+        on the wrong clock means nothing: on a machine whose uptime is short (a fresh CI runner) it looks passed long
+        before it was, and the work it belongs to never runs."""
+        rt = getattr(self, "runtime", None)
+        return getattr(rt, "clock", None) or self.clock
+
+    def _authorized(self, run, expires=None, generation=None, clock=None):
         """Wrap work that was authorized now or by an approval: at the moment it starts it checks, under the lock that
-        a stop takes to raise the generation, that no stop happened and its deadline has not passed."""
+        a stop takes to raise the generation, that no stop happened and its deadline has not passed. The deadline is
+        read on the clock it was counted on (clock): a command's deadline on the runtime's, an approval's on the
+        plugin's own."""
         gen = self.generation if generation is None else generation
+        now = clock or self.clock
 
         def go():
             self._gate.generation = gen
@@ -688,7 +699,7 @@ class Computer(Plugin):
                 with self.mu:
                     if gen != self.generation:
                         raise Fault("local_stop", "stopped on the machine before it started")
-                    if expires is not None and self.clock() >= expires:
+                    if expires is not None and now() >= expires:
                         raise Fault("expired", "its deadline passed before it started")
                 self._check_identity()
                 return run()
@@ -1259,8 +1270,10 @@ class Computer(Plugin):
                         "this machine allows observing only (its owner sets the level on the machine)")
         if level == "ask":
             # An approval never outlives the command it answers: whichever of the approval timeout and the request's
-            # own deadline comes first.
-            expires = min(self.clock() + self.approval_timeout_s, cmd.deadline)
+            # own deadline comes first. The request's deadline is counted on the runtime's clock and the approval's
+            # expiry on the plugin's, so the time left on that deadline is what caps the approval.
+            left = cmd.deadline - self._deadline_clock()()
+            expires = self.clock() + min(self.approval_timeout_s, left)
             with self.mu:
                 if cmd.id in self.pending:
                     raise Fault("not_ready", "an approval with id %s already waits on the machine" % _plain(cmd.id))
@@ -1276,7 +1289,7 @@ class Computer(Plugin):
         if threaded:
             return self._start(cmd, run, generation=generation)
         with self._slot():
-            return self._authorized(run, cmd.deadline, generation)()
+            return self._authorized(run, cmd.deadline, generation, clock=self._deadline_clock())()
 
     def _notify(self, cid, summary):
         """Tell the desktop that a request waits (config `notify`, on by default) when the Node runs in a graphical
@@ -1478,7 +1491,7 @@ class Computer(Plugin):
             self._release()
 
     def _start(self, cmd, run, generation=None):
-        self._thread(cmd.id, self._authorized(run, cmd.deadline, generation))
+        self._thread(cmd.id, self._authorized(run, cmd.deadline, generation, clock=self._deadline_clock()))
         raise Deferred()
 
     def _thread(self, cid, run):
@@ -1570,7 +1583,8 @@ class Computer(Plugin):
                     self._exec_summary(argv, cwd, None, desk, detached=True))
 
         def run():
-            left = deadline - self.clock() - 1.0
+            # The time left on the command's deadline, counted on the clock that deadline is on.
+            left = deadline - self._deadline_clock()() - 1.0
             if left < 1:
                 raise Fault("expired", "no time was left to run it")
             return self._exec(argv, cwd, stdin, min(timeout, left), env=env)

@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -333,8 +334,9 @@ class DeskPluginTest(unittest.TestCase):
     def test_a_desk_nobody_uses_stops_by_itself(self):
         # An agent that crashed or restarted mid-task never stops its desk: desk_idle_s does.
         self.boot("trusted", max_desks=2, desk_idle_s=60)
-        now = [1000.0]
+        now = [time.monotonic()]   # the real clock's value: the commands' own deadlines are counted on it
         self.plugin.clock = lambda: now[0]
+        self.rt.clock = self.plugin.clock   # and the runtime counts their deadlines on the same clock
         reply(self.out, self.cmd("desk", {"action": "start", "desk": "desk-a"}))
         reply(self.out, self.cmd("desk", {"action": "start", "desk": "desk-b"}))
         now[0] += 40

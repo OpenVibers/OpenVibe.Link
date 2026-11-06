@@ -305,6 +305,7 @@ class ComputerTest(unittest.TestCase):
         self.boot("ask", approval_timeout_s=10)
         t = [1000.0]
         self.plugin.clock = lambda: t[0]
+        self.rt.clock = self.plugin.clock   # the command's own deadline is counted on the same clock
         cid = self.cmd("exec", {"argv": ["echo", "late"]})
         self.plugin.pending[cid] = (self.plugin.pending[cid][0], t[0] + 10, "x")
         t[0] += 11
