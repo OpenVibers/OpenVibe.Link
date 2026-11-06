@@ -15,6 +15,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), "sdk"))
 
+import openvibe_computer  # noqa: E402
 from openvibe_computer import Computer  # noqa: E402
 from openvibe_computer.curtain import (Curtain, EnvPrintDetector, PasswordFieldDetector, SecretFileDetector,
                                        SiteDetector, looks_secret_name, looks_secret_window)  # noqa: E402
@@ -256,6 +257,26 @@ class PluginTest(unittest.TestCase):
         with self.assertRaises(Fault) as e:
             p.handle(self.cmd({"action": "curtain", "up": True}))
         self.assertEqual(e.exception.code, "not_ready")
+
+    def test_a_running_stream_beats_its_curtain_state(self):
+        old = openvibe_computer.DESK_STREAM_HEARTBEAT_S
+        openvibe_computer.DESK_STREAM_HEARTBEAT_S = 0.02
+        self.addCleanup(lambda: setattr(openvibe_computer, "DESK_STREAM_HEARTBEAT_S", old))
+        p = self.make()
+        events = []
+        p.emit_event = lambda name, **fields: events.append((name, fields))
+        p.handle(self.cmd({"action": "start", "desk": "private"}))
+        deadline = time.time() + 2
+        while sum(1 for n, f in events if n == "curtain" and f.get("heartbeat")) < 2 and time.time() < deadline:
+            time.sleep(0.01)
+        beats = [f for n, f in events if n == "curtain" and f.get("heartbeat")]
+        self.assertGreaterEqual(len(beats), 2, events)
+        self.assertTrue(beats[0]["up"], "the first beat reports the fail-closed curtain up")
+        p.handle(self.cmd({"action": "stop"}))
+        n = len(beats)
+        time.sleep(0.1)
+        self.assertEqual(len([f for x, f in events if x == "curtain" and f.get("heartbeat")]), n,
+                         "the heartbeat stops with the stream")
 
     def test_secret_read_raises_the_curtain(self):
         p = self.make()

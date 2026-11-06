@@ -62,6 +62,7 @@ func (f *fakeAPI) Revoke(context.Context, string, credentials.Secret) error {
 
 type fakePub struct {
 	paused atomic.Bool
+	muted  atomic.Bool
 	key    atomic.Value
 	state  atomic.Value
 }
@@ -71,6 +72,7 @@ func (p *fakePub) Run(ctx context.Context, src video.Source) {
 	<-ctx.Done()
 }
 func (p *fakePub) SetPaused(v bool) { p.paused.Store(v) }
+func (p *fakePub) SetMuted(v bool)  { p.muted.Store(v) }
 func (p *fakePub) SetPublishKey(k credentials.Secret) {
 	if !k.IsZero() {
 		p.key.Store(k)
@@ -325,6 +327,132 @@ func TestRepeatedRetriesDownshiftTo720p(t *testing.T) {
 	if !seen720 {
 		t.Fatalf("no 720p restart: %v", got)
 	}
+}
+
+type testClock struct{ t time.Time }
+
+func (c *testClock) now() time.Time      { return c.t }
+func (c *testClock) add(d time.Duration) { c.t = c.t.Add(d) }
+
+func waitCurtains(t *testing.T, api *fakeAPI, want int) []string {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		api.mu.Lock()
+		got := append([]string(nil), api.curtains...)
+		api.mu.Unlock()
+		if len(got) >= want {
+			return got
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("only %d curtain reports: %v", len(got), got)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func TestPluginSilentForThreeSecondsBlanksAndMutes(t *testing.T) {
+	clock := &testClock{t: time.Unix(1_800_000_000, 0)}
+	api := &fakeAPI{}
+	pub := &fakePub{}
+	a, _ := newTestAgent(t, api, AgentOptions{Client: api, Now: clock.now, Plugin: "computer",
+		CurtainLostAfter: 2 * time.Second, CurtainClearHold: 2 * time.Second,
+		CurtainFrames: []video.Sample{{Data: []byte("CURTAIN"), Key: true}}, CurtainJPEG: blackJPEG(16, 9)})
+	a.pub = pub
+	clock.add(3 * time.Second)
+	a.watchCurtain()
+	if !a.curtainNow2() {
+		t.Fatal("a silent plugin did not raise the curtain")
+	}
+	if !pub.muted.Load() {
+		t.Fatal("a silent plugin did not mute the audio")
+	}
+	if !a.ds.isUp() {
+		t.Fatal("the curtain gate is not up")
+	}
+	got := waitCurtains(t, api, 1)
+	if got[0] != "detector" {
+		t.Fatalf("reported reason %q, want detector", got[0])
+	}
+}
+
+func TestPluginExitRaisesAtOnceAndRefusesADown(t *testing.T) {
+	clock := &testClock{t: time.Unix(1_800_000_000, 0)}
+	api := &fakeAPI{}
+	pub := &fakePub{}
+	a, _ := newTestAgent(t, api, AgentOptions{Client: api, Now: clock.now, Plugin: "computer",
+		CurtainLostAfter: 2 * time.Second, CurtainClearHold: 2 * time.Second,
+		CurtainFrames: []video.Sample{{Data: []byte("CURTAIN"), Key: true}}, CurtainJPEG: blackJPEG(16, 9)})
+	a.pub = pub
+	a.PluginLost()
+	if !a.curtainNow2() || !pub.muted.Load() {
+		t.Fatal("PluginLost did not blank and mute at once")
+	}
+	// The owner's Curtain now must not uncover the desk while the plugin is gone.
+	a.SetCurtain(false, "manual")
+	if !a.curtainNow2() {
+		t.Fatal("a down was accepted while the plugin is lost")
+	}
+}
+
+func TestPluginBackClearsAfterTwoSeconds(t *testing.T) {
+	clock := &testClock{t: time.Unix(1_800_000_000, 0)}
+	api := &fakeAPI{}
+	pub := &fakePub{}
+	a, _ := newTestAgent(t, api, AgentOptions{Client: api, Now: clock.now, Plugin: "computer",
+		CurtainLostAfter: 2 * time.Second, CurtainClearHold: 2 * time.Second,
+		CurtainFrames: []video.Sample{{Data: []byte("CURTAIN"), Key: true}}, CurtainJPEG: blackJPEG(16, 9)})
+	a.pub = pub
+	a.PluginLost()
+	waitCurtains(t, api, 1)
+	clock.add(3 * time.Second)
+	a.PluginBack()
+	a.ObserveCurtain(false, "detector")
+	// The plugin keeps beating once a second; each clear report refreshes its liveness without resetting the hold.
+	clock.add(time.Second)
+	a.ObserveCurtain(false, "detector")
+	clock.add(900 * time.Millisecond)
+	a.ObserveCurtain(false, "detector")
+	a.watchCurtain()
+	if !a.curtainNow2() {
+		t.Fatal("the curtain came down before two clear seconds")
+	}
+	clock.add(150 * time.Millisecond)
+	a.ObserveCurtain(false, "detector")
+	a.watchCurtain()
+	if a.curtainNow2() {
+		t.Fatal("the curtain did not come down after two clear seconds")
+	}
+	if pub.muted.Load() {
+		t.Fatal("the audio stayed muted after the curtain came down")
+	}
+	got := waitCurtains(t, api, 2)
+	if got[len(got)-1] != "detector" {
+		t.Fatalf("last reason %q", got[len(got)-1])
+	}
+}
+
+func TestAPluginThatIsBackButReportsUpKeepsTheCurtainUp(t *testing.T) {
+	clock := &testClock{t: time.Unix(1_800_000_000, 0)}
+	api := &fakeAPI{}
+	a, _ := newTestAgent(t, api, AgentOptions{Client: api, Now: clock.now, Plugin: "computer",
+		CurtainLostAfter: 2 * time.Second, CurtainClearHold: 2 * time.Second,
+		CurtainFrames: []video.Sample{{Data: []byte("CURTAIN"), Key: true}}, CurtainJPEG: blackJPEG(16, 9)})
+	a.PluginLost()
+	clock.add(5 * time.Second)
+	a.PluginBack()
+	a.ObserveCurtain(true, "password_field")
+	clock.add(5 * time.Second)
+	a.watchCurtain()
+	if !a.curtainNow2() {
+		t.Fatal("a clear hold lowered a curtain the plugin says is up")
+	}
+}
+
+func (a *Agent) curtainNow2() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.curtain
 }
 
 func TestCurtainUpBeforeRunBlanksTheFirstFrames(t *testing.T) {

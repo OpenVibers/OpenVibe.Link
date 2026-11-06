@@ -76,10 +76,16 @@ The plugin's detectors answer `None` (clear), a reason (raise), or raise (fail c
 * `detector` — any detector failed or returned something it could not decide.
 
 The curtain starts **up** and only comes down after every detector has been clear for 2 s, or when the owner lowers
-it. While it is up the core feeds the publisher a pre-encoded "Private screen" frame instead of the capture, and
-reports `POST /api/streams/agent/:id/curtain {up, reason}`; Live pauses every viewer's consumer as well. Viewers never
-see the reason. `desk_stream_detectors` in the plugin config can disable a detector a deployment genuinely cannot run
-(a deliberate choice, not a silent failure).
+it. While it is up the core feeds the publisher a pre-encoded "Private screen" frame instead of the capture, mutes the
+audio track, and reports `POST /api/streams/agent/:id/curtain {up, reason}`; Live pauses every viewer's consumer as
+well. Viewers never see the reason. `desk_stream_detectors` in the plugin config can disable a detector a deployment
+genuinely cannot run (a deliberate choice, not a silent failure).
+
+**A lost plugin is a curtain, not a gap.** The plugin sends its curtain state every second. If the computer plugin
+exits, crashes, is not ready (the supervisor's state), or goes silent for two seconds while a stream is up, the core
+raises the curtain itself at once (reason `detector`), blanks the video and mutes the audio; a "curtain down" command
+is refused while the plugin is lost. It comes down only after the plugin is back **and** has reported clear for two
+seconds, so a restarted plugin's first "clear" cannot uncover the desk.
 
 ## The latency probe and the viewer
 
@@ -120,5 +126,4 @@ JPEG frames reaching the FIFO, and the plugin's start/status/stop/refuse path.
   next step.
 * The AT-SPI detector sees the accessibility stack of the Node's session; on a private Xvfb desk the desk's own
   `at-spi2-registryd` must be running for it to see the desk's apps.
-* If the computer plugin crashes while a stream runs, the core should raise the curtain; that is a follow-up, as is
-  simulcast (S2) and the owner's page (Live's part).
+* Simulcast (S2) and the owner's page (Live's part) are the next pieces.

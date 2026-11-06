@@ -183,7 +183,7 @@ func (n *Node) deskStreamCommand(c protocol.Command, entry *safety.Entry, receiv
 		}
 		agent, err := stream.NewAgent(stream.AgentOptions{
 			Client: client, ID: created.Stream.ID, Publish: created.Publish, Capture: got.Capture, Encode: enc,
-			FFmpeg: n.opt.Config.Video.FFmpeg, Log: n.log,
+			FFmpeg: n.opt.Config.Video.FFmpeg, Log: n.log, Plugin: p.Name(),
 			Snapshot: n.deskSnapshotFunc(p, v.Desk),
 		})
 		if err != nil {
@@ -327,5 +327,37 @@ func (n *Node) deskCurtainEvent(plugin string, data map[string]any) {
 	if reason == "" {
 		reason = "detector"
 	}
-	a.SetCurtain(up, reason)
+	a.ObserveCurtain(up, reason)
+}
+
+// deskPluginState is the supervisor's state for the plugin that owns the desk's detectors: anything but ready is a
+// lost plugin, so the curtain goes up and the audio mutes at once (fail closed).
+func (n *Node) deskPluginState(o plugins.Output) {
+	a := n.currentDeskStream()
+	if a == nil || a.PluginName() == "" || a.PluginName() != o.Plugin {
+		return
+	}
+	state, _ := o.Data["state"].(string)
+	if state == plugins.StateReady {
+		a.PluginBack()
+		return
+	}
+	a.PluginLost()
+}
+
+// deskPluginFault is the plugin going down between state reports (plugin_down): the same fail-closed curtain.
+func (n *Node) deskPluginFault(o plugins.Output) {
+	a := n.currentDeskStream()
+	if a == nil || a.PluginName() != o.Plugin {
+		return
+	}
+	if code, _ := o.Data["fault_code"].(string); code == protocol.FaultPluginDown {
+		a.PluginLost()
+	}
+}
+
+func (n *Node) currentDeskStream() *stream.Agent {
+	n.deskMu.Lock()
+	defer n.deskMu.Unlock()
+	return n.deskStream
 }

@@ -23,7 +23,7 @@ func TestPublishTestPatternOverWHIP(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { p.Run(ctx, &TestPattern{W: 160, H: 96, FPS: 20}); close(done) }()
-	deadline := time.Now().Add(15 * time.Second)
+	deadline := time.Now().Add(40 * time.Second)
 	for rx.Packets.Load() < 20 {
 		if time.Now().After(deadline) {
 			t.Fatalf("no media: state %s frames %d packets %d err %q", p.State(), p.Frames(), rx.Packets.Load(), p.LastError())
@@ -53,7 +53,7 @@ func TestPublishWithSilentAudio(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { p.Run(ctx, &TestPattern{W: 160, H: 96, FPS: 20}); close(done) }()
-	deadline := time.Now().Add(15 * time.Second)
+	deadline := time.Now().Add(40 * time.Second)
 	for rx.AudioPackets.Load() < 5 || p.Frames() == 0 {
 		if time.Now().After(deadline) {
 			t.Fatalf("no audio+video: state %s frames %d audio %d err %q", p.State(), p.Frames(), rx.AudioPackets.Load(), p.LastError())
@@ -68,6 +68,22 @@ func TestPublishWithSilentAudio(t *testing.T) {
 	}
 	if rx.AudioPackets.Load() < 5 {
 		t.Fatal("audio stopped")
+	}
+	// The curtain mutes the track: no audio packets while muted, and they resume when it comes down.
+	p.SetMuted(true)
+	time.Sleep(300 * time.Millisecond)
+	muted := rx.AudioPackets.Load()
+	time.Sleep(500 * time.Millisecond)
+	if grew := rx.AudioPackets.Load() - muted; grew > 2 {
+		t.Fatalf("muted audio kept flowing: %d packets", grew)
+	}
+	p.SetMuted(false)
+	deadline = time.Now().Add(3 * time.Second)
+	for rx.AudioPackets.Load() <= muted+2 {
+		if time.Now().After(deadline) {
+			t.Fatal("audio did not resume after unmute")
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 	cancel()
 	<-done

@@ -64,6 +64,7 @@ func (c *countingPub) Run(ctx context.Context, s video.Source) {
 	_ = s.Run(ctx, func(video.Sample) { c.frames++ })
 }
 func (c *countingPub) SetPaused(bool)                   {}
+func (c *countingPub) SetMuted(bool)                    {}
 func (c *countingPub) SetPublishKey(credentials.Secret) {}
 func (c *countingPub) State() string                    { return video.StateLive }
 func (c *countingPub) Frames() int64                    { return c.frames }

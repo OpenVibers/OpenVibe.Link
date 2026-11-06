@@ -25,6 +25,7 @@ type liveAPI interface {
 type publisher interface {
 	Run(context.Context, video.Source)
 	SetPaused(bool)
+	SetMuted(bool)
 	SetPublishKey(credentials.Secret)
 	State() string
 	Frames() int64
@@ -53,6 +54,13 @@ type AgentOptions struct {
 	SnapshotEvery time.Duration // default 5 s
 	RenewAfter    time.Duration // default 3 h (the design's renewal point)
 	Now           func() time.Time
+	// Plugin is the computer plugin that owns the desk's detectors. Its exit or silence raises the curtain; the
+	// watchdog runs every WatchEvery, a loss is declared after CurtainLostAfter, and clear states must last
+	// CurtainClearHold before the curtain comes down.
+	Plugin           string
+	WatchEvery       time.Duration
+	CurtainLostAfter time.Duration
+	CurtainClearHold time.Duration
 
 	// NewPublisher and NewSource are for tests; production uses video.NewPublisher and FFmpegSource.
 	NewPublisher func(video.Options) publisher
@@ -80,6 +88,11 @@ type Agent struct {
 	expiresAt   time.Time
 	retries     int
 	downshifted bool
+	// The plugin's curtain state: when it was last heard, whether the supervisor says it is down, and since when it
+	// has been reporting clear while the curtain is up.
+	lastPluginAt time.Time
+	pluginDown   bool
+	clearSince   time.Time
 
 	snapMu sync.Mutex
 }
@@ -107,6 +120,15 @@ func NewAgent(o AgentOptions) (*Agent, error) {
 	if o.RenewAfter <= 0 {
 		o.RenewAfter = 3 * time.Hour
 	}
+	if o.WatchEvery <= 0 {
+		o.WatchEvery = 250 * time.Millisecond
+	}
+	if o.CurtainLostAfter <= 0 {
+		o.CurtainLostAfter = 2 * time.Second
+	}
+	if o.CurtainClearHold <= 0 {
+		o.CurtainClearHold = 2 * time.Second
+	}
 	if o.Now == nil {
 		o.Now = time.Now
 	}
@@ -122,7 +144,7 @@ func NewAgent(o AgentOptions) (*Agent, error) {
 		}
 	}
 	a := &Agent{opt: o, log: o.Log.With("component", "desk-stream"), ticket: o.Publish.Ticket, encode: true,
-		expiresAt: o.Publish.ExpiresAt}
+		expiresAt: o.Publish.ExpiresAt, lastPluginAt: o.Now()}
 	a.ds = &deskSource{a: a}
 	return a, nil
 }
@@ -154,7 +176,11 @@ func (a *Agent) Run(parent context.Context) error {
 		Audio: true, UserAgent: "openvibe-node/stream", Log: a.opt.Log})
 	a.mu.Lock()
 	a.pub = pub
+	curtainUp := a.curtain
 	a.mu.Unlock()
+	if curtainUp {
+		pub.SetMuted(true)
+	}
 	defer cancel()
 	go pub.Run(ctx, a.ds)
 
@@ -164,6 +190,8 @@ func (a *Agent) Run(parent context.Context) error {
 	defer snap.Stop()
 	renew := time.NewTimer(a.renewDelay())
 	defer renew.Stop()
+	watch := time.NewTicker(a.opt.WatchEvery)
+	defer watch.Stop()
 
 	a.log.Info("desk stream started", "stream", a.opt.ID, "capture", a.opt.Capture.Kind)
 	a.postSnapshot(ctx) // the card has a face before the first state poll
@@ -184,6 +212,8 @@ func (a *Agent) Run(parent context.Context) error {
 			if !a.encodeNow() {
 				a.postSnapshot(ctx)
 			}
+		case <-watch.C:
+			a.watchCurtain()
 		}
 	}
 }
@@ -323,23 +353,103 @@ func (a *Agent) SetEncode(on bool) {
 	a.log.Info("desk stream encoding changed", "stream", a.opt.ID, "encode", on)
 }
 
-// SetCurtain raises or lowers the desk's privacy screen. Raising blanks every frame and reports it to Live; lowering
-// restarts the capture so the first frame a viewer sees is a keyframe.
+// SetCurtain is the owner's own switch (the curtain command, or the page's Curtain now): it takes effect at once,
+// except that it never lowers a curtain while the plugin that owns the detectors is lost or silent (fail closed).
 func (a *Agent) SetCurtain(up bool, reason string) {
+	if !up && a.pluginLost() {
+		a.log.Warn("desk stream curtain down refused: the computer plugin is lost or silent", "stream", a.opt.ID)
+		return
+	}
+	a.applyCurtain(up, reason)
+}
+
+// ObserveCurtain is one curtain state from the desk plugin: a change, or its one-second heartbeat. A clear state only
+// lowers the curtain after the plugin has kept reporting it for CurtainClearHold, so a plugin that has just come back
+// cannot uncover the desk with its first "clear".
+func (a *Agent) ObserveCurtain(up bool, reason string) {
+	now := a.opt.Now()
+	a.mu.Lock()
+	a.lastPluginAt = now
+	a.pluginDown = false
+	if up {
+		a.clearSince = time.Time{}
+	} else if a.curtain && a.clearSince.IsZero() {
+		a.clearSince = now
+	}
+	a.mu.Unlock()
+	if up {
+		a.applyCurtain(true, reason)
+	}
+}
+
+// PluginLost is the supervisor saying the computer plugin is not ready (it exited, crashed or faulted): the picture
+// blanks and the audio mutes now, without waiting for the heartbeat to go quiet.
+func (a *Agent) PluginLost() {
+	a.mu.Lock()
+	a.pluginDown = true
+	a.clearSince = time.Time{}
+	a.mu.Unlock()
+	a.applyCurtain(true, "detector")
+}
+
+// PluginBack says the plugin is ready again. The curtain stays up until its clear states have lasted the hold.
+func (a *Agent) PluginBack() {
+	a.mu.Lock()
+	a.pluginDown = false
+	a.lastPluginAt = a.opt.Now()
+	a.mu.Unlock()
+}
+
+// PluginName is the computer plugin the stream depends on (the supervisor's state changes are matched on it).
+func (a *Agent) PluginName() string { return a.opt.Plugin }
+
+func (a *Agent) pluginLost() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.pluginDown || a.opt.Now().Sub(a.lastPluginAt) > a.opt.CurtainLostAfter
+}
+
+// watchCurtain is the fail-closed watchdog: a plugin that is down, or silent for CurtainLostAfter, blanks the desk at
+// once; once it is back, only CurtainClearHold of clear states brings the curtain down.
+func (a *Agent) watchCurtain() {
+	now := a.opt.Now()
+	a.mu.Lock()
+	lost := a.pluginDown || now.Sub(a.lastPluginAt) > a.opt.CurtainLostAfter
+	up := a.curtain
+	clear := up && !a.clearSince.IsZero() && now.Sub(a.clearSince) >= a.opt.CurtainClearHold
+	a.mu.Unlock()
+	if lost {
+		a.mu.Lock()
+		a.clearSince = time.Time{}
+		a.mu.Unlock()
+		a.applyCurtain(true, "detector")
+		return
+	}
+	if clear {
+		a.applyCurtain(false, "detector")
+	}
+}
+
+// applyCurtain changes the picture and the audio and tells Live. It is idempotent, so the watchdog can call it every
+// tick.
+func (a *Agent) applyCurtain(up bool, reason string) {
 	a.mu.Lock()
 	if a.curtain == up {
+		if up && reason != "" && validReason(reason) && reason != a.reason {
+			a.reason = reason
+		}
 		a.mu.Unlock()
 		return
 	}
 	a.curtain = up
-	if up {
-		a.reason = reasonOr(reason)
-	} else {
-		a.reason = reasonOr(reason)
-	}
+	a.reason = reasonOr(reason)
 	r := a.reason
+	pub := a.pub
 	a.mu.Unlock()
 	a.ds.curtainChanged(up)
+	if pub != nil {
+		pub.SetMuted(up)
+	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

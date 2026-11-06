@@ -123,6 +123,9 @@ from .egress import EgressProxy, not_public
 from .stream import PageScreencast, capture_kinds, desktop_capture
 from .files import Files, Handles
 
+# The desk stream's curtain heartbeat: the core declares the curtain lost if it hears nothing for two seconds, so this
+# must stay well under that (and the test patches it to run fast).
+DESK_STREAM_HEARTBEAT_S = 1.0
 LEVELS = ("observe", "ask", "trusted", "full")
 RANK = {name: i for i, name in enumerate(LEVELS)}
 READ_OPS = frozenset({"list", "stat", "read"})
@@ -2395,10 +2398,25 @@ class Computer(Plugin):
         st = {"sid": os.urandom(8).hex(), "desk": desk, "capture": capture, "screencast": screencast,
               "curtain": curtain, "hotkey": hotkey, "detectors": detectors, "allow_sites": allow_sites,
               "since": self.clock()}
+        stop = threading.Event()
+        st["heartbeat"], st["heartbeat_thread"] = stop, threading.Thread(
+            target=self._desk_stream_heartbeat, args=(st, stop), name="computer-curtain-beat", daemon=True)
         with self.desk_stream_mu:
             self.desk_stream = st
+        st["heartbeat_thread"].start()
         return {"streaming": True, "sid": st["sid"], "capture": capture, "curtain": curtain.snapshot(),
                 "detectors": sorted(detectors), "hotkey": self.desk_stream_hotkey}
+
+    def _desk_stream_heartbeat(self, st, stop):
+        """Tell the core the curtain state every second. Its watchdog blanks the desk if this goes quiet for two
+        seconds, so a hung plugin cannot leave a picture up; a clear state still has to last two seconds there."""
+        while not stop.is_set():
+            snap = st["curtain"].snapshot()
+            try:
+                self.emit_event("curtain", up=bool(snap["up"]), reason=snap["reason"] or "detector", heartbeat=True)
+            except Exception:
+                pass
+            stop.wait(DESK_STREAM_HEARTBEAT_S)
 
     def _desk_stream_status(self):
         with self.desk_stream_mu:
@@ -2420,6 +2438,12 @@ class Computer(Plugin):
         cast = st.get("screencast")
         if cast is not None:
             cast.stop()
+        beat = st.get("heartbeat")
+        if beat is not None:
+            beat.set()
+        thread = st.get("heartbeat_thread")
+        if thread is not None and thread is not threading.current_thread() and thread.is_alive():
+            thread.join(1.0)
         st["hotkey"].stop()
         st["curtain"].stop()
         if self._sigusr1_old is not None:

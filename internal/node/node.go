@@ -1028,6 +1028,12 @@ func (n *Node) output(o plugins.Output) {
 			n.tellVoice(n.mgr.Get(o.Plugin))
 			return
 		}
+		if name == "curtain" {
+			n.deskCurtainEvent(o.Plugin, o.Data)
+			if heartbeat, _ := o.Data["heartbeat"].(bool); heartbeat {
+				return // the stream's one-second liveness beat, not an event for the log or Bot
+			}
+		}
 		fields := map[string]any{}
 		for k, v := range o.Data {
 			if k != "name" {
@@ -1041,9 +1047,6 @@ func (n *Node) output(o plugins.Output) {
 		if name == "screen_stream_ended" {
 			sid, _ := o.Data["sid"].(string)
 			n.screenEnded(o.Plugin, sid)
-		}
-		if name == "curtain" {
-			n.deskCurtainEvent(o.Plugin, o.Data)
 		}
 		n.trackApproval(o.Plugin, name, o.Data, o.At, o.Approval)
 		n.mu.Lock()
@@ -1074,7 +1077,11 @@ func (n *Node) output(o plugins.Output) {
 		if _, err := n.latch.SetLocalWith(reason); err != nil {
 			n.log.Error("a plugin latched the local stop, but the latch could not be saved", "plugin", o.Plugin, "err", err)
 		}
-	case plugins.OutFault, plugins.OutState:
+	case plugins.OutState:
+		n.deskPluginState(o)
+		n.sendStatus()
+	case plugins.OutFault:
+		n.deskPluginFault(o)
 		n.sendStatus()
 	}
 }

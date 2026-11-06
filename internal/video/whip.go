@@ -65,6 +65,7 @@ type Publisher struct {
 	needK bool
 	src   Source
 	pause atomic.Bool
+	mute  atomic.Bool
 	key   atomic.Value // credentials.Secret: the publish ticket, replaceable by renewal
 }
 
@@ -96,6 +97,10 @@ func (p *Publisher) LastError() string { return p.lastEr.Load().(string) }
 // SetPaused stops sending video samples while keeping the WHIP session and its audio track up. Snapshot mode uses it:
 // Live asked for no encoding, but the stream must not look dropped.
 func (p *Publisher) SetPaused(paused bool) { p.pause.Store(paused) }
+
+// SetMuted stops the audio track's packets. The curtain calls it: a desk whose screen is blanked must not carry the
+// desk's sound either (S1's track is silent, but S4's voice uses the same switch).
+func (p *Publisher) SetMuted(muted bool) { p.mute.Store(muted) }
 
 // SetPublishKey replaces the ticket a renewed stream reconnects with. It is never logged.
 func (p *Publisher) SetPublishKey(k credentials.Secret) {
@@ -175,6 +180,9 @@ func (p *Publisher) sendSilence(ctx context.Context, track *webrtc.TrackLocalSta
 		case <-ctx.Done():
 			return
 		case <-tick.C:
+			if p.mute.Load() {
+				continue
+			}
 			_ = track.WriteSample(media.Sample{Data: OpusSilence, Duration: 20 * time.Millisecond})
 		}
 	}
