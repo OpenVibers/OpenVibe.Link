@@ -14,8 +14,9 @@ after it has shown you what would leave the machine and after you have said
 yes. The store is yours: it is sealed, only your own token opens it, and
 nothing but the items themselves is sent.
 
-This page is stage M1 of OpenVibe Memory (the readers) and stage M2a (the
-upload). The page that shows your memory comes later.
+This page is stage M1 of OpenVibe Memory (the readers), stage M2a (the
+upload) and stage M4 (the sync back into the tools). The page that shows your
+memory comes later.
 
 ## The commands
 
@@ -23,6 +24,7 @@ upload). The page that shows your memory comes later.
 openvibe-node memory scan [--tools a,b] [--project DIR …] [--json]
 openvibe-node memory upload [--tools a,b] [--project DIR …] [--dry-run] [--yes]
 openvibe-node memory status [--show]
+openvibe-node memory sync [--tools a,b] [--project DIR …] [--dry-run] [--yes]
 ```
 
 | Flag | What it does |
@@ -36,6 +38,10 @@ openvibe-node memory status [--show]
 | `--endpoint URL` | the memory store (default `https://ai.openvibe.services`) |
 | `--token-env NAME` | the variable the access token is read from (default `OPENVIBE_TOKEN`) |
 | `--user-home DIR` | read this directory as the person's home (default: yours) |
+| `--tools a,b` | sync: turn these tools on |
+| `--disable a,b` | sync: turn these tools off and remove their blocks |
+| `--undo` | sync: remove every block this command wrote and turn the tools off |
+| `--state FILE` | sync: the opt-in file (default: the Node's state directory) |
 
 Without `--project` only the user-level files are read: the files that hold
 your own preferences across every project. With `--project` the project files
@@ -346,3 +352,82 @@ upload:
 - the request that leaves holds no absolute path, no hostname and no name of
   the person;
 - the token is never in an error message.
+
+## The sync: back into the tools
+
+```sh
+openvibe-node memory sync [--tools a,b] [--project DIR …] [--dry-run] [--yes]
+openvibe-node memory sync --disable a,b
+openvibe-node memory sync --undo
+```
+
+The sync is the other direction: it writes **your own** profile and the
+project's rules from your memory store into the places the coding tools
+already read. It is **off for every tool** until you turn that tool on:
+
+| Tool | On with | Files it writes |
+|---|---|---|
+| AGENTS.md | `--tools agents` | `~/.codex/AGENTS.md`, the project's `AGENTS.md` |
+| Claude Code | `--tools claude-code` | `~/.claude/CLAUDE.md`, the project's `CLAUDE.md`: a thin `@` import of the AGENTS.md block, not a copy |
+| Gemini CLI | `--tools gemini` | `~/.gemini/GEMINI.md`, the project's `GEMINI.md` |
+| Cursor | `--tools cursor` | the project's `.cursor/rules/openvibe-memory.mdc` |
+| GitHub Copilot | `--tools copilot` | the project's `.github/copilot-instructions.md` |
+
+`--disable a,b` turns those tools off and takes their blocks out again.
+`--undo` does that for every tool that is on, also when `--project` is not
+named again: the state file remembers every file it wrote.
+
+### One marked block, never your text
+
+Every write is inside one block, and the text outside it is not touched:
+
+```markdown
+<!-- openvibe-memory:start -->
+<!-- Managed by OpenVibe Node from your OpenVibe Memory. … -->
+## About you
+
+…the cached profile…
+
+## Project rules
+
+- …an active project_rule item…
+<!-- openvibe-memory:end -->
+```
+
+- A file that already has the block has only that block replaced.
+- A file with two blocks, or half a block, is refused and left alone.
+- The memory text is scrubbed of the markers before it is written, so an item
+  cannot open or close a block.
+- `--undo` removes the block and the separator the Node added before it; a file
+  that the Node created (the Cursor rule) is removed again. The state file
+  records the separator so the hand-written part is byte-identical afterwards.
+
+### The diff gate
+
+The first time the Node writes a file it shows a diff and asks. Anything but
+`y` or `yes` leaves the file as it was. `--yes` answers for you, for scripted
+setups; `--dry-run` shows every diff and writes nothing. A later sync of a file
+that was already confirmed shows the diff and writes it without asking again.
+
+Project files may be shared or committed: the command says so before it writes
+one, and the block says so too. Turn the tool off with `--disable` if that is
+not what you want.
+
+### Where the content comes from
+
+The sync uses the same person token as the upload (`OPENVIBE_TOKEN`, or
+`--token-env`), never a copy held by the Node. It reads:
+
+- `GET /api/v1/memory/profile?scope=user`: the cached profile of you;
+- `GET /api/v1/memory/profile?scope=project:<slug>` and
+  `GET /api/v1/memory/items?scope=project:<slug>`: the project's profile and its
+  active `project_rule` items.
+
+The project slug is the same slug the upload uses: the folder's name,
+lowercased and slugged, never an absolute path. Nothing is written when the
+store cannot be read; the command fails before it touches a file.
+
+The opt-in state lives in the Node's state directory
+(`memory-sync.json`, mode 0600). It holds the tools that are on, the paths that
+were written and whether the first diff was confirmed: paths and choices, never
+the memory text.

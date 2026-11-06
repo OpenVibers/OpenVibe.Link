@@ -298,6 +298,39 @@ func (c *Client) postBatch(ctx context.Context, chunk []Item) (BatchResult, erro
 	return out, nil
 }
 
+// Profile is the person's cached profile of one scope: the small summary the
+// store builds from their active notes.
+type Profile struct {
+	// Scope is `user` or `project:<slug>`.
+	Scope string `json:"scope"`
+	// Text is the profile itself.
+	Text string `json:"text"`
+	// BuiltAt is when the store built it, RFC 3339.
+	BuiltAt string `json:"built_at"`
+}
+
+// Profile gives the person's own profile of one scope.
+func (c *Client) Profile(ctx context.Context, scope string) (Profile, error) {
+	path := "/api/v1/memory/profile"
+	if scope != "" {
+		path += "?scope=" + url.QueryEscape(scope)
+	}
+	raw, status, err := c.do(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return Profile{}, err
+	}
+	if status/100 != 2 {
+		return Profile{}, c.apiError(status, raw)
+	}
+	var res struct {
+		Profile Profile `json:"profile"`
+	}
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return Profile{}, errors.New("the memory store answered something that is not JSON")
+	}
+	return res.Profile, nil
+}
+
 // List gives the person's own items.
 func (c *Client) List(ctx context.Context, scope, query string) (ListResult, error) {
 	path := "/api/v1/memory/items"
