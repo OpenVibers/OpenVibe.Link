@@ -562,21 +562,20 @@ class Computer(Plugin):
 
     @staticmethod
     def _kill_group(pid):
+        """Unix: end a whole exec session by its group (Windows has no groups to kill; the Popen handle does it)."""
+        if not hasattr(os, "killpg"):
+            return
         try:
-            if hasattr(os, "killpg"):
-                os.killpg(pid, signal.SIGKILL)
-            else:
-                os.kill(pid, signal.SIGKILL)
+            os.killpg(pid, signal.SIGKILL)
         except (OSError, ProcessLookupError):
             pass
 
     @staticmethod
     def _group_alive(pid):
+        if not hasattr(os, "killpg"):
+            return False
         try:
-            if hasattr(os, "killpg"):
-                os.killpg(pid, 0)
-            else:
-                os.kill(pid, 0)
+            os.killpg(pid, 0)
             return True
         except ProcessLookupError:
             return False
@@ -1530,6 +1529,13 @@ class Computer(Plugin):
         if sys.platform.startswith("linux"):
             _set_no_new_privs()
 
+    @staticmethod
+    def _session_options():
+        """A new session/group for an exec'd program (Windows: its own process group, no preexec_fn there)."""
+        if os.name == "nt":
+            return {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)}
+        return {"preexec_fn": Computer._child_preexec}
+
     def _exec_op(self, cmd, v, level):
         argv = v.get("argv")
         if not isinstance(argv, list) or not argv or len(argv) > MAX_ARGS or \
@@ -1579,7 +1585,7 @@ class Computer(Plugin):
             raise Fault("not_ready", "%d programs already run on this desk: stop the desk, or close one there" % len(running))
         try:
             proc = self._spawn(argv, cwd=cwd, env=self._child_env(env), stdin=subprocess.DEVNULL,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=self._child_preexec)
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **self._session_options())
         except FileNotFoundError:
             raise Fault("bad_value", "no program %s on this machine" % argv[0])
         except PermissionError:
@@ -1600,8 +1606,8 @@ class Computer(Plugin):
         started = self.clock()
         try:
             proc = self._spawn(argv, cwd=cwd, stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
-                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn=self._child_preexec,
-                               env=self._child_env(env))
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=self._child_env(env),
+                               **self._session_options())
         except FileNotFoundError:
             raise Fault("bad_value", "no program %s on this machine" % argv[0])
         except PermissionError:
