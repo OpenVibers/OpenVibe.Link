@@ -15,6 +15,7 @@ import (
 const memoryUsage = "openvibe-node memory scan [--tools a,b] [--project DIR] [--json]\n" +
 	"openvibe-node memory upload [--tools a,b] [--project DIR …] [--dry-run] [--yes]\n" +
 	"openvibe-node memory status [--show]\n" +
+	"openvibe-node memory sync [--tools a,b] [--project DIR …] [--dry-run] [--yes] | --disable a,b | --undo\n" +
 	"\n" +
 	"  scan    reads the memory files of the coding tools on this machine and\n" +
 	"          prints what it found. It is read-only and local: nothing is written\n" +
@@ -23,6 +24,10 @@ const memoryUsage = "openvibe-node memory scan [--tools a,b] [--project DIR] [--
 	"  upload  sends the items to your own memory store (OpenVibe.AI). It shows\n" +
 	"          what would leave the machine and asks before it sends anything.\n" +
 	"  status  shows what your own memory store holds.\n" +
+	"  sync    writes your profile and project rules into AGENTS.md, a thin\n" +
+	"          CLAUDE.md, GEMINI.md, Cursor rules and Copilot instructions,\n" +
+	"          inside one marked block per file, after showing the diff. Each\n" +
+	"          tool is off until you turn it on with --tools.\n" +
 	"\n" +
 	"  --tools a,b      only these adapters (claude-code, agents, gemini, cursor,\n" +
 	"                   copilot, windsurf, cline, roo, kiro, continue, aider,\n" +
@@ -60,6 +65,8 @@ func cmdMemory(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdMemoryUpload(args[1:], stdin, stdout, stderr)
 	case "status":
 		return cmdMemoryStatus(args[1:], stdout, stderr)
+	case "sync":
+		return cmdMemorySync(args[1:], stdin, stdout, stderr)
 	case "scan":
 	default:
 		fmt.Fprint(stderr, memoryUsage)

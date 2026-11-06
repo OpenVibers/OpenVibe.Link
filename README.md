@@ -39,6 +39,7 @@ openvibe-node approvals  # the computer plugin at level ask: what waits; approve
 openvibe-node tray       # the same in your notification area, with Approve/Deny notifications (Linux, Windows)
 openvibe-node memory scan  # what your coding tools remember: read-only, local, secrets removed
 openvibe-node memory upload  # send what they remember to your own memory store, after you say yes
+openvibe-node memory sync  # write your profile and rules back into the tools, one marked block per file, opt-in per tool
 ```
 
 ## What is in here
