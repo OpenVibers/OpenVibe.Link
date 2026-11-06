@@ -105,7 +105,7 @@ func TestFirstRunSuccessReportsOneEventPerStep(t *testing.T) {
 	if events[2].Fields["ok"] != true {
 		t.Fatalf("self-check %+v", events[2])
 	}
-	if events[3].Fields["cpus"] == nil || events[3].Fields["disk_total_bytes"] == nil {
+	if events[3].Fields["cpus"] == nil || (runtime.GOOS == "linux" && events[3].Fields["disk_total_bytes"] == nil) {
 		t.Fatalf("first job has no machine figures: %+v", events[3])
 	}
 	// No personal data, path, username or IP in any event.

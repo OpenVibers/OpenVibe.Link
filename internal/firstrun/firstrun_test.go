@@ -30,7 +30,7 @@ func TestReportRoundTrip(t *testing.T) {
 	if err := r.Save(path); err != nil {
 		t.Fatal(err)
 	}
-	if st, _ := os.Stat(path); st.Mode().Perm() != 0o600 {
+	if st, _ := os.Stat(path); runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Fatalf("mode %o", st.Mode().Perm())
 	}
 	got, err := Load(path)
