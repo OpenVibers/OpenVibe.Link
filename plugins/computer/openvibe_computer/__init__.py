@@ -2383,7 +2383,8 @@ class Computer(Plugin):
                                           ffmpeg=self.which("ffmpeg") or "ffmpeg")
             except ValueError as e:
                 raise Fault("unsupported", str(e))
-        detectors = self._desk_stream_detectors(allow_sites, env if not browser_desk else None)
+        current_url = (lambda: browser.last_navigation) if browser_desk else None
+        detectors = self._desk_stream_detectors(allow_sites, env if not browser_desk else None, current_url)
         curtain = Curtain(detectors=list(detectors.values()), on_change=self._desk_stream_curtain_changed)
         # Fail closed: the picture starts blank and only clears after every detector has been clear for two seconds.
         curtain.raise_("detector")
@@ -2430,7 +2431,7 @@ class Computer(Plugin):
         self.log("desk stream ended (%s)", reason)
         return True
 
-    def _desk_stream_detectors(self, allow_sites, env=None):
+    def _desk_stream_detectors(self, allow_sites, env=None, current_url=None):
         wanted = self.desk_stream_detectors or ("password_field", "secret_file", "env_print", "site")
         out = {}
         if "password_field" in wanted:
@@ -2440,7 +2441,7 @@ class Computer(Plugin):
         if "env_print" in wanted:
             out["env_print"] = EnvPrintDetector()
         if "site" in wanted and allow_sites:
-            out["site"] = SiteDetector(allow_sites)
+            out["site"] = SiteDetector(allow_sites, current_url=current_url)
         return out
 
     def _desk_stream_curtain_changed(self, up, reason):

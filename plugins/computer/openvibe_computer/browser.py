@@ -227,6 +227,7 @@ class Browser:
         self.behind = []           # (target, session) of the pages it was opened from, newest last
         self.tab_events = []       # Target.targetCreated / targetDestroyed seen since the last _follow
         self.tab_change = None     # "opened" or "closed" since the last _mark: said in the action's receipt
+        self.last_navigation = None   # the URL of the last main-frame navigation (a desk stream's allow-list reads it)
         self.follow_mu = threading.Lock()
         self.after_start = None    # called once the browser runs (a kept profile's session cookies go back in)
 
@@ -398,6 +399,10 @@ class Browser:
                                     waiting[1] = {"error": {"message": "Session closed: its page closed"}}
                                     waiting[0].set()
                         self.events.append(msg["method"])
+                        if msg["method"] == "Page.frameNavigated":
+                            frame = (msg.get("params") or {}).get("frame") or {}
+                            if not frame.get("parentId") and frame.get("url"):
+                                self.last_navigation = frame["url"]
                         if msg["method"] in ("Target.targetCreated", "Target.targetDestroyed"):
                             self.tab_events = (self.tab_events + [(msg["method"], msg.get("params") or {})])[-50:]
                         if len(self.events) > 500:

@@ -73,6 +73,18 @@ def curtain(detectors=(), clock=None):
 
 
 class CurtainTest(unittest.TestCase):
+    def test_site_detector_follows_a_navigation_it_did_not_see(self):
+        nav = {"url": "https://example.com/a"}
+        c, clock = curtain([SiteDetector(["https://example.com"], current_url=lambda: nav["url"])])
+        self.assertFalse(c.evaluate())
+        nav["url"] = "https://bank.example/login"
+        self.assertTrue(c.evaluate())
+        nav["url"] = "https://docs.example.com/"
+        clock.t = 10.0
+        self.assertTrue(c.evaluate())
+        clock.t = 12.1
+        self.assertFalse(c.evaluate())
+
     def test_each_trigger_raises(self):
         cases = [
             ("password", PasswordFieldDetector(probe=lambda: True), None),
@@ -205,7 +217,7 @@ class PluginTest(unittest.TestCase):
         p.setup({"level": "trusted", "roots": [self.dir], **config})
         p.desks.desks["private"] = FakeDesk()
         # The detectors need a real accessibility stack and display; the plugin's start path is what this tests.
-        p._desk_stream_detectors = lambda allow_sites, env=None: {}
+        p._desk_stream_detectors = lambda allow_sites, env=None, current_url=None: {}
         return p
 
     def cmd(self, value):
@@ -248,7 +260,7 @@ class PluginTest(unittest.TestCase):
     def test_secret_read_raises_the_curtain(self):
         p = self.make()
         p.handle(self.cmd({"action": "start", "desk": "private"}))
-        p._desk_stream_detectors = lambda allow_sites, env=None: {}
+        p._desk_stream_detectors = lambda allow_sites, env=None, current_url=None: {}
         p._desk_stream_saw_path("/home/a/.env")
         # No secret detector in this injected set: nothing changes, which is why the real set always includes one.
         self.assertTrue(p.handle(self.cmd({"action": "status"}))["streaming"])
