@@ -174,11 +174,12 @@ def _offer_config(cfg, served):
     tz = hours.get("tz", "UTC")
     if not isinstance(tz, str) or not tz or len(tz) > 64:
         raise Fault("bad_value", "offer.hours.tz is an IANA time zone such as UTC or Europe/Lisbon")
-    try:
-        from zoneinfo import ZoneInfo
-        ZoneInfo(tz)
-    except Exception:
-        raise Fault("bad_value", "offer.hours.tz is an IANA time zone such as UTC or Europe/Lisbon")
+    if tz != "UTC":   # Windows Python has no system zone database unless the tzdata package is installed; UTC never needs it.
+        try:
+            from zoneinfo import ZoneInfo
+            ZoneInfo(tz)
+        except Exception:
+            raise Fault("bad_value", "offer.hours.tz is an IANA time zone such as UTC or Europe/Lisbon")
     concurrency = _int(raw.get("concurrency"), "offer.concurrency", 1, 8, 1)
     price = raw.get("price") or {}
     if not isinstance(price, dict):
@@ -281,8 +282,11 @@ class Ai(Plugin):
         """Is the offer open now, in its own time zone? start == end is all day; an overnight window wraps."""
         h = self.offer["hours"]
         try:
-            from zoneinfo import ZoneInfo
-            at = self.now().astimezone(ZoneInfo(h["tz"]))
+            if h["tz"] == "UTC":
+                at = self.now().astimezone(datetime.timezone.utc)
+            else:
+                from zoneinfo import ZoneInfo
+                at = self.now().astimezone(ZoneInfo(h["tz"]))
         except Exception:
             return False
         start, end = _minutes(h["start"]), _minutes(h["end"])
