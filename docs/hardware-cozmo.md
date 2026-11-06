@@ -35,13 +35,13 @@ Cozmo is an access point (`Cozmo_XXXXXX`, robot at `172.31.1.1`) and has no inte
 ## 2. Pair (one pasted command from openvibe.bot)
 
 ```sh
-curl -fsSL https://openvibe.bot/install | sh -s -- --robot rob_… --code XXXX-XXXX --driver cozmo
+curl -fsSL https://node.openvibe.network/install | sh -s -- --robot rob_… --code XXXX-XXXX --driver cozmo
 ```
 
 Network pairing, if openvibe.bot offers the Network form:
 
 ```sh
-curl -fsSL https://openvibe.bot/install | sh -s -- --network https://openvibe.network --pairing pair_… --code XXXX-XXXX --driver cozmo
+curl -fsSL https://node.openvibe.network/install | sh -s -- --network https://openvibe.network --pairing pair_… --code XXXX-XXXX --driver cozmo
 ```
 
 Then check the written config (`cat /etc/openvibe-node/config.json`): `device_kind` is `bridge`, `plugins` names

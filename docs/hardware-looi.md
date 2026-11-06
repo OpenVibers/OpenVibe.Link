@@ -71,7 +71,7 @@ The driver should send telemetry with `battery` (`{"percent": 0..100}` or `{"vol
 The Node runs a plugin named `looi` as `python -m openvibe_looi`, so the driver is a Python package with that module,
 installed into the Python the Node uses.
 
-**Linux or macOS bridge.** `curl -fsSL https://openvibe.bot/install | sh -s -- --robot rob_… --code XXXX-XXXX
+**Linux or macOS bridge.** `curl -fsSL https://node.openvibe.network/install | sh -s -- --robot rob_… --code XXXX-XXXX
 --driver looi` installs and pairs the Node as a bridge with video off. Then install the driver into the Node's
 environment (`sudo /var/lib/openvibe-node/venv/bin/pip install <the driver>`) and restart the Node's service. Until
 the driver is installed the panel shows the plugin's fault and the robot never moves.

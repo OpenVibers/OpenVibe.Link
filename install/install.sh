@@ -1,11 +1,13 @@
 #!/bin/sh
 # OpenVibe Node installer.
 #
-#   curl -fsSL https://openvibe.bot/install | sh
-#   curl -fsSL https://openvibe.bot/install | sh -s -- --robot <rob_…> --code <CODE> [--driver adeept|adeept-mecanum|cozmo|looi|ros2|ros2-holonomic|none]
-#   curl -fsSL https://openvibe.bot/install | sh -s -- --network <URL> --pairing <pair_…> --code <CODE> [--driver …]
-#   curl -fsSL https://openvibe.bot/install | sh -s -- --network <URL> --pairing <pair_…> --code <CODE> --worker
-#   curl -fsSL https://openvibe.bot/install | sh -s -- --setup <osk_…>
+#   curl -fsSL https://node.openvibe.network/install | sh
+#   curl -fsSL https://node.openvibe.network/install | sh -s -- --robot <rob_…> --code <CODE> [--driver adeept|adeept-mecanum|cozmo|looi|ros2|ros2-holonomic|none]
+#   curl -fsSL https://node.openvibe.network/install | sh -s -- --network <URL> --pairing <pair_…> --code <CODE> [--driver …]
+#   curl -fsSL https://node.openvibe.network/install | sh -s -- --network <URL> --pairing <pair_…> --code <CODE> --worker
+#   curl -fsSL https://node.openvibe.network/install | sh -s -- --setup <osk_…>
+#
+# (the same script is also at https://openvibe.bot/install, which keeps working)
 #
 # Detects the OS and CPU, downloads the openvibe-node binary and the plugin bundle (checking their SHA-256), creates
 # a Python virtual environment for the plugins, disables the Adeept kit's stock control server if it finds it,
@@ -113,9 +115,9 @@ usage() {
 	echo "                  [--computer observe|ask|trusted|full] [--desk-host [--shared]] [--ai] [--ai-endpoint URL]"
 	echo "                  [--no-service] [--no-claim] [--setup osk_…]"
 	echo "                  [--local DIR] [--version TAG]"
-	echo "  curl -fsSL https://openvibe.bot/install | sh      (finds the kit, then shows a code to approve on openvibe.bot/link)"
-	echo "  curl -fsSL https://openvibe.bot/install | sh -s -- --robot rob_… --code ABCD-1234 --driver adeept"
-	echo "  curl -fsSL https://openvibe.bot/install | sh -s -- --network https://openvibe.network --pairing pair_… --code ABCD-1234"
+	echo "  curl -fsSL https://node.openvibe.network/install | sh      (finds the kit, then shows a code to approve on openvibe.bot/link)"
+	echo "  curl -fsSL https://node.openvibe.network/install | sh -s -- --robot rob_… --code ABCD-1234 --driver adeept"
+	echo "  curl -fsSL https://node.openvibe.network/install | sh -s -- --network https://openvibe.network --pairing pair_… --code ABCD-1234"
 }
 say() { printf '%s\n' "openvibe-node: $*"; }
 die() { printf '%s\n' "openvibe-node: error: $*" >&2; exit 1; }
