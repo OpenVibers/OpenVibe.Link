@@ -12,7 +12,9 @@ command can never raise it:
 * ``full``: as trusted, anywhere the account running the Node can reach.
 
 The local kill switch (``openvibe-node stop``) and a remote e-stop drop the plugin to observe, kill what is running
-and deny what waits; the core refuses acting commands while either is latched too. The plugin never runs as root.
+and deny what waits; the core refuses acting commands while either is latched too. The plugin runs as the Node's own
+account and never as root, except on a shared desk host for other people, where it runs as root and every desk sits in
+its own sandbox.
 
 Command kinds and their answers (the ack's ``data``):
 
@@ -108,6 +110,7 @@ from openvibe_plugin import Deferred, Fault, Plugin
 from .browser import KEY_CODES, Browser, BrowserError, find_binary
 from .desk import MAX_DESKS_CAP, BrowserDesk, Desks, PrivateDesk, default_max_desks
 from .egress import EgressProxy, not_public
+from .files import Files, Handles
 
 LEVELS = ("observe", "ask", "trusted", "full")
 RANK = {name: i for i, name in enumerate(LEVELS)}
@@ -321,6 +324,8 @@ class Computer(Plugin):
         self.platform = platform or sys.platform
         self.level = "observe"
         self.roots = []
+        self.root_forms = {}      # every root, and the names it answers to (the configured one and its own)
+        self._handles = Handles()   # the folders, opened once and kept open
         self.timeout_s = 30
         self.max_output = 64 * 1024
         self.max_read = 256 * 1024
@@ -398,7 +403,19 @@ class Computer(Plugin):
         if not isinstance(roots, list) or not all(isinstance(r, str) and r.strip() for r in roots):
             raise Fault("bad_value", "roots is a list of folders")
         self.level = level
-        self.roots = [os.path.realpath(os.path.expanduser(r.strip())) for r in roots]
+        # A root is kept under the name it was given and under its own: a folder that is reached through a link
+        # is the same folder, and the plugin must recognize both names for it.
+        forms = {}
+        self.roots = []
+        for r in roots:
+            given = os.path.normpath(os.path.expanduser(r.strip()))
+            real = os.path.realpath(given)
+            self.roots.append(real)
+            names = forms.setdefault(real, [])
+            for name in (given, real):
+                if name not in names:
+                    names.append(name)
+        self.root_forms = forms
         self._control_dirs = self._node_control_dirs()
         self.control_files = self._node_control_files()
         self.timeout_s = _int(config.get("timeout_s"), "timeout_s", 1, 600, 30)
@@ -852,23 +869,47 @@ class Computer(Plugin):
     def _inside(self, path):
         return any(path == r or path.startswith(r.rstrip(os.sep) + os.sep) for r in self.roots)
 
-    def _path(self, raw, level, create=False):
-        """The real path a command names, inside the roots unless the level is full, never the Node's control files."""
+    def _files(self, level):
+        """The folders this machine allows, and the handles they are reached through."""
+        return Files(self.roots, self.root_forms, level, self._handles)
+
+    def _control_guard(self, st, path):
+        """The object the plugin is about to use is one of the Node's own control files or folders.
+
+        The name may be a link or another name for the same bytes, so the object itself is compared, not the name.
+        """
+        for control in self.control_files:
+            try:
+                other = os.stat(control)
+            except OSError:
+                continue
+            if (st.st_dev, st.st_ino) == (other.st_dev, other.st_ino):
+                raise Fault("not_allowed", "%s is one of the Node's own control files" % path)
+        for control in self._control_dirs:
+            try:
+                other = os.stat(control)
+            except OSError:
+                continue
+            if (st.st_dev, st.st_ino) == (other.st_dev, other.st_ino):
+                raise Fault("not_allowed", "%s is one of the Node's own control folders" % path)
+
+    def _path(self, raw, level, create="no"):
+        """The path a command names: inside the roots unless the level is full, never the Node's control files.
+
+        On Linux the name is resolved through the folders' handles (openat2, or one component at a time where
+        the kernel has no openat2), so what the plugin later uses is the object the handle points at and not
+        the name that was checked. macOS and Windows keep the name checks they always had.
+        """
         if not isinstance(raw, str) or not raw or len(raw) > MAX_ARG_LEN or "\x00" in raw:
             raise Fault("bad_value", "path is a non-empty string")
         path = os.path.expanduser(raw)
         if not os.path.isabs(path):
             raise Fault("bad_value", "path must be absolute")
-        if create and not os.path.lexists(path):
-            parent = os.path.realpath(os.path.dirname(path))
-            real = os.path.join(parent, os.path.basename(path))
-        else:
-            real = os.path.realpath(path)
-        if self._is_control(real):
-            raise Fault("not_allowed", "%s is one of the Node's own control files or folders" % real)
-        if level != "full" and not self._inside(real):
-            raise Fault("not_allowed", "%s is outside this machine's allowed folders" % real)
-        return real
+        target = self._files(level).target(os.path.normpath(path), level, create=create, guard=self._control_guard)
+        if self._is_control(target.path):
+            raise Fault("not_allowed", "%s is one of the Node's own control files or folders" % target.path)
+        target.check_now(create)
+        return target
 
     # ---- commands --------------------------------------------------------------------------------------------------
     def handle(self, cmd):
@@ -1536,18 +1577,34 @@ class Computer(Plugin):
                 % (_argv_text(argv), _plain(resolved), _plain(cwd or "none"), where, cinfo, account))
 
     @staticmethod
-    def _child_preexec():
-        """In the child: its own process group/session, and no privilege gain on Linux."""
-        os.setsid()
-        if sys.platform.startswith("linux"):
-            _set_no_new_privs()
+    def _child_preexec(cwd_fd=None):
+        """In the child: its own process group/session, the folder it runs in, and no privilege gain on Linux."""
+        def preexec():
+            os.setsid()
+            if sys.platform.startswith("linux"):
+                _set_no_new_privs()
+            if cwd_fd is not None:
+                os.fchdir(cwd_fd)   # the folder the parent checked, not a name that may have changed
+        return preexec
 
     @staticmethod
-    def _session_options():
+    def _session_options(cwd_fd=None):
         """A new session/group for an exec'd program (Windows: its own process group, no preexec_fn there)."""
         if os.name == "nt":
             return {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)}
-        return {"preexec_fn": Computer._child_preexec}
+        return {"preexec_fn": Computer._child_preexec(cwd_fd)}
+
+    def _cwd_options(self, cwd):
+        """How a program is started in a folder: the handle of the folder, checked again at this moment.
+
+        A folder that was swapped since it was checked is refused; the program never runs in a name.
+        """
+        if cwd is None:
+            return {}
+        if cwd.by_name:
+            return {"cwd": cwd.path}
+        fd = cwd.open_dir()
+        return {"cwd": None, "pass_fds": (fd,), "_cwd_fd": fd}
 
     def _exec_op(self, cmd, v, level):
         argv = v.get("argv")
@@ -1556,9 +1613,9 @@ class Computer(Plugin):
             raise Fault("bad_value", "argv is a list of 1 to %d strings: a program and its arguments" % MAX_ARGS)
         if not _no_new_privs_available():
             raise Fault("unsupported", "no_new_privs is unavailable on this machine: running a program could gain a privilege")
-        cwd = self._path(v["cwd"], level) if v.get("cwd") is not None else (self.roots[0] if self.roots else None)
-        if cwd is not None and not os.path.isdir(cwd):
-            raise Fault("bad_value", "cwd %s is not a folder" % cwd)
+        cwd = self._path(v["cwd"], level) if v.get("cwd") is not None else self._default_cwd(level)
+        if cwd is not None:
+            cwd.remember()   # what it is now: a folder that is swapped later is refused
         stdin = v.get("stdin")
         if stdin is not None and (not isinstance(stdin, str) or len(stdin.encode("utf-8")) > MAX_STDIN):
             raise Fault("bad_value", "stdin is a string of at most 64 KB")
@@ -1580,7 +1637,7 @@ class Computer(Plugin):
             if stdin is not None:
                 raise Fault("bad_value", "a detached program takes no stdin")
             return (lambda: self._start_on_desk(argv, cwd, env, desk),
-                    self._exec_summary(argv, cwd, None, desk, detached=True))
+                    self._exec_summary(argv, cwd.path if cwd is not None else None, None, desk, detached=True))
 
         def run():
             # The time left on the command's deadline, counted on the clock that deadline is on.
@@ -1589,7 +1646,13 @@ class Computer(Plugin):
                 raise Fault("expired", "no time was left to run it")
             return self._exec(argv, cwd, stdin, min(timeout, left), env=env)
 
-        return run, self._exec_summary(argv, cwd, stdin, desk)
+        return run, self._exec_summary(argv, cwd.path if cwd is not None else None, stdin, desk)
+
+    def _default_cwd(self, level):
+        """The folder a program runs in when the request names none: the first root, as a handle."""
+        if not self.roots:
+            return None
+        return self._files(level).target(self.roots[0], level)
 
     def _start_on_desk(self, argv, cwd, env, desk):
         """A program that keeps running on a desk (its windows there), ended when the desk stops."""
@@ -1597,13 +1660,20 @@ class Computer(Plugin):
         running = [p for p in self.desk_programs.get(desk, []) if p.poll() is None]
         if len(running) >= MAX_DESK_PROGRAMS:
             raise Fault("not_ready", "%d programs already run on this desk: stop the desk, or close one there" % len(running))
+        options = self._cwd_options(cwd)
+        fd = options.pop("_cwd_fd", None)
         try:
-            proc = self._spawn(argv, cwd=cwd, env=self._child_env(env), stdin=subprocess.DEVNULL,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **self._session_options())
-        except FileNotFoundError:
-            raise Fault("bad_value", "no program %s on this machine" % argv[0])
-        except PermissionError:
-            raise Fault("not_allowed", "%s may not be run by the Node's account" % argv[0])
+            try:
+                proc = self._spawn(argv, env=self._child_env(env), stdin=subprocess.DEVNULL,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                   **options, **self._session_options(fd))
+            except FileNotFoundError:
+                raise Fault("bad_value", "no program %s on this machine" % argv[0])
+            except PermissionError:
+                raise Fault("not_allowed", "%s may not be run by the Node's account" % argv[0])
+        finally:
+            if fd is not None:
+                os.close(fd)
         self.desk_programs[desk] = running + [proc]
         return {"started": True, "pid": proc.pid, "desk": desk}
 
@@ -1618,14 +1688,20 @@ class Computer(Plugin):
     def _exec(self, argv, cwd, stdin, timeout, env=None):
         self._check_identity()
         started = self.clock()
+        options = self._cwd_options(cwd)
+        fd = options.pop("_cwd_fd", None)
         try:
-            proc = self._spawn(argv, cwd=cwd, stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
-                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=self._child_env(env),
-                               **self._session_options())
-        except FileNotFoundError:
-            raise Fault("bad_value", "no program %s on this machine" % argv[0])
-        except PermissionError:
-            raise Fault("not_allowed", "%s may not be run by the Node's account" % argv[0])
+            try:
+                proc = self._spawn(argv, stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=self._child_env(env),
+                                   **options, **self._session_options(fd))
+            except FileNotFoundError:
+                raise Fault("bad_value", "no program %s on this machine" % argv[0])
+            except PermissionError:
+                raise Fault("not_allowed", "%s may not be run by the Node's account" % argv[0])
+        finally:
+            if fd is not None:
+                os.close(fd)
         cap = self.max_output
         got = {"out": [b"", 0], "err": [b"", 0]}
 
@@ -1759,62 +1835,32 @@ class Computer(Plugin):
         return "other"
 
     def _fs_read_op(self, op, v, level):
-        path = self._path(v.get("path"), level)
-        try:
-            st = os.stat(path)
-        except FileNotFoundError:
-            raise Fault("bad_value", "%s does not exist" % path)
-        except PermissionError:
-            raise Fault("not_allowed", "the Node's account may not read %s" % path)
+        target = self._path(v.get("path"), level)
+        st = target.stat()
         if op == "stat":
-            return {"path": path, "type": self._kind(st.st_mode), "size": st.st_size, "mtime": int(st.st_mtime),
+            return {"path": target.path, "type": self._kind(st.st_mode), "size": st.st_size, "mtime": int(st.st_mtime),
                     "mode": oct(stat.S_IMODE(st.st_mode))}
         if op == "list":
             if not stat.S_ISDIR(st.st_mode):
-                raise Fault("bad_value", "%s is not a folder" % path)
-            entries, total = [], 0
-            try:
-                with os.scandir(path) as it:
-                    for e in sorted(it, key=lambda e: e.name):
-                        total += 1
-                        if len(entries) >= MAX_LIST:
-                            continue
-                        try:
-                            s = e.stat(follow_symlinks=False)
-                            entries.append({"name": e.name, "type": self._kind(s.st_mode), "size": s.st_size,
-                                            "mtime": int(s.st_mtime)})
-                        except OSError:
-                            entries.append({"name": e.name, "type": "other"})
-            except PermissionError:
-                raise Fault("not_allowed", "the Node's account may not list %s" % path)
-            return {"path": path, "entries": entries, "total": total, "truncated": total > len(entries)}
+                raise Fault("bad_value", "%s is not a folder" % target.path)
+            entries, total = target.list(MAX_LIST)
+            return {"path": target.path, "entries": entries, "total": total, "truncated": total > len(entries)}
         if not stat.S_ISREG(st.st_mode):
-            raise Fault("bad_value", "%s is not a file" % path)
+            raise Fault("bad_value", "%s is not a file" % target.path)
         offset = _int(v.get("offset"), "offset", 0, 2 ** 53, 0)
         length = _int(v.get("length"), "length", 0, self.max_read, self.max_read)
-        try:
-            with open(path, "rb") as f:
-                f.seek(offset)
-                data = f.read(length)
-        except PermissionError:
-            raise Fault("not_allowed", "the Node's account may not read %s" % path)
-        return {"path": path, "size": st.st_size, "offset": offset, "length": len(data),
-                "truncated": offset + len(data) < st.st_size, "content_b64": base64.b64encode(data).decode("ascii")}
+        data, size = target.read(offset, length)
+        return {"path": target.path, "size": size, "offset": offset, "length": len(data),
+                "truncated": offset + len(data) < size, "content_b64": base64.b64encode(data).decode("ascii")}
 
     def _fs_write_op(self, op, v, level):
-        path = self._path(v.get("path"), level, create=True)
+        target = self._path(v.get("path"), level, create="any" if op == "mkdir" else "parent")
         if op == "mkdir":
             def run():
                 self._check_identity()
-                existed = os.path.isdir(path)
-                try:
-                    os.makedirs(path, exist_ok=True)
-                except FileExistsError:
-                    raise Fault("bad_value", "%s exists and is not a folder" % path)
-                except PermissionError:
-                    raise Fault("not_allowed", "the Node's account may not create %s" % path)
-                return {"path": path, "created": not existed}
-            return run, "make the folder %s" % _plain(path)
+                created = target.mkdir()
+                return {"path": target.path, "created": created}
+            return run, "make the folder %s" % _plain(target.path)
         mode = v.get("mode") or "create"
         if mode not in ("create", "overwrite", "append"):
             raise Fault("bad_value", "mode is create, overwrite or append")
@@ -1830,33 +1876,12 @@ class Computer(Plugin):
 
         def run():
             self._check_identity()
-            if os.path.isdir(path):
-                raise Fault("bad_value", "%s is a folder" % path)
-            if mode == "create" and os.path.lexists(path):
-                raise Fault("bad_value", "%s exists (mode overwrite or append replaces or extends it)" % path)
-            try:
-                if mode == "append":
-                    with open(path, "ab") as f:
-                        f.write(data)
-                else:
-                    fd, tmp = tempfile.mkstemp(prefix=".openvibe-", dir=os.path.dirname(path))
-                    try:
-                        with os.fdopen(fd, "wb") as f:
-                            f.write(data)
-                        if os.path.exists(path):
-                            shutil.copymode(path, tmp)
-                        os.replace(tmp, path)
-                    except BaseException:
-                        if os.path.exists(tmp):
-                            os.unlink(tmp)
-                        raise
-            except PermissionError:
-                raise Fault("not_allowed", "the Node's account may not write %s" % path)
-            return {"path": path, "written": len(data), "mode": mode}
+            target.write(data, mode)
+            return {"path": target.path, "written": len(data), "mode": mode}
 
         verb = {"create": "create", "overwrite": "overwrite", "append": "append to"}[mode]
         return run, "%s %s (mode %s, %d bytes, sha256 %s)" % (
-            verb, _plain(path), mode, len(data), _digest(data))
+            verb, _plain(target.path), mode, len(data), _digest(data))
 
     # ---- input -----------------------------------------------------------------------------------------------------
     # ---- browser ---------------------------------------------------------------------------------------------------
