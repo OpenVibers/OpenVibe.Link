@@ -164,6 +164,10 @@ func (n *Node) deskStreamCommand(c protocol.Command, entry *safety.Entry, receiv
 		}
 		var got struct {
 			Capture stream.Capture `json:"capture"`
+			Curtain struct {
+				Up     bool   `json:"up"`
+				Reason string `json:"reason"`
+			} `json:"curtain"`
 		}
 		_ = json.Unmarshal(r.Data, &got)
 		if got.Capture.Kind == "" {
@@ -188,6 +192,15 @@ func (n *Node) deskStreamCommand(c protocol.Command, entry *safety.Entry, receiv
 			cancel()
 			nack(protocol.FaultHardware, err.Error())
 			return
+		}
+		// The plugin starts its curtain up (fail closed) before it answers; its change event can arrive before this
+		// agent exists, so take the initial state from the ack and never show the desk unblanked.
+		if got.Curtain.Up {
+			reason := got.Curtain.Reason
+			if reason == "" {
+				reason = "detector"
+			}
+			agent.SetCurtain(true, reason)
 		}
 		n.stopDeskStream(false)
 		n.deskMu.Lock()

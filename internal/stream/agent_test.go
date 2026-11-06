@@ -282,6 +282,38 @@ func TestTheTicketNeverReachesALogOrStatus(t *testing.T) {
 	}
 }
 
+func TestCurtainUpBeforeRunBlanksTheFirstFrames(t *testing.T) {
+	api := &fakeAPI{}
+	src := &fakeSource{out: make(chan string, 4)}
+	a, _ := newTestAgent(t, api, AgentOptions{Client: api,
+		NewSource:     func(Capture, EncodeOptions) video.Source { return src },
+		CurtainFrames: []video.Sample{{Data: []byte("CURTAIN"), Key: true, Duration: 100 * time.Millisecond}}})
+	a.SetCurtain(true, "password_field")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var mu sync.Mutex
+	var seen []string
+	go func() {
+		_ = a.ds.Run(ctx, func(s video.Sample) {
+			mu.Lock()
+			seen = append(seen, string(s.Data))
+			mu.Unlock()
+		})
+	}()
+	time.Sleep(20 * time.Millisecond)
+	select {
+	case src.out <- "RAW":
+	default:
+	}
+	time.Sleep(150 * time.Millisecond)
+	mu.Lock()
+	got := append([]string(nil), seen...)
+	mu.Unlock()
+	if containsStr(got, "RAW") || !containsStr(got, "CURTAIN") {
+		t.Fatalf("frames before the first poll: %v", got)
+	}
+}
+
 func TestAgentRevokeIsTheKillSwitch(t *testing.T) {
 	api := &fakeAPI{}
 	a, _ := newTestAgent(t, api, AgentOptions{Client: api, CurtainFrames: []video.Sample{{Data: []byte("C"), Key: true}},
