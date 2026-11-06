@@ -17,8 +17,10 @@ name.
 import ctypes
 import errno
 import os
+import shutil
 import stat
 import sys
+import tempfile
 
 from openvibe_plugin import Fault
 
@@ -33,6 +35,8 @@ RESOLVE_BENEATH = 0x08
 
 _O_PATH = getattr(os, "O_PATH", 0)
 _O_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
+_O_DIRECTORY = getattr(os, "O_DIRECTORY", 0)
+_O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 
 
 class _How(ctypes.Structure):
@@ -67,7 +71,7 @@ def _openat2_usable():
     if libc is None or not hasattr(libc, "syscall"):
         return False
     try:
-        fd = _openat2(_AT_FDCWD, ".", os.O_RDONLY | os.O_DIRECTORY | _O_CLOEXEC, 0, RESOLVE_NO_MAGICLINKS)
+        fd = _openat2(_AT_FDCWD, ".", os.O_RDONLY | _O_DIRECTORY | _O_CLOEXEC, 0, RESOLVE_NO_MAGICLINKS)
     except Exception:
         return False
     os.close(fd)
@@ -88,7 +92,7 @@ class Handles:
         fd = self._fds.get(path)
         if fd is None:
             try:
-                fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | _O_CLOEXEC)
+                fd = os.open(path, os.O_RDONLY | _O_DIRECTORY | _O_CLOEXEC)
             except FileNotFoundError:
                 raise Fault("not_allowed", "%s does not exist" % path)
             except PermissionError:
@@ -158,9 +162,9 @@ def _walk(fd, name, flags, mode=0, follow=False):
             if last:
                 oflags = flags
             else:
-                oflags = os.O_RDONLY | os.O_DIRECTORY | _O_CLOEXEC
+                oflags = os.O_RDONLY | _O_DIRECTORY | _O_CLOEXEC
             if not follow:
-                oflags |= os.O_NOFOLLOW
+                oflags |= _O_NOFOLLOW
             try:
                 nxt = os.open(part, oflags, mode, dir_fd=current)
             except OSError as e:
@@ -310,12 +314,12 @@ class Target:
         """The handle of the folder the name is in, and the name itself."""
         if self.by_name:
             parent = os.path.dirname(self.path) or os.sep
-            return os.open(parent, os.O_RDONLY | os.O_DIRECTORY | _O_CLOEXEC), os.path.basename(self.path)
+            return os.open(parent, os.O_RDONLY | _O_DIRECTORY | _O_CLOEXEC), os.path.basename(self.path)
         rel = self.rel
         cut = rel.rfind("/")
         if cut < 0:
             return os.dup(self.files.handles.fd(self.base)), rel
-        return self.files.handles.open_beneath(self.base, rel[:cut], os.O_RDONLY | os.O_DIRECTORY | _O_CLOEXEC,
+        return self.files.handles.open_beneath(self.base, rel[:cut], os.O_RDONLY | _O_DIRECTORY | _O_CLOEXEC,
                                                0, self.level), rel[cut + 1:]
 
     def _check(self, st, links=False):
@@ -329,6 +333,8 @@ class Target:
 
     def check_now(self, create):
         """Resolve the name once, so what cannot be used is refused before anything waits for an answer."""
+        if self.by_name:
+            return   # without handles the name is checked where it is used, as it always was
         if create == "no":
             self.stat()
         elif create == "parent":
@@ -377,7 +383,7 @@ class Target:
                 raise Fault("bad_value", "%s does not exist" % self.path)
             except PermissionError:
                 raise Fault("not_allowed", "the Node's account may not list %s" % self.path)
-        fd = self._open(os.O_RDONLY | os.O_DIRECTORY | _O_CLOEXEC)
+        fd = self._open(os.O_RDONLY | _O_DIRECTORY | _O_CLOEXEC)
         try:
             with os.scandir(fd) as it:
                 return self._entries(it, limit)
@@ -422,17 +428,10 @@ class Target:
 
     def write(self, data, mode):
         """Write into the file: a temporary file in its own folder, then the replace."""
+        if self.by_name:
+            self._write_by_name(data, mode)
+            return
         if mode == "append":
-            if self.by_name:
-                try:
-                    with open(self.path, "ab") as f:
-                        self._check(os.fstat(f.fileno()), links=True)
-                        f.write(data)
-                except FileNotFoundError:
-                    raise Fault("bad_value", "%s does not exist" % self.path)
-                except PermissionError:
-                    raise Fault("not_allowed", "the Node's account may not write %s" % self.path)
-                return
             fd = self._open(os.O_WRONLY | os.O_APPEND | _O_CLOEXEC)
             try:
                 self._check(os.fstat(fd), links=True)
@@ -478,6 +477,35 @@ class Target:
         finally:
             os.close(parent)
 
+    def _write_by_name(self, data, mode):
+        """Without handles (macOS, Windows): the name is written as it always was."""
+        path = self.path
+        if os.path.isdir(path):
+            raise Fault("bad_value", "%s is a folder" % path)
+        if mode == "create" and os.path.lexists(path):
+            raise Fault("bad_value", "%s exists (mode overwrite or append replaces or extends it)" % path)
+        try:
+            if mode == "append":
+                with open(path, "ab") as f:
+                    self._check(os.fstat(f.fileno()), links=True)
+                    f.write(data)
+            else:
+                fd, tmp = tempfile.mkstemp(prefix=".openvibe-", dir=os.path.dirname(path))
+                try:
+                    with os.fdopen(fd, "wb") as f:
+                        f.write(data)
+                    if os.path.exists(path):
+                        shutil.copymode(path, tmp)
+                    os.replace(tmp, path)
+                except BaseException:
+                    if os.path.exists(tmp):
+                        os.unlink(tmp)
+                    raise
+        except FileNotFoundError:
+            raise Fault("bad_value", "%s does not exist" % path)
+        except PermissionError:
+            raise Fault("not_allowed", "the Node's account may not write %s" % path)
+
     def mkdir(self):
         """Make the folder, and the folders above it that are missing."""
         if self.by_name:
@@ -496,7 +524,7 @@ class Target:
                 parent = os.dup(self.files.handles.fd(self.base))
             else:
                 parent = self.files.handles.open_beneath(self.base, "/".join(parts[:i]),
-                                                          os.O_RDONLY | os.O_DIRECTORY | _O_CLOEXEC,
+                                                          os.O_RDONLY | _O_DIRECTORY | _O_CLOEXEC,
                                                           0, self.level)
             try:
                 try:
@@ -518,14 +546,14 @@ class Target:
         """
         if self.by_name:
             try:
-                return os.open(self.path, os.O_RDONLY | os.O_DIRECTORY | _O_CLOEXEC)
+                return os.open(self.path, os.O_RDONLY | _O_DIRECTORY | _O_CLOEXEC)
             except FileNotFoundError:
                 raise Fault("bad_value", "%s does not exist" % self.path)
             except NotADirectoryError:
                 raise Fault("bad_value", "%s is not a folder" % self.path)
             except PermissionError:
                 raise Fault("not_allowed", "the Node's account may not use %s" % self.path)
-        fd = self._open(os.O_RDONLY | os.O_DIRECTORY | _O_CLOEXEC)
+        fd = self._open(os.O_RDONLY | _O_DIRECTORY | _O_CLOEXEC)
         if self.checked is not None:
             st = os.fstat(fd)
             if (st.st_dev, st.st_ino) != self.checked:
