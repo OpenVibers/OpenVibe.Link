@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -333,8 +334,9 @@ class DeskPluginTest(unittest.TestCase):
     def test_a_desk_nobody_uses_stops_by_itself(self):
         # An agent that crashed or restarted mid-task never stops its desk: desk_idle_s does.
         self.boot("trusted", max_desks=2, desk_idle_s=60)
-        now = [1000.0]
+        now = [time.monotonic()]   # the real clock's value: the commands' own deadlines are counted on it
         self.plugin.clock = lambda: now[0]
+        self.rt.clock = self.plugin.clock   # and the runtime counts their deadlines on the same clock
         reply(self.out, self.cmd("desk", {"action": "start", "desk": "desk-a"}))
         reply(self.out, self.cmd("desk", {"action": "start", "desk": "desk-b"}))
         now[0] += 40
@@ -346,6 +348,17 @@ class DeskPluginTest(unittest.TestCase):
         now[0] += 61
         self.plugin.poll()
         self.assertEqual([d.on for d in self.made_desks], [False, False])
+
+    def test_a_commands_deadline_is_read_on_the_clock_it_was_counted_on(self):
+        # A command's deadline is an instant on the runtime's clock, not on the plugin's own (a test's, a host's):
+        # read on the wrong clock it means nothing, and on a machine whose uptime is short (a fresh CI runner) the
+        # plugin's clock reads past the deadline and the work it belongs to never runs.
+        self.boot("trusted", max_desks=1)
+        self.rt.clock = lambda: 61.0            # a machine that booted a minute ago
+        self.plugin.clock = lambda: 1000.0      # the plugin's own clock is another one
+        r = reply(self.out, self.cmd("desk", {"action": "start", "desk": "desk-a"}))
+        self.assertEqual(r["op"], "ack", r)
+        self.assertEqual([d.on for d in self.made_desks], [True], "the desk started")
 
     def test_each_desk_has_a_browser_profile_and_downloads_of_its_own(self):
         made = []
@@ -373,7 +386,8 @@ class DeskPluginTest(unittest.TestCase):
         self.assertTrue(made[0].profile.endswith("-desk"), "the private desk keeps its profile from before v0.9.0")
         self.assertTrue(made[1].profile.endswith("-desk-a"))
         self.assertEqual([b.headless for b in made], [False, False], "shown on the desk")
-        self.assertEqual(made[1].download_dir, os.path.join(self.desk_dir, "desk-a", "downloads"))
+        self.assertEqual(made[1].download_dir, os.path.realpath(os.path.join(self.desk_dir, "desk-a", "downloads")),
+                         "the folder it resolves to (a link out of the roots is not used)")
         self.assertNotEqual(made[0].download_dir, made[1].download_dir)
         self.assertNotEqual(made[0].env["DISPLAY"], made[1].env["DISPLAY"])
 
@@ -601,6 +615,21 @@ class DeskPluginTest(unittest.TestCase):
         self.assertTrue(self.desk.on)
         self.plugin.stop()
         self.assertFalse(self.desk.on)
+
+    def test_desk_downloads_must_resolve_inside_the_roots(self):
+        # F4: a desk's downloads folder is resolved through the roots gate; outside them, downloads are off.
+        self.boot("trusted")
+        roots = os.path.join(self.desk_dir, "roots")
+        os.makedirs(roots)
+        self.plugin.roots = [os.path.realpath(roots)]
+        outside = os.path.join(self.desk_dir, "outside")
+        os.makedirs(outside)
+        os.makedirs(os.path.join(self.desk_dir, "desk-a"))
+        os.symlink(outside, os.path.join(self.desk_dir, "desk-a", "downloads"))
+        self.assertIsNone(self.plugin._desk_downloads("desk-a"), "a linked downloads folder outside the roots")
+        self.plugin.roots = [os.path.realpath(self.desk_dir)]
+        self.assertEqual(self.plugin._desk_downloads("desk-a"),
+                         os.path.realpath(os.path.join(self.desk_dir, "desk-a", "downloads")))
 
 
 def _pillow():

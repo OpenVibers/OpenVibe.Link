@@ -44,7 +44,8 @@ Command kinds and their answers (the ack's ``data``):
   ``selector`` or the button or link whose ``text`` it shows, ``fill`` a field (``selector`` and ``text``), ``press`` a
   ``key`` (Enter, Tab, Escape, arrows …), ``back`` → ``{url, title, text, truncated, links}``; ``read`` the page the same
   way; ``screenshot`` → ``{format, width, height, content_b64}``; ``close``. Reading, screenshots and closing run at every
-  level; the rest are acting commands. Below level full, ``open`` refuses an address on the machine's own network.
+  level; the rest are acting commands. Below level full, ``open`` refuses an address on the machine's own network and
+  every download is denied; at full a desk's downloads folder is used only when it resolves inside the roots.
   Config ``allow_browser: false`` turns it off; ``browser_path``, ``browser_headless`` (default true).
 * ``desk`` ``{"action": "start"|"stop"|"status"|"list", "desk"?, "width"?, "height"?}``: a private desk (``desk.py``): an Xvfb display with a
   window manager and a D-Bus session of its own, where the agent works without touching the owner's screen. ``screen``,
@@ -81,6 +82,9 @@ Command kinds and their answers (the ack's ``data``):
 
 import base64
 import contextlib
+import ctypes
+import getpass
+import hashlib
 import json
 import http.client
 import ipaddress
@@ -118,6 +122,26 @@ MAX_WAITING = 8
 # An approval from the desktop (the notification's button or the macOS dialog) is not taken while the agent drives the
 # mouse or keyboard, nor this many seconds after: an approved click must not land on another request's Approve button.
 INPUT_GUARD_S = 2.0
+# A desktop surface that cannot show the whole request offers no Approve button on cut text (notify-send's body, a
+# macOS dialog); the owner answers it in full with `openvibe-node approvals`.
+NOTIFY_SUMMARY_MAX = 300
+DIALOG_SUMMARY_MAX = 400
+FULL_VIEW_HINT = "openvibe-node approvals"
+# Control, ANSI and bidi characters are escaped before any surface shows them: a summary can be a terminal, a
+# notification or a dialog, and none of them may interpret what the agent wrote as layout or markup.
+BIDI_CHARS = frozenset("\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
+# Linux: PR_SET_NO_NEW_PRIVS (children cannot gain privileges) and PR_SET_CHILD_SUBREAPER (orphaned descendants of an
+# exec'd program come back to the plugin, so a stop can find and end them).
+PR_SET_NO_NEW_PRIVS = 38
+PR_SET_CHILD_SUBREAPER = 36
+CAPTURE_JOIN_S = 5.0
+CONTROL_FILES = ("config.json", "credential.json", "latch.json", "node.sock")
+CONTROL_STATE_PARTS = ("plugins", "venv", "frames")   # the state directory's own folders
+try:
+    _PRCTL = ctypes.CDLL(None, use_errno=True).prctl if sys.platform.startswith("linux") else None
+except (OSError, AttributeError):
+    _PRCTL = None
+
 # The core caps an ack's data at 512 KB of JSON; base64 grows by a third.
 MAX_OUTPUT_CAP = 192 * 1024
 MAX_READ_CAP = 256 * 1024
@@ -177,6 +201,75 @@ def _parse_dialog(out):
     if "gave up:true" in out:
         return None
     return True if "button returned:Approve" in out else False if "button returned:Deny" in out else None
+
+
+def _plain(value):
+    """A string safe to show on one line: control, ANSI (ESC is a control character) and bidi characters are escaped.
+    Backslashes are kept, so escaping an already escaped value changes nothing that matters."""
+    out = []
+    for ch in str(value):
+        code = ord(ch)
+        if ch == "\n":
+            out.append("\\n")
+        elif ch == "\r":
+            out.append("\\r")
+        elif ch == "\t":
+            out.append("\\t")
+        elif code < 0x20 or code == 0x7f or 0x80 <= code <= 0x9f or ch in BIDI_CHARS or ch in "\u2028\u2029":
+            out.append("\\x%02x" % code if code <= 0xff else "\\u%04x" % code)
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def _markup(value):
+    """_plain for notify-send's markup: its body may be either text or the Pango-like markup, so escape both."""
+    return _plain(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _digest(data):
+    """A short content digest for an approval: enough to tell two requests apart, not a secret."""
+    return hashlib.sha256(data).hexdigest()[:16]
+
+
+def _argv_text(argv):
+    """A full argv, one shell-quoted argument at a time, control characters escaped."""
+    return " ".join(shlex.quote(_plain(a)) for a in argv)
+
+
+def _account_name():
+    try:
+        return _plain(getpass.getuser())
+    except Exception:  # noqa: BLE001 - no passwd entry, a container without one
+        return str(os.geteuid()) if hasattr(os, "geteuid") else "this account"
+
+
+def _no_new_privs_available():
+    """Whether exec'd programs can be given PR_SET_NO_NEW_PRIVS here (it is a no-op requirement outside Linux)."""
+    if not sys.platform.startswith("linux"):
+        return True
+    return _PRCTL is not None
+
+
+def _set_no_new_privs():
+    """In the child, before exec: no program it starts may gain a privilege over the plugin's account. Never returns
+    when it cannot be set: an exec without it is refused by exiting before the program runs."""
+    try:
+        if _PRCTL is None or _PRCTL(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
+            raise OSError(ctypes.get_errno() if _PRCTL is not None else 0, "no_new_privs unavailable")
+    except BaseException:  # noqa: BLE001 - the child must not run the program
+        os._exit(126)
+
+
+def _become_subreaper():
+    """Linux: orphaned descendants of exec'd programs are reparented to the plugin, so a stop can end them."""
+    if not sys.platform.startswith("linux") or _PRCTL is None:
+        return False
+    try:
+        return _PRCTL(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) == 0
+    except Exception:  # noqa: BLE001
+        return False
+
 
 def _tree_size(path, ignore):
     """The bytes a copy of path with that ignore would hold."""
@@ -241,10 +334,24 @@ class Computer(Plugin):
         self.input_busy = 0
         self.input_ended = None
         self.approval_timeout_s = 120
-        self.pending = {}  # command id -> (run, expires_at, summary)
-        self.procs = set()
+        self.pending = {}  # command id -> ((run, threaded), expires_at, summary)
+        self.procs = set()          # programs still running (their parent is this process)
+        self.groups = set()         # process groups/sessions of exec'd programs, kept after the parent exits
+        self.inputs = set()         # input tool processes (xdotool/cliclick), killed by stop and counted by the guard
+        self.captures = set()       # screen capture processes, killed by stop
+        self.children = set()       # pids of programs this plugin started (never reaped from under Popen)
+        self.generation = 0         # rises on every stop: work authorized before one never starts after it
+        self._gate = threading.local()   # the generation of the closure this thread is running
+        # Every exec'd program carries this in its environment, so a stop can find its descendants even after they
+        # leave the process group (and never touches a process this plugin did not start).
+        self.exec_env_name = "OPENVIBE_NODE_EXEC_TREE"
+        self.exec_env_value = "%d-%s" % (os.getpid(), os.urandom(8).hex())
         self.running = 0
         self.mu = threading.Lock()
+        self._euid = os.geteuid() if hasattr(os, "geteuid") else None
+        self.subreaper = False
+        self._control_dirs = self._node_control_dirs()
+        self.control_files = self._node_control_files()
         self.allow_browser = True
         self.browser_path = None
         self.browser_profile = None
@@ -292,6 +399,8 @@ class Computer(Plugin):
             raise Fault("bad_value", "roots is a list of folders")
         self.level = level
         self.roots = [os.path.realpath(os.path.expanduser(r.strip())) for r in roots]
+        self._control_dirs = self._node_control_dirs()
+        self.control_files = self._node_control_files()
         self.timeout_s = _int(config.get("timeout_s"), "timeout_s", 1, 600, 30)
         self.max_output = _int(config.get("max_output_bytes"), "max_output_bytes", 1024, MAX_OUTPUT_CAP, 64 * 1024)
         self.max_read = _int(config.get("max_read_bytes"), "max_read_bytes", 1024, MAX_READ_CAP, 256 * 1024)
@@ -388,10 +497,14 @@ class Computer(Plugin):
 
     def setup(self, config):
         self._configure(config)
+        self._euid = os.geteuid() if hasattr(os, "geteuid") else None
+        self.subreaper = _become_subreaper()
         # As root only on a desk host for other people, where nothing it starts runs unconfined: every browser goes
         # through desk-sandbox (as worker.run_as) and no command reaches the machine itself (_shared_check).
         if hasattr(os, "geteuid") and os.geteuid() == 0 and not self._shared():
             raise Fault("not_allowed", "the computer plugin never runs as root: run the Node as your own account")
+        if sys.platform.startswith("linux") and not _no_new_privs_available():
+            self.log("no_new_privs is unavailable: running programs is refused")
 
     # ---- safety ----------------------------------------------------------------------------------------------------
     def effective_level(self):
@@ -403,30 +516,240 @@ class Computer(Plugin):
     def stop(self):
         """halt, stop, the local kill switch and an e-stop: kill what runs, deny what waits."""
         with self.mu:
+            # The generation rises before anything is killed: a closure authorized before this stop fails its check.
+            self.generation += 1
             procs = list(self.procs)
+            groups = list(self.groups)
+            inputs = list(self.inputs)
             waiting = list(self.pending.keys())
             self.pending.clear()
+        for p in inputs:
+            self._kill(p)
         for p in procs:
             self._kill(p)
+        for pid in groups:
+            self._kill_group(pid)
         self._close_browser()
         self._end_stream("stopped on the machine")
         self._close_desk_browsers()
         self._end_desk_programs()
         self.desks.stop_all()
         self._drop_desk_profiles()
+        self._kill_exec_descendants()
+        self._reap_orphans()
+        with self.mu:   # nothing this stop killed is tracked any more: a pid reused later is never killed by it
+            self.procs.clear()
+            self.groups.clear()
+            self.inputs.clear()
+            self.captures.clear()
         for cid in waiting:
             self._close_prompt(cid)
             self.emit_event("approval_done", id=cid, approved=False, reason="stopped")
             self.fail(cid, "local_stop", "stopped on the machine before it ran")
 
     def _kill(self, proc):
+        """End a program and its process group/session. Falls back to the handle when the group is gone (Windows)."""
         try:
-            if hasattr(os, "killpg"):
-                os.killpg(proc.pid, 9)
+            if hasattr(os, "killpg") and getattr(proc, "pid", None):
+                os.killpg(proc.pid, signal.SIGKILL)
             else:
                 proc.kill()
+        except (OSError, ProcessLookupError, AttributeError):
+            try:
+                proc.kill()
+            except (OSError, AttributeError):
+                pass
+
+    @staticmethod
+    def _kill_group(pid):
+        """Unix: end a whole exec session by its group (Windows has no groups to kill; the Popen handle does it)."""
+        if not hasattr(os, "killpg"):
+            return
+        try:
+            os.killpg(pid, signal.SIGKILL)
         except (OSError, ProcessLookupError):
             pass
+
+    @staticmethod
+    def _group_alive(pid):
+        if not hasattr(os, "killpg"):
+            return False
+        try:
+            os.killpg(pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        except OSError:
+            return False
+
+    def _reap_orphans(self):
+        """Linux: children of an exec'd program that outlived it were reparented here (subreaper); once killed, reap
+        the zombies so the pid really goes, and never reap a pid Popen is still waiting for."""
+        if not sys.platform.startswith("linux") or not os.path.isdir("/proc"):
+            return
+        with self.mu:
+            known = set(self.children)
+        me = os.getpid()
+        try:
+            names = os.listdir("/proc")
+        except OSError:
+            return
+        for name in names:
+            if not name.isdigit() or int(name) in known:
+                continue
+            try:
+                with open("/proc/%s/stat" % name) as f:
+                    data = f.read()
+                fields = data[data.rfind(")") + 2:].split()
+                if fields[0] != "Z" or int(fields[1]) != me:
+                    continue
+                os.waitpid(int(name), os.WNOHANG)
+            except (OSError, ValueError, IndexError):
+                continue
+
+    def _kill_exec_descendants(self):
+        """Linux: end every program an exec started that is still around (found by the environment marker every exec'd
+        program and its descendants inherit), including one that left the process group or outlived its parent."""
+        if not sys.platform.startswith("linux") or not os.path.isdir("/proc"):
+            return
+        marker = ("%s=%s" % (self.exec_env_name, self.exec_env_value)).encode("utf-8")
+        with self.mu:
+            known = set(self.children)
+        try:
+            names = os.listdir("/proc")
+        except OSError:
+            return
+        killed = []
+        for name in names:
+            if not name.isdigit() or int(name) in known:
+                continue
+            try:
+                with open("/proc/%s/environ" % name, "rb") as f:
+                    environ = f.read()
+                if marker in environ.split(b"\x00"):
+                    os.kill(int(name), signal.SIGKILL)
+                    killed.append(int(name))
+            except (OSError, ValueError):
+                continue
+        # They may reparent here (subreaper) and turn into zombies: wait a moment so no pid is left behind.
+        end = time.monotonic() + 2.0
+        while killed and time.monotonic() < end:
+            still = []
+            for pid in killed:
+                try:
+                    if os.waitpid(pid, os.WNOHANG)[0]:
+                        continue
+                except ChildProcessError:
+                    pass
+                except OSError:
+                    continue
+                if os.path.exists("/proc/%d" % pid):
+                    still.append(pid)
+            killed = still
+            if killed:
+                time.sleep(0.02)
+
+    def _child_env(self, env):
+        """The environment for an exec'd program: its own (a desk's, or this process's) plus the tree marker."""
+        child = dict(os.environ if env is None else env)
+        child[self.exec_env_name] = self.exec_env_value
+        return child
+
+    def _check_identity(self):
+        """The account is the one setup accepted, and not root (the shared desk host is the one documented exception):
+        checked again at every execution gate, not only at setup."""
+        if not hasattr(os, "geteuid"):
+            return
+        euid = os.geteuid()
+        if euid == 0:
+            if self._shared():
+                return   # the one documented exception: a desk host for other people, root with every desk sandboxed
+            raise Fault("not_allowed", "the computer plugin never runs as root: run the Node as your own account")
+        if self._euid is not None and euid != self._euid:
+            raise Fault("not_allowed", "the computer plugin's account changed: run the Node as your own account")
+
+    def _gate_generation(self):
+        return getattr(self._gate, "generation", None)
+
+    def _generation_changed(self):
+        gen = self._gate_generation()
+        return gen is not None and gen != self.generation
+
+    def _deadline_clock(self):
+        """The clock a command's deadline is counted on: the runtime's (a deadline is an instant on it, taken from the
+        moment its line arrived). The plugin's own clock may be another one (a test's, a host's), and a deadline read
+        on the wrong clock means nothing: on a machine whose uptime is short (a fresh CI runner) it looks passed long
+        before it was, and the work it belongs to never runs."""
+        rt = getattr(self, "runtime", None)
+        return getattr(rt, "clock", None) or self.clock
+
+    def _authorized(self, run, expires=None, generation=None, clock=None):
+        """Wrap work that was authorized now or by an approval: at the moment it starts it checks, under the lock that
+        a stop takes to raise the generation, that no stop happened and its deadline has not passed. The deadline is
+        read on the clock it was counted on (clock): a command's deadline on the runtime's, an approval's on the
+        plugin's own."""
+        gen = self.generation if generation is None else generation
+        now = clock or self.clock
+
+        def go():
+            self._gate.generation = gen
+            try:
+                with self.mu:
+                    if gen != self.generation:
+                        raise Fault("local_stop", "stopped on the machine before it started")
+                    if expires is not None and now() >= expires:
+                        raise Fault("expired", "its deadline passed before it started")
+                self._check_identity()
+                return run()
+            finally:
+                try:
+                    del self._gate.generation
+                except AttributeError:
+                    pass
+        return go
+
+    def _spawn(self, argv, kind=None, **kwargs):
+        """Start a program, registered in the same critical section as the stop generation check: a stop either sees
+        it (and kills it) or the spawn sees the newer generation (and does not start)."""
+        with self.mu:
+            if self._generation_changed():
+                raise Fault("local_stop", "stopped on the machine before it started")
+            proc = self.popen(argv, **kwargs)
+            self.procs.add(proc)
+            pid = getattr(proc, "pid", None)
+            if pid is not None:
+                self.groups.add(pid)
+                self.children.add(pid)
+            if kind == "input":
+                self.inputs.add(proc)
+            elif kind == "capture":
+                self.captures.add(proc)
+        return proc
+
+    def _forget(self, proc, kind=None):
+        with self.mu:
+            self.procs.discard(proc)
+            pid = getattr(proc, "pid", None)
+            if pid is not None:
+                self.children.discard(pid)
+                if not self._group_alive(pid):
+                    self.groups.discard(pid)
+            if kind == "input":
+                self.inputs.discard(proc)
+            elif kind == "capture":
+                self.captures.discard(proc)
+
+    def _input_guard_locked(self):
+        """Whether the agent may be driving the mouse or keyboard right now: while an input process runs (until it has
+        ended, not until the core answered) and for INPUT_GUARD_S after. Call with self.mu held."""
+        if self.input_busy > 0 or self.inputs:
+            return True
+        try:
+            return self.input_ended is not None and self.clock() - self.input_ended < INPUT_GUARD_S
+        except TypeError:
+            return True
 
     def poll(self):
         now = self.clock()
@@ -452,6 +775,10 @@ class Computer(Plugin):
                     expired.append(cid)
                     del self.pending[cid]
             waiting, running = len(self.pending), self.running
+            for pid in list(self.groups):
+                if not self._group_alive(pid):
+                    self.groups.discard(pid)
+        self._reap_orphans()
         for cid in expired:
             self._close_prompt(cid)
             self.emit_event("approval_done", id=cid, approved=False, reason="expired")
@@ -463,11 +790,70 @@ class Computer(Plugin):
                             "computer_desks": len(self.desks.running_names())}}
 
     # ---- paths -----------------------------------------------------------------------------------------------------
+    def _node_control_dirs(self):
+        """The Node's own config and state directories, as it passes them to the plugin in its environment."""
+        dirs = []
+        for key in ("OPENVIBE_NODE_CONFIG", "OPENVIBE_NODE_STATE"):
+            value = self.env.get(key)
+            if isinstance(value, str) and value.strip():
+                real = os.path.realpath(os.path.expanduser(value.strip()))
+                if real not in dirs:
+                    dirs.append(real)
+        return dirs
+
+    def _node_control_files(self):
+        """The control files inside those directories, for the hard-link aliases a path check cannot see."""
+        files = []
+        for d in self._control_dirs:
+            for name in CONTROL_FILES:
+                files.append(os.path.join(d, name))
+        return files
+
+    def _root_inside(self, directory):
+        return any(r == directory or r.startswith(directory.rstrip(os.sep) + os.sep) for r in self.roots)
+
+    @staticmethod
+    def _control_name(name):
+        """A control file, or one of its own temporaries (`latch.json.tmp`)."""
+        return any(name == f or name.startswith(f + ".") for f in CONTROL_FILES)
+
+    def _is_control(self, real):
+        """Whether a resolved path is one of the Node's control files or lives in its control directories. This holds
+        at every level, full included. When a configured root is inside a control directory (the per-user --home
+        layout, roots like <home>/work), the directory itself stays usable and only its control entries are off: the
+        control files, their temporaries, and the state's plugins/venv/frames folders."""
+        norm = os.path.normcase(real)
+        for d in self._control_dirs:
+            control = os.path.normcase(d)
+            if norm == control:
+                return True
+            if not norm.startswith(control + os.sep):
+                continue
+            if not self._root_inside(d):
+                return True
+            parts = norm[len(control) + 1:].split(os.sep)
+            if parts[0] in CONTROL_STATE_PARTS:
+                return True
+            if len(parts) == 1 and self._control_name(parts[0]):
+                return True
+        try:
+            got = os.stat(real)
+        except OSError:
+            return False
+        for path in self.control_files:
+            try:
+                control = os.stat(path)
+            except OSError:
+                continue
+            if (got.st_dev, got.st_ino) == (control.st_dev, control.st_ino):
+                return True
+        return False
+
     def _inside(self, path):
         return any(path == r or path.startswith(r.rstrip(os.sep) + os.sep) for r in self.roots)
 
     def _path(self, raw, level, create=False):
-        """The real path a command names, inside the roots unless the level is full."""
+        """The real path a command names, inside the roots unless the level is full, never the Node's control files."""
         if not isinstance(raw, str) or not raw or len(raw) > MAX_ARG_LEN or "\x00" in raw:
             raise Fault("bad_value", "path is a non-empty string")
         path = os.path.expanduser(raw)
@@ -478,12 +864,16 @@ class Computer(Plugin):
             real = os.path.join(parent, os.path.basename(path))
         else:
             real = os.path.realpath(path)
+        if self._is_control(real):
+            raise Fault("not_allowed", "%s is one of the Node's own control files or folders" % real)
         if level != "full" and not self._inside(real):
             raise Fault("not_allowed", "%s is outside this machine's allowed folders" % real)
         return real
 
     # ---- commands --------------------------------------------------------------------------------------------------
     def handle(self, cmd):
+        # Every command is an execution gate: the account must still be the one setup accepted.
+        self._check_identity()
         v = cmd.value
         if not isinstance(v, dict):
             raise Fault("bad_value", "value must be an object")
@@ -639,7 +1029,12 @@ class Computer(Plugin):
                 what = "a browser desk" if name == "private" else "browser desk %s" % name
 
             def start():
+                self._check_identity()
                 st = self.desks.start(name, width, height, kind)
+                with self.mu:
+                    if self._generation_changed():
+                        self.desks.stop(name)
+                        raise Fault("local_stop", "stopped on the machine before the desk started")
                 if profile and self.desk_profiles.get(name) != profile:
                     self.desk_profiles[name] = profile
                     self.desk_restored.discard(name)
@@ -650,6 +1045,7 @@ class Computer(Plugin):
                              threaded=True)
 
         def stop():
+            self._check_identity()
             saved = self._end_desk_browser(name)
             self._end_desk_programs(name)
             out = self.desks.stop(name)
@@ -662,6 +1058,7 @@ class Computer(Plugin):
         with self.browser_mu:
             b = self.desk_browsers.get(desk)
             if b is not None and b.alive():
+                self._set_downloads(b, desk)
                 return b
             binary = binary or self._browser_binary()
             if not binary:
@@ -669,20 +1066,45 @@ class Computer(Plugin):
             env = env or self.desks.env(desk)
             page = self.desks.kind(desk) == "browser"
             if self._shared():   # its profile and downloads inside its sandbox, gone with the desk
-                b = self.desk_browsers[desk] = self.browser_factory(binary, SANDBOX_PROFILE, page, env=env)
+                b = self.browser_factory(binary, SANDBOX_PROFILE, page, env=env)
                 b.download_dir = SANDBOX_DOWNLOADS
+                b.allow_downloads = False   # a desk host runs trusted or observe, never full
             else:
                 profile = self._desk_profile_dir(desk)
                 self._restore_profile(desk)
-                b = self.desk_browsers[desk] = self.browser_factory(binary, profile, page, env=env)
+                b = self.browser_factory(binary, profile, page, env=env)
                 kept = self._take_session_cookies(desk)
                 if kept:
                     b.after_start = lambda: self._put_cookies(desk, b, kept)
-                b.download_dir = self.desks.dir(desk, "downloads")
+                b.download_dir = self._desk_downloads(desk)
+                b.allow_downloads = self.effective_level() == "full" and b.download_dir is not None
+            with self.mu:
+                if self._generation_changed():
+                    b.close()
+                    raise Fault("local_stop", "stopped on the machine before it started")
+                self.desk_browsers[desk] = b
             if page:
                 st = self.desks.status(desk)
                 b.window = b.page_size = (st.get("width") or 1280, st.get("height") or 800)
             return b
+
+    def _set_downloads(self, browser, desk=None):
+        """Keep a running browser's download policy with the level: deny as soon as it is not full, and deny a desk
+        whose downloads folder did not resolve inside the roots."""
+        want = self.effective_level() == "full" and (desk is None or getattr(browser, "download_dir", None) is not None)
+        if getattr(browser, "allow_downloads", None) != want:
+            browser.allow_downloads = want
+            if browser.alive() and hasattr(browser, "_apply_download_policy"):
+                browser._apply_download_policy()
+
+    def _desk_downloads(self, desk):
+        """A desk's downloads folder, resolved: only when it is inside the roots (a symlink out of them is not used).
+        None: the browser keeps its downloads denied."""
+        path = self.desks.dir(desk, "downloads")
+        if not path:
+            return None
+        real = os.path.realpath(path)
+        return real if self._inside(real) else None
 
     def _desk_lock(self, desk):
         with self.browser_mu:
@@ -838,22 +1260,36 @@ class Computer(Plugin):
         return None
 
     def _act(self, cmd, level, run, summary, threaded):
+        self._check_identity()
+        # This is the authorization instant: a stop after it (before the worker runs) must fail the check below.
+        generation = self.generation
         if RANK[level] < RANK["ask"]:
             stopped = self.runtime is not None and self.runtime.estopped
             raise Fault("local_stop" if stopped else "not_allowed",
                         "stopped on the machine: observe only" if stopped else
                         "this machine allows observing only (its owner sets the level on the machine)")
         if level == "ask":
+            # An approval never outlives the command it answers: whichever of the approval timeout and the request's
+            # own deadline comes first. The request's deadline is counted on the runtime's clock and the approval's
+            # expiry on the plugin's, so the time left on that deadline is what caps the approval.
+            left = cmd.deadline - self._deadline_clock()()
+            expires = self.clock() + min(self.approval_timeout_s, left)
             with self.mu:
+                if cmd.id in self.pending:
+                    raise Fault("not_ready", "an approval with id %s already waits on the machine" % _plain(cmd.id))
                 if len(self.pending) >= MAX_WAITING:
                     raise Fault("not_ready", "%d requests already wait for approval on the machine" % MAX_WAITING)
-                self.pending[cmd.id] = ((run, threaded), self.clock() + self.approval_timeout_s, summary)
-            self.emit_event("approval", id=cmd.id, kind=cmd.kind, summary=summary, expires_s=self.approval_timeout_s)
+                self.pending[cmd.id] = ((run, threaded), expires, summary)
+            self.emit_event("approval", id=cmd.id, kind=cmd.kind, summary=summary,
+                            expires_s=max(1, min(self.approval_timeout_s, int(round(expires - self.clock())))))
             self._notify(cmd.id, summary)
             self.log("waiting for approval %s: %s", cmd.id, summary)
             raise Deferred()
         self.log("%s %s: %s", cmd.kind, cmd.id, summary)
-        return self._start(cmd, run) if threaded else run()
+        if threaded:
+            return self._start(cmd, run, generation=generation)
+        with self._slot():
+            return self._authorized(run, cmd.deadline, generation, clock=self._deadline_clock())()
 
     def _notify(self, cid, summary):
         """Tell the desktop that a request waits (config `notify`, on by default) when the Node runs in a graphical
@@ -863,21 +1299,34 @@ class Computer(Plugin):
         if not self.notify or self.clock() < self.tray_until:
             return
         title = "OpenVibe: your agent asks"
-        hint = "openvibe-node approve %s  (or deny %s)" % (cid, cid)
+        summary = _plain(summary)
+        hint = "openvibe-node approve %s  (or deny %s)" % (shlex.quote(_plain(cid)), shlex.quote(_plain(cid)))
         parse = None
         if self.platform.startswith("linux") and (self.env.get("DISPLAY") or self.env.get("WAYLAND_DISPLAY")) and self.which("notify-send"):
-            if self._notify_can_act():
+            # A notification cannot show an arbitrarily long request; when it is longer than this surface can show in
+            # full, it offers no button at all and points at the full view instead of approving a cut summary.
+            if self._notify_can_act() and len(summary) <= NOTIFY_SUMMARY_MAX:
                 argv = ["notify-send", "--app-name=OpenVibe Node", "--urgency=critical", "--wait",
                         "--expire-time=%d" % (self.approval_timeout_s * 1000), "--action=approve=Approve",
-                        "--action=deny=Deny", "--", title, summary[:200]]
+                        "--action=deny=Deny", "--", title, _markup(summary)]
                 parse = _parse_notify_send
+            elif len(summary) > NOTIFY_SUMMARY_MAX:
+                argv = ["notify-send", "--app-name=OpenVibe Node", "--urgency=critical",
+                        "--expire-time=%d" % (self.approval_timeout_s * 1000), "--", title,
+                        _markup("This request is too long to show whole here. Run `%s` to read it and answer it.\n%s"
+                                % (FULL_VIEW_HINT, hint))]
             else:
-                argv = ["notify-send", "--app-name=OpenVibe Node", title, "%s\n%s" % (summary[:200], hint)]
+                argv = ["notify-send", "--app-name=OpenVibe Node", title, _markup("%s\n%s" % (summary, hint))]
         elif self.platform == "darwin" and self.which("osascript"):
             quote = lambda s: '"%s"' % s.replace("\\", "\\\\").replace('"', '\\"')
-            argv = ["osascript", "-e", 'display dialog %s with title %s buttons {"Deny", "Approve"} default button "Deny" '
-                    "giving up after %d with icon caution" % (quote(summary[:400]), quote(title), self.approval_timeout_s)]
-            parse = _parse_dialog
+            if len(summary) <= DIALOG_SUMMARY_MAX:
+                argv = ["osascript", "-e", 'display dialog %s with title %s buttons {"Deny", "Approve"} default button "Deny" '
+                        "giving up after %d with icon caution" % (quote(summary), quote(title), self.approval_timeout_s)]
+                parse = _parse_dialog
+            else:
+                argv = ["osascript", "-e", "display notification %s with title %s" % (
+                    quote("This request is too long to show whole here. Run `%s` to read it and answer it." % FULL_VIEW_HINT),
+                    quote(title))]
         else:
             return
         try:
@@ -913,8 +1362,13 @@ class Computer(Plugin):
         except (OSError, ValueError, AttributeError):
             out = ""
         with self.mu:
-            if self.prompts.get(cid) is proc:
+            # Only the prompt instance that is the one shown now may answer: a replaced notification's late answer is
+            # not the owner's answer to anything.
+            current = self.prompts.get(cid) is proc
+            if current:
                 del self.prompts[cid]
+        if not current:
+            return
         answer = parse(out)
         if answer is not None:
             self._desktop_answer(cid, answer)
@@ -924,7 +1378,7 @@ class Computer(Plugin):
         keyboard (or just after) may be the agent's own click: it is not taken, and the request is shown again."""
         with self.mu:
             item = self.pending.get(cid)
-            driving = self.input_busy > 0 or (self.input_ended is not None and self.clock() - self.input_ended < INPUT_GUARD_S)
+            driving = self._input_guard_locked()
         if item is None:
             return
         if approved and driving:
@@ -971,39 +1425,77 @@ class Computer(Plugin):
     def on_approval(self, cid, approved):
         with self.mu:
             item = self.pending.pop(cid, None)
+            generation = self.generation   # the approval is the authorization; a later stop invalidates it
         if item is None:
             return
         self._close_prompt(cid)
-        (run, threaded), _, summary = item
+        (work, expires, summary) = item
+        run, threaded = work
         self.emit_event("approval_done", id=cid, approved=bool(approved))
         if not approved:
             self.log("denied %s: %s", cid, summary)
             self.fail(cid, "not_allowed", "the owner denied it on the machine")
             return
+        try:
+            self._check_identity()
+        except Fault as f:
+            self.fail(cid, f.code, f.message)
+            return
         if self.effective_level() == "observe":
             self.fail(cid, "local_stop", "stopped on the machine before it ran")
             return
+        with self.mu:
+            expired = self.clock() >= expires
+            driving = self._input_guard_locked()
+        if expired:
+            self.fail(cid, "expired", "its deadline passed before it was approved")
+            return
+        if driving:
+            # The answer may be the agent's own keystroke: an input process is still driving (or had just ended), so
+            # no approved effect runs until the guard is clear.
+            self.fail(cid, "not_ready", "the agent is driving the mouse or keyboard right now")
+            return
         self.log("approved %s: %s", cid, summary)
+        gated = self._authorized(run, expires, generation)
         if threaded:
-            self._thread(cid, run)
+            try:
+                self._thread(cid, gated)
+            except Fault as f:
+                self.fail(cid, f.code, f.message)
             return
         try:
-            self.complete(cid, run())
+            with self._slot():
+                self.complete(cid, gated())
         except Fault as f:
             self.fail(cid, f.code, f.message)
         except Exception as e:
             self.fail(cid, "hardware", str(e))
 
-    def _start(self, cmd, run):
+    def _reserve(self):
         with self.mu:
             if self.running >= MAX_RUNNING:
                 raise Fault("not_ready", "%d commands are already running on this machine" % MAX_RUNNING)
-        self._thread(cmd.id, run)
+            self.running += 1
+
+    def _release(self):
+        with self.mu:
+            self.running = max(0, self.running - 1)
+
+    @contextlib.contextmanager
+    def _slot(self):
+        """One of the MAX_RUNNING slots, taken atomically: _start and an approved request take the same one."""
+        self._reserve()
+        try:
+            yield
+        finally:
+            self._release()
+
+    def _start(self, cmd, run, generation=None):
+        self._thread(cmd.id, self._authorized(run, cmd.deadline, generation, clock=self._deadline_clock()))
         raise Deferred()
 
     def _thread(self, cid, run):
-        with self.mu:
-            self.running += 1
+        self._reserve()   # raises not_ready to the caller before anything is started
 
         def work():
             try:
@@ -1013,17 +1505,57 @@ class Computer(Plugin):
             except Exception as e:
                 self.fail(cid, "hardware", str(e))
             finally:
-                with self.mu:
-                    self.running -= 1
+                self._release()
 
         threading.Thread(target=work, name="computer-%s" % cid, daemon=True).start()
 
     # ---- exec ------------------------------------------------------------------------------------------------------
+    def _exec_summary(self, argv, cwd, stdin, desk, detached=False):
+        """What the owner is asked to run: the full argv, the program it resolves to, the cwd, stdin and the fact that
+        it runs with everything the account can reach, not only the folders."""
+        program = argv[0]
+        if os.sep in program or (os.altsep and os.altsep in program):
+            # A path with a separator is resolved by the child against its cwd, so show the file it would actually run.
+            resolved = os.path.realpath(program if os.path.isabs(program) else os.path.join(cwd or os.getcwd(), program))
+        else:
+            found = self.which(program)
+            resolved = os.path.realpath(found) if found else "%s (not found on PATH)" % _plain(program)
+        account = "%s with everything that account can reach, not only the folders %s" % (
+            _account_name(), ", ".join(_plain(r) for r in self.roots) or "allowed")
+        if detached:
+            where = "the private desk" if desk == "private" else "desk %s" % desk
+            return ("start %s on %s (it keeps running until the desk stops); executable %s; cwd %s; stdin none; "
+                    "runs as %s" % (_argv_text(argv), where, _plain(resolved), _plain(cwd or "none"), account))
+        where = "" if desk == "main" else (" on the private desk" if desk == "private" else " on desk %s" % desk)
+        if stdin is None:
+            cinfo = "none"
+        else:
+            data = stdin.encode("utf-8")
+            cinfo = "%d bytes, sha256 %s" % (len(data), _digest(data))
+        return ("run %s; executable %s; cwd %s%s; stdin %s; runs as %s"
+                % (_argv_text(argv), _plain(resolved), _plain(cwd or "none"), where, cinfo, account))
+
+    @staticmethod
+    def _child_preexec():
+        """In the child: its own process group/session, and no privilege gain on Linux."""
+        os.setsid()
+        if sys.platform.startswith("linux"):
+            _set_no_new_privs()
+
+    @staticmethod
+    def _session_options():
+        """A new session/group for an exec'd program (Windows: its own process group, no preexec_fn there)."""
+        if os.name == "nt":
+            return {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)}
+        return {"preexec_fn": Computer._child_preexec}
+
     def _exec_op(self, cmd, v, level):
         argv = v.get("argv")
         if not isinstance(argv, list) or not argv or len(argv) > MAX_ARGS or \
                 not all(isinstance(a, str) and len(a) <= MAX_ARG_LEN and "\x00" not in a for a in argv) or not argv[0]:
             raise Fault("bad_value", "argv is a list of 1 to %d strings: a program and its arguments" % MAX_ARGS)
+        if not _no_new_privs_available():
+            raise Fault("unsupported", "no_new_privs is unavailable on this machine: running a program could gain a privilege")
         cwd = self._path(v["cwd"], level) if v.get("cwd") is not None else (self.roots[0] if self.roots else None)
         if cwd is not None and not os.path.isdir(cwd):
             raise Fault("bad_value", "cwd %s is not a folder" % cwd)
@@ -1047,27 +1579,27 @@ class Computer(Plugin):
                 raise Fault("unsupported", "a browser desk has no screen for a program's windows: start a whole desk (kind desktop)")
             if stdin is not None:
                 raise Fault("bad_value", "a detached program takes no stdin")
-            where = "the private desk" if desk == "private" else "desk %s" % desk
             return (lambda: self._start_on_desk(argv, cwd, env, desk),
-                    "start %s on %s (it keeps running until the desk stops)" % (shlex.join(argv)[:300], where))
+                    self._exec_summary(argv, cwd, None, desk, detached=True))
 
         def run():
-            left = deadline - self.clock() - 1.0
+            # The time left on the command's deadline, counted on the clock that deadline is on.
+            left = deadline - self._deadline_clock()() - 1.0
             if left < 1:
                 raise Fault("expired", "no time was left to run it")
             return self._exec(argv, cwd, stdin, min(timeout, left), env=env)
 
-        where = "" if desk == "main" else (" on the private desk" if desk == "private" else " on desk %s" % desk)
-        return run, "run %s in %s%s" % (shlex.join(argv)[:300], cwd, where)
+        return run, self._exec_summary(argv, cwd, stdin, desk)
 
     def _start_on_desk(self, argv, cwd, env, desk):
         """A program that keeps running on a desk (its windows there), ended when the desk stops."""
+        self._check_identity()
         running = [p for p in self.desk_programs.get(desk, []) if p.poll() is None]
         if len(running) >= MAX_DESK_PROGRAMS:
             raise Fault("not_ready", "%d programs already run on this desk: stop the desk, or close one there" % len(running))
         try:
-            proc = self.popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL, start_new_session=True)
+            proc = self._spawn(argv, cwd=cwd, env=self._child_env(env), stdin=subprocess.DEVNULL,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **self._session_options())
         except FileNotFoundError:
             raise Fault("bad_value", "no program %s on this machine" % argv[0])
         except PermissionError:
@@ -1084,17 +1616,16 @@ class Computer(Plugin):
                     self._kill(proc)
 
     def _exec(self, argv, cwd, stdin, timeout, env=None):
+        self._check_identity()
         started = self.clock()
         try:
-            proc = self.popen(argv, cwd=cwd, stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
-                              **({"env": env} if env else {}))
+            proc = self._spawn(argv, cwd=cwd, stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=self._child_env(env),
+                               **self._session_options())
         except FileNotFoundError:
             raise Fault("bad_value", "no program %s on this machine" % argv[0])
         except PermissionError:
             raise Fault("not_allowed", "%s may not be run by the Node's account" % argv[0])
-        with self.mu:
-            self.procs.add(proc)
         cap = self.max_output
         got = {"out": [b"", 0], "err": [b"", 0]}
 
@@ -1126,16 +1657,21 @@ class Computer(Plugin):
             self._kill(proc)
             code = proc.wait()
         finally:
-            with self.mu:
-                self.procs.discard(proc)
+            # The process group stays in self.groups when a descendant outlived the parent: stop kills it.
+            self._forget(proc)
         for t in readers:
             t.join(2)
-        for stream in (proc.stdout, proc.stderr, proc.stdin):
-            if stream is not None:
-                try:
-                    stream.close()
-                except OSError:
-                    pass
+        if not any(t.is_alive() for t in readers):
+            for stream in (proc.stdout, proc.stderr, proc.stdin):
+                if stream is not None:
+                    try:
+                        stream.close()
+                    except OSError:
+                        pass
+        else:
+            # A descendant still holds the pipe open: closing the file object here would wait on the reader's lock
+            # forever. The reader ends (and the object is collected) when the last writer closes it.
+            self._reap_orphans()
         text = lambda b: b.decode("utf-8", "replace")
         return {"exit_code": code, "stdout": text(got["out"][0]), "stderr": text(got["err"][0]),
                 "truncated": got["out"][1] > cap or got["err"][1] > cap, "timed_out": timed_out,
@@ -1269,6 +1805,7 @@ class Computer(Plugin):
         path = self._path(v.get("path"), level, create=True)
         if op == "mkdir":
             def run():
+                self._check_identity()
                 existed = os.path.isdir(path)
                 try:
                     os.makedirs(path, exist_ok=True)
@@ -1277,7 +1814,7 @@ class Computer(Plugin):
                 except PermissionError:
                     raise Fault("not_allowed", "the Node's account may not create %s" % path)
                 return {"path": path, "created": not existed}
-            return run, "make the folder %s" % path
+            return run, "make the folder %s" % _plain(path)
         mode = v.get("mode") or "create"
         if mode not in ("create", "overwrite", "append"):
             raise Fault("bad_value", "mode is create, overwrite or append")
@@ -1292,6 +1829,7 @@ class Computer(Plugin):
             raise Fault("bad_value", "at most %d bytes per write" % self.max_read)
 
         def run():
+            self._check_identity()
             if os.path.isdir(path):
                 raise Fault("bad_value", "%s is a folder" % path)
             if mode == "create" and os.path.lexists(path):
@@ -1317,7 +1855,8 @@ class Computer(Plugin):
             return {"path": path, "written": len(data), "mode": mode}
 
         verb = {"create": "create", "overwrite": "overwrite", "append": "append to"}[mode]
-        return run, "%s %s (%d bytes)" % (verb, path, len(data))
+        return run, "%s %s (mode %s, %d bytes, sha256 %s)" % (
+            verb, _plain(path), mode, len(data), _digest(data))
 
     # ---- input -----------------------------------------------------------------------------------------------------
     # ---- browser ---------------------------------------------------------------------------------------------------
@@ -1401,7 +1940,14 @@ class Computer(Plugin):
                 return self._desk_browser(desk, binary, env)
             with self.browser_mu:
                 if self.browser is None or not self.browser.alive():
-                    self.browser = self.browser_factory(binary, self.browser_profile, self.browser_headless)
+                    b = self.browser_factory(binary, self.browser_profile, self.browser_headless)
+                    b.allow_downloads = self.effective_level() == "full"
+                    with self.mu:
+                        if self._generation_changed():
+                            b.close()
+                            raise Fault("local_stop", "stopped on the machine before it started")
+                        self.browser = b
+                self._set_downloads(self.browser)
                 return self.browser
 
         def lock():
@@ -1409,6 +1955,7 @@ class Computer(Plugin):
                 return self.browser_locks.setdefault(lock_key, threading.Lock())
 
         def run():
+            self._check_identity()
             if action == "close":
                 self._close_desk_browser(desk) if env else self._close_browser()
                 return {"done": True}
@@ -1431,19 +1978,24 @@ class Computer(Plugin):
             except BrowserError as e:
                 raise Fault(e.code, e.message)
 
+        where = "" if not env else (" on the private desk" if desk == "private" else " on desk %s" % desk)
         if action == "open":
-            summary = "open %s in the browser" % url[:300]
+            summary = "open %s in the browser%s" % (_plain(url), where)
         elif action == "click":
-            summary = "click %s in the browser" % (selector if selector else "the %r button or link" % text[:120])
+            summary = "click %s in the browser%s" % (
+                _plain(selector) if selector else "the %r button or link" % _plain(text)[:120], where)
         elif action == "fill":
-            shown = text if len(text) <= 120 else text[:120] + "…"
-            summary = "type %d characters into %s in the browser: %r" % (len(text), selector[:200], shown)
+            shown = _plain(text) if len(_plain(text)) <= 120 else None
+            summary = ("type %d characters into %s in the browser%s: %r" % (len(text), _plain(selector)[:200], where, shown)
+                       if shown is not None else
+                       "type %d characters into %s in the browser%s, sha256 %s"
+                       % (len(text), _plain(selector)[:200], where, _digest(text.encode("utf-8"))))
         elif action == "press":
-            summary = "press %s in the browser" % key
+            summary = "press %s in the browser%s" % (_plain(key), where)
         elif action == "back":
-            summary = "go back in the browser"
+            summary = "go back in the browser%s" % where
         else:
-            summary = "%s the browser" % action
+            summary = "%s the browser%s" % (action, where)
         return run, summary, action in BROWSER_ACTS
 
     def _input_tool(self):
@@ -1488,17 +2040,29 @@ class Computer(Plugin):
                 raise Fault("bad_value", "keys is one key or chord, for example Return or ctrl+s")
 
         def run():
+            self._check_identity()
             if tool == "page":
                 return self._on_page(desk, lambda b: self._page_input(b, action, point, v))
             at = (self._desk_scale(point, desk) if env else self._scale(tool, point)) if point else None
             argv = self._input_argv(tool, action, at, v)
-            proc = self.popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, start_new_session=True,
-                              **({"env": env} if env else {}))
+            proc = self._spawn(argv, kind="input", stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.PIPE, start_new_session=True,
+                               **({"env": env} if env else {}))
             try:
                 _, err = proc.communicate(timeout=30)
             except subprocess.TimeoutExpired:
                 self._kill(proc)
                 raise Fault("hardware", "%s did not finish in 30 s" % tool)
+            finally:
+                try:
+                    alive = proc.poll() is None   # the driver must not outlive the command it was approved for
+                except AttributeError:
+                    alive = False
+                if alive:
+                    self._kill(proc)
+                self._forget(proc, "input")
+                with self.mu:
+                    self.input_ended = self.clock()
             if proc.returncode != 0:
                 raise Fault("hardware", "%s failed: %s" % (tool, (err or b"").decode("utf-8", "replace")[:200]))
             out = {"done": True, "action": action}
@@ -1509,10 +2073,11 @@ class Computer(Plugin):
         where = (" on the private desk" if desk == "private" else " on desk %s" % desk) if env else ""
         if action == "type":
             text = v["text"]
-            shown = text if len(text) <= 120 else text[:120] + "…"
-            summary = "type %d characters%s: %r" % (len(text), where, shown)
+            shown = _plain(text) if len(_plain(text)) <= 120 else None
+            summary = ("type %d characters%s: %r" % (len(text), where, shown) if shown is not None else
+                       "type %d characters%s, sha256 %s" % (len(text), where, _digest(text.encode("utf-8"))))
         elif action == "key":
-            summary = "press %s%s" % (v["keys"], where)
+            summary = "press %s%s" % (_plain(v["keys"]), where)
         elif action == "scroll":
             summary = "scroll %s %d%s" % ("up" if v["dy"] < 0 else "down", abs(v["dy"]), where)
         else:
@@ -1634,11 +2199,13 @@ class Computer(Plugin):
         return None
 
     def _screen(self, tool, max_width, env=None):
+        self._check_identity()
         fd, out = tempfile.mkstemp(prefix="openvibe-screen-", suffix=".png")
         os.close(fd)
+        proc = None
         try:
-            proc = self.popen(tool[1](out), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                              stderr=subprocess.PIPE, start_new_session=True, **({"env": env} if env else {}))
+            proc = self._spawn(tool[1](out), kind="capture", stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.PIPE, start_new_session=True, **({"env": env} if env else {}))
             try:
                 _, err = proc.communicate(timeout=15)
             except subprocess.TimeoutExpired:
@@ -1648,6 +2215,8 @@ class Computer(Plugin):
                 raise Fault("hardware", "screen capture failed: %s" % (err or b"").decode("utf-8", "replace")[:200])
             return self._encode(out, max_width)
         finally:
+            if proc is not None:
+                self._forget(proc, "capture")
             if os.path.exists(out):
                 os.unlink(out)
 
@@ -1697,23 +2266,32 @@ class Computer(Plugin):
         self._end_stream("replaced")
         frames = tempfile.mkdtemp(prefix="openvibe-screen-stream-")  # 0700, this account only
         stream = {"sid": os.urandom(8).hex(), "until": self.clock() + seconds, "fps": fps, "tool": tool, "dir": frames,
-                  "stop": threading.Event(), "env": env, "desk": desk}
+                  "stop": threading.Event(), "env": env, "desk": desk, "capture": None}
+        stream["thread"] = threading.Thread(target=self._stream_loop, args=(stream,), name="computer-screen-stream",
+                                            daemon=True)
         with self.stream_mu:
             self.stream = stream
-        threading.Thread(target=self._stream_loop, args=(stream,), name="computer-screen-stream", daemon=True).start()
+        stream["thread"].start()
         if not env:   # the private desk is not the owner's screen: nothing of theirs goes live
             self._notify_stream(seconds)
         return {"streaming": True, "sid": stream["sid"], "seconds": seconds, "fps": fps, "tool": tool[0],
                 "desk": (desk or "private") if env else "main"}
 
     def _end_stream(self, reason):
-        """End the live screen, if one runs → whether one did."""
+        """End the live screen, if one runs → whether one did. A capture in flight is killed and its thread joined, so
+        no frame can be emitted after this returns."""
         with self.stream_mu:
             stream, self.stream = self.stream, None
         if stream is None:
             return False
         stream["stop"].set()
         stream["reason"] = reason
+        capture = stream.get("capture")
+        if capture is not None:
+            self._kill(capture)
+        thread = stream.get("thread")
+        if thread is not None and thread is not threading.current_thread() and thread.is_alive():
+            thread.join(CAPTURE_JOIN_S)
         return True
 
     def _stream_loop(self, stream):
@@ -1726,7 +2304,7 @@ class Computer(Plugin):
                     break
                 path = os.path.join(stream["dir"], "frame-%d.jpg" % (n % 3))  # the core reads each one at once
                 try:
-                    self._stream_frame(stream["tool"], path, env=stream.get("env"), desk=stream.get("desk"))
+                    self._stream_frame(stream["tool"], path, env=stream.get("env"), desk=stream.get("desk"), stream=stream)
                     n += 1
                     failures = 0
                     self.emit_video(path, stream="screen")
@@ -1744,7 +2322,7 @@ class Computer(Plugin):
             # The core ends the stream with the same id (a newer one that replaced it carries its own).
             self.emit_event("screen_stream_ended", sid=stream["sid"], reason=stream.get("reason") or reason, frames=n)
 
-    def _stream_frame(self, tool, path, env=None, desk=None):
+    def _stream_frame(self, tool, path, env=None, desk=None, stream=None):
         """One JPEG frame of the screen at path, at most STREAM_WIDTH wide when Pillow can resize it. On a browser desk,
         a picture of its page from the browser itself (JPEG and scaled there: no capture tool, no Pillow)."""
         if tool[0] == "page":
@@ -1758,7 +2336,7 @@ class Computer(Plugin):
             fd, png = tempfile.mkstemp(prefix="openvibe-screen-", suffix=".png")
             os.close(fd)
             try:
-                self._capture(tool[1](png), env=env)
+                self._capture(tool[1](png), env=env, owner=stream)
                 from PIL import Image
                 with Image.open(png) as im:
                     im = im.convert("RGB")
@@ -1770,19 +2348,30 @@ class Computer(Plugin):
                 if os.path.exists(png):
                     os.unlink(png)
             return
-        self._capture(self._native_jpeg(tool, path + ".part.jpg"), env=env)
+        self._capture(self._native_jpeg(tool, path + ".part.jpg"), env=env, owner=stream)
         os.replace(path + ".part.jpg", path)
 
-    def _capture(self, argv, env=None):
-        proc = self.popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                          start_new_session=True, **({"env": env} if env else {}))
+    def _capture(self, argv, env=None, owner=None):
+        """One screen capture process, tracked so a stream stop can kill it and join its frame loop."""
+        proc = self._spawn(argv, kind="capture", stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.PIPE, start_new_session=True, **({"env": env} if env else {}))
+        if owner is not None:
+            with self.stream_mu:
+                owner["capture"] = proc
         try:
-            _, err = proc.communicate(timeout=10)
-        except subprocess.TimeoutExpired:
-            self._kill(proc)
-            raise Fault("hardware", "the screen capture did not finish in 10 s")
-        if proc.returncode != 0:
-            raise Fault("hardware", (err or b"").decode("utf-8", "replace")[:200] or "the capture tool failed")
+            try:
+                _, err = proc.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                self._kill(proc)
+                raise Fault("hardware", "the screen capture did not finish in 10 s")
+            if proc.returncode != 0:
+                raise Fault("hardware", (err or b"").decode("utf-8", "replace")[:200] or "the capture tool failed")
+        finally:
+            self._forget(proc, "capture")
+            if owner is not None:
+                with self.stream_mu:
+                    if owner.get("capture") is proc:
+                        owner["capture"] = None
 
     def _notify_stream(self, seconds):
         """Say on the desktop that the screen is live, and how to end it (config `notify`). Best effort."""

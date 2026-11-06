@@ -123,6 +123,14 @@ class BrowserKindTest(unittest.TestCase):
         self.assertEqual(ev["summary"], "click the 'Sign in' button or link in the browser")
         self.plugin.on_approval(cid, False)
         self.assertEqual(reply(self.out, cid)["fault_code"], "not_allowed")
+        long_text = "secret" * 60
+        cid = self.cmd({"action": "fill", "selector": "#q", "text": long_text})
+        ev = self.out.wait_for(lambda m: m.get("op") == "event" and m.get("name") == "approval" and m.get("id") == cid)
+        self.assertIn("%d characters" % len(long_text), ev["summary"])
+        self.assertIn(__import__("hashlib").sha256(long_text.encode()).hexdigest()[:16], ev["summary"])
+        self.assertNotIn(long_text, ev["summary"], "a long fill shows its length and digest, not a cut prefix")
+        self.plugin.on_approval(cid, True)
+        self.assertEqual(reply(self.out, cid)["data"]["chars"], len(long_text))
 
     def test_trusted_drives_it_and_the_profile_is_its_own(self):
         self.boot("trusted")
@@ -161,6 +169,38 @@ class BrowserKindTest(unittest.TestCase):
         self.plugin.stop()
         self.assertFalse(self.made[0].alive())
         self.assertEqual(reply(self.out, self.cmd({"action": "close"}))["data"], {"done": True})
+
+    def test_downloads_are_refused_below_full(self):
+        # F4: the browser is told to deny downloads at every level but full.
+        self.boot("trusted")
+        reply(self.out, self.cmd({"action": "open", "url": "https://example.org/"}))
+        self.assertIs(self.made[0].allow_downloads, False)
+        self.boot("full")
+        reply(self.out, self.cmd({"action": "open", "url": "https://example.org/"}))
+        self.assertIs(self.made[0].allow_downloads, True)
+
+
+class DownloadPolicyTest(unittest.TestCase):
+    def test_the_download_behavior_sent_to_the_browser(self):
+        # F4: below full the browser's own download policy is replaced with deny; at full only a desk's own folder is used.
+        b = Browser("chromium", "/nonexistent")
+        calls = []
+        b.call = lambda method, params=None, **kw: calls.append((method, params))
+        b.allow_downloads, b.download_dir = False, "/tmp/downloads"
+        b._apply_download_policy()
+        self.assertEqual(calls, [("Browser.setDownloadBehavior", {"behavior": "deny"})])
+        calls.clear()
+        b.allow_downloads = True
+        b._apply_download_policy()
+        self.assertEqual(calls, [("Browser.setDownloadBehavior", {"behavior": "allow", "downloadPath": "/tmp/downloads"})])
+        calls.clear()
+        b.allow_downloads, b.download_dir = False, "/tmp/downloads"
+        b._apply_download_policy()   # the level was lowered again
+        calls.clear()
+        b.allow_downloads, b.download_dir = True, None
+        b._apply_download_policy()
+        self.assertEqual(calls, [("Browser.setDownloadBehavior", {"behavior": "default"})],
+                         "at full the main browser goes back to its own download folder")
 
 
 class ReceiptTest(unittest.TestCase):

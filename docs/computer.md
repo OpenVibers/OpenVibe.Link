@@ -44,6 +44,11 @@ openvibe-node approve <ID>       # let it run
 openvibe-node deny <ID>          # refuse it
 ```
 
+A request shows what it would do in full: every argument of a program, the program it resolves to, the folder, and
+whether stdin is given with its size and digest; a write's path, mode, size and content digest; the whole text to type,
+or its length and digest. Control, ANSI and bidi characters are escaped. A notification or dialog that cannot show all
+of it offers no **Approve** button: answer that request from `openvibe-node approvals`.
+
 **The tray** (Linux and Windows): `openvibe-node tray` puts the Node in your notification area. The installer's
 `--computer` starts it when you sign in (`openvibe-node tray --autostart on|off` does it by hand). It runs in your
 desktop session, not in the service, and talks to the Node over the same local socket as the commands above:
@@ -122,6 +127,7 @@ text and keys are passed to the tool as arguments, never through a shell, and `k
 - **Its own profile.** It runs in a folder of its own (`browser_profile`, by default `~/.local/share/openvibe-node/browser`; on Windows `%LOCALAPPDATA%\openvibe-node\browser`), so the agent never sees the sessions of your own browser unless you point it at one. Sign it in to a site yourself (`browser_headless: false` shows its window) if you want the agent to work there as you.
 - **No port.** The Node starts it on the first command with `--remote-debugging-pipe`: it speaks the DevTools protocol over two file descriptors, so nothing else on the machine can drive it.
 - **Levels.** `read`, `screenshot` and `close` run at every level. `open`, `click`, `fill`, `press` and `back` are acting commands: refused at `observe`, approved one by one at `ask`. The approval says exactly what would happen: "open https://… in the browser", "type 5 characters into #q in the browser: 'hello'".
+- **Downloads.** Below level `full`, the browser is told to deny every download (a page, a click or a redirect cannot put a file anywhere on the machine). At `full` a desk downloads into its own folder, and only when that folder resolves inside `roots` (it is never used from outside them).
 - **Your own network.** Below level `full`, `open` refuses an address on the machine's own network (private, loopback or link-local, checked for every address the name resolves to).
 - **The egress guard** (Node v0.25.0). A page the agent opened could still reach your network with its own scripts: a
   `fetch`, an image, a WebSocket or a redirect to your router, a printer or another computer at home. So every
@@ -165,7 +171,7 @@ An agent can work on a desk of its own instead of your screen (plan track K: Vib
   and dashes, up to 24 after `desk-`; `private` is the first desk, as before). Each desk is a separate computer for
   its agent:
   - its own X display and D-Bus;
-  - its own browser in its own profile (`browser_profile` + `-<name>`) and downloads folder;
+  - its own browser in its own profile (`browser_profile` + `-<name>`) and downloads folder (used at level `full`);
   - its own temp folder (`TMPDIR`), so its clipboard, cookies, files and windows never meet another desk's.
 
   Two agents can work at once without either seeing or driving the other's screen, and two desks' browsers act in
@@ -198,7 +204,7 @@ window manager.
   changed (a receipt, as in the browser kind). `screen_stream` sends frames of the page, so you can watch a browser desk
   live and take it over like any desk. All of it goes through the browser's pipe: no display, no capture tool, no
   Pillow.
-- **Like any desk.** It has its own profile (`browser_profile` + `-<name>`), downloads and temp folder, and nothing of
+- **Like any desk.** It has its own profile (`browser_profile` + `-<name>`), downloads (at level `full`) and temp folder, and nothing of
   your session (no `DISPLAY`, session bus or X cookie). `browser` drives its page, and its page is exactly the desk's
   size (1280×800 by default).
 - `private` is always a whole desk; a whole desk is `"kind": "desktop"`, the default.
