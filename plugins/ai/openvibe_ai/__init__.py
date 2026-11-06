@@ -28,7 +28,10 @@ Config (the plugin's block in config.json):
 * ``offer``: the network offer, off unless ``enabled`` is true: ``models`` (default: the served ones), ``hours``
   (``{start, end, tz}``, HH:MM local time, an overnight window allowed, start == end means all day), ``concurrency``
   (1-8), ``price`` (``{in_per_million, out_per_million}`` credits, 0 to volunteer) and ``audience``
-  (``everyone``, ``followers``, or ``group`` with a ``group`` id).
+  (``everyone``, ``followers``, or ``group`` with a ``group`` id), ``idle_only`` (default true: pause while the GPU,
+  a game/OBS/Steam process or the person at the keyboard is using the machine) and ``quiet_minutes`` (default 5) before
+  it resumes. The offer also carries the privacy sentence shown when it is turned on: a community machine sees the
+  prompt, only opted-in requests come here, and every answer is labelled.
 
 Command ``ai`` ``{"model", "messages": [{"role", "content"}], "max_tokens"?, "temperature"?, "tools"?, "tool_choice"?}``
 → ``{model, message: {role: "assistant", content, tool_calls?}, usage?, finish_reason?}``.
@@ -41,7 +44,11 @@ them and sends the next command with the assistant's message (its ``tool_calls``
 
 import datetime
 import json
+import os
 import re
+import shutil
+import subprocess
+import sys
 import threading
 import time
 import urllib.error
@@ -189,6 +196,14 @@ def _offer_config(cfg, served):
     audience = raw.get("audience", "everyone")
     if audience not in AUDIENCES:
         raise Fault("bad_value", "offer.audience is everyone, followers or group")
+    idle_only = raw.get("idle_only", True)
+    if not isinstance(idle_only, bool):
+        raise Fault("bad_value", "offer.idle_only is true or false")
+    quiet_minutes = _int(raw.get("quiet_minutes"), "offer.quiet_minutes", 0, 120, 5)
+    busy_gpu_percent = _int(raw.get("busy_gpu_percent"), "offer.busy_gpu_percent", 1, 100, 20)
+    busy_processes = raw.get("busy_processes", ["obs", "obs64", "obs-studio", "steam", "steamwebhelper", "lutris", "heroic", "gameoverlayui"])
+    if not isinstance(busy_processes, list) or not all(isinstance(x, str) and 0 < len(x) <= 80 for x in busy_processes):
+        raise Fault("bad_value", "offer.busy_processes is a list of process names")
     group = raw.get("group")
     if audience == "group" and (not isinstance(group, str) or not group.strip() or len(group) > 80):
         raise Fault("bad_value", "offer.group is the group id whose members may use this offer")
@@ -202,6 +217,10 @@ def _offer_config(cfg, served):
         "price": {"in_per_million": in_per_million, "out_per_million": out_per_million},
         "audience": audience,
         "group": group,
+        "idle_only": idle_only,
+        "quiet_minutes": quiet_minutes,
+        "busy_gpu_percent": busy_gpu_percent,
+        "busy_processes": [x.lower() for x in busy_processes],
     }
 
 
@@ -209,15 +228,80 @@ def _minutes(hhmm):
     return int(hhmm[:2]) * 60 + int(hhmm[3:])
 
 
+def _run(cmd, timeout=2.0):
+    """A short local probe's output, or '' when the tool is absent, times out or fails."""
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout).stdout
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return ""
+
+
+def _gpu_busy(threshold):
+    """NVIDIA (nvidia-smi) or AMD (rocm-smi) utilization over the threshold; unknown tools mean 'not busy'."""
+    if shutil.which("nvidia-smi"):
+        out = _run(["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"])
+        for part in re.split(r"[,\s]+", out):
+            if part.isdigit() and int(part) >= threshold:
+                return True
+    if shutil.which("rocm-smi"):
+        out = _run(["rocm-smi", "--showuse"])
+        for pct in re.findall(r"(?:GPU use|GPU utilization)[^0-9]*(\d+)", out, re.I):
+            if int(pct) >= threshold:
+                return True
+    return False
+
+
+def _process_busy(names):
+    """A game, OBS or another heavy process the owner listed is running."""
+    if not names:
+        return False
+    if sys.platform == "win32":
+        out = _run(["tasklist", "/FO", "CSV", "/NH"], 3.0)
+    else:
+        out = _run(["ps", "-A", "-o", "comm="], 3.0)
+    low = out.lower()
+    return any(name in low for name in names)
+
+
+def _input_idle_ms():
+    """How long since the person last touched the keyboard or mouse, or None when it cannot be read."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            class LASTINPUTINFO(ctypes.Structure):
+                _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
+            info = LASTINPUTINFO()
+            info.cbSize = ctypes.sizeof(info)
+            if ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info)):
+                return max(0, int(ctypes.windll.kernel32.GetTickCount()) - int(info.dwTime))
+        elif sys.platform == "darwin":
+            out = _run(["ioreg", "-c", "IOHIDSystem"], 2.0)
+            m = re.search(r'"HIDIdleTime"\s*=\s*(\d+)', out)
+            if m:
+                return int(m.group(1)) // 1000000
+        elif shutil.which("xprintidle"):
+            out = _run(["xprintidle"], 1.0).strip()
+            if out.isdigit():
+                return int(out)
+    except Exception:
+        return None
+    return None
+
+
 class Ai(Plugin):
     driver = "ai"
     version = VERSION
     motion_kinds = frozenset()   # it moves nothing
 
-    def __init__(self, opener=None, clock=time.monotonic, now=None):
+    def __init__(self, opener=None, clock=time.monotonic, now=None, busy_probe=None):
         self.opener = opener or urllib.request.urlopen
         self.clock = clock
         self.now = now or (lambda: datetime.datetime.now(datetime.timezone.utc))
+        # Injected in tests: returns (busy, reason). In production this reads GPU use, heavy processes and input idle.
+        self.busy_probe = busy_probe
+        self.quiet_since = None
+        self.busy_reason = None
+        self._busy_cache = (0.0, False, None)
         self.endpoint = None
         self.models = []
         self.max_tokens = 2048
@@ -276,7 +360,51 @@ class Ai(Plugin):
         if wanted is not None and (not isinstance(wanted, list) or not all(isinstance(m, str) and m for m in wanted)):
             raise Fault("bad_value", "models is a list of model names")
         self.models = [m for m in (listed or []) if wanted is None or m in wanted] if listed is not None else list(wanted or [])
+        before = self.offer.get("idle_only")
         self.offer = _offer_config(cfg, self.models)
+        if before is None or before != self.offer["idle_only"]:
+            self.quiet_since = None
+            self._busy_cache = (0.0, False, None)
+
+    def _raw_busy(self):
+        """(busy, reason) from the injected probe or the machine's own signals, cached for five seconds."""
+        if not self.offer["idle_only"]:
+            return False, None
+        now = self.clock()
+        if self._busy_cache[0] and now - self._busy_cache[0] < 5.0:
+            return self._busy_cache[1], self._busy_cache[2]
+        if self.busy_probe is not None:
+            busy, reason = self.busy_probe()
+        else:
+            if _gpu_busy(self.offer["busy_gpu_percent"]):
+                busy, reason = True, "gpu"
+            elif _process_busy(self.offer["busy_processes"]):
+                busy, reason = True, "process"
+            else:
+                idle = _input_idle_ms()
+                if idle is not None and idle < (self.offer["quiet_minutes"] or 0) * 60000:
+                    busy, reason = True, "keyboard"
+                else:
+                    busy, reason = False, None
+        self._busy_cache = (now, bool(busy), reason)
+        return bool(busy), reason
+
+    def _paused(self):
+        """Idle-only: busy now, or not yet quiet for the owner's minutes. Never pauses the owner's own requests."""
+        if not self.offer["idle_only"]:
+            return False
+        busy, reason = self._raw_busy()
+        if busy:
+            self.quiet_since = None
+            self.busy_reason = reason
+            return True
+        if self.quiet_since is None:
+            self.quiet_since = self.clock()
+        if self.clock() - self.quiet_since < (self.offer["quiet_minutes"] or 0) * 60:
+            self.busy_reason = "quiet"
+            return True
+        self.busy_reason = None
+        return False
 
     def _within_hours(self):
         """Is the offer open now, in its own time zone? start == end is all day; an overnight window wraps."""
@@ -300,6 +428,7 @@ class Ai(Plugin):
     def _offer_view(self):
         """The offer as Bot, Network and AI see it (status.capabilities.ai.offer)."""
         open_now = self._within_hours()
+        paused = self._paused() if self.offer["enabled"] else False
         return {
             "enabled": self.offer["enabled"],
             "models": list(self.offer["models"]),
@@ -308,8 +437,13 @@ class Ai(Plugin):
             "price": dict(self.offer["price"]),
             "audience": self.offer["audience"],
             "group": self.offer["group"],
+            "idle_only": self.offer["idle_only"],
+            "quiet_minutes": self.offer["quiet_minutes"],
             "open_now": open_now,
-            "ready": bool(self.offer["enabled"] and self.reachable and self.offer["models"] and open_now),
+            "paused": paused,
+            "busy_reason": self.busy_reason,
+            "privacy": "A community machine sees the prompt. Only requests that allow community capacity are sent here, and every answer is labelled Community.",
+            "ready": bool(self.offer["enabled"] and self.reachable and self.offer["models"] and open_now and not paused),
         }
 
     def describe(self, config):
@@ -318,7 +452,9 @@ class Ai(Plugin):
         except Fault:
             return {}
         return {"ai": {"models": self.models, "ready": self.reachable and bool(self.models),
-                       "max_tokens": self.max_tokens, "tools": True, "offer": self._offer_view()}}
+                       "max_tokens": self.max_tokens, "tools": True,
+                       "speed": {m: round(r, 1) for m, r in self.speed.items()},
+                       "offer": self._offer_view()}}
 
     def setup(self, config):
         self._configure(config)
@@ -344,6 +480,8 @@ class Ai(Plugin):
                 raise Fault("not_allowed", "this machine is not offering its models to the network")
             if not self._within_hours():
                 raise Fault("not_allowed", "the owner\'s offer is outside its hours")
+            if self._paused():
+                raise Fault("not_allowed", "the machine is in use or has not been quiet for %d minutes" % (self.offer["quiet_minutes"] or 0))
             if model not in self.offer["models"]:
                 raise Fault("bad_value", "this machine does not offer %s to the network (it offers: %s)" % (model, ", ".join(self.offer["models"][:20]) or "none"))
         sent = [_message(m) for m in messages] if isinstance(messages, list) and 0 < len(messages) <= MAX_MESSAGES else None
