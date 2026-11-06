@@ -66,6 +66,10 @@ func TestAPluginStateThatIsNotReadyRaisesTheCurtain(t *testing.T) {
 
 func TestACurtainHeartbeatFromThePluginIsObserved(t *testing.T) {
 	n, a := newWatchAgent(t)
+	n.deskCurtainEvent("dryrun", map[string]any{"up": true, "reason": "password_field"})
+	if a.Status().Curtain {
+		t.Fatal("another plugin's curtain moved this stream")
+	}
 	n.deskCurtainEvent("computer", map[string]any{"up": true, "reason": "password_field", "heartbeat": true})
 	if !a.Status().Curtain {
 		t.Fatal("a heartbeat saying up did not raise the curtain")

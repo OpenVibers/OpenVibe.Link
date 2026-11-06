@@ -319,7 +319,7 @@ func (n *Node) deskCurtainEvent(plugin string, data map[string]any) {
 	n.deskMu.Lock()
 	a := n.deskStream
 	n.deskMu.Unlock()
-	if a == nil {
+	if a == nil || (a.PluginName() != "" && a.PluginName() != plugin) {
 		return
 	}
 	up, _ := data["up"].(bool)
