@@ -602,6 +602,21 @@ class DeskPluginTest(unittest.TestCase):
         self.plugin.stop()
         self.assertFalse(self.desk.on)
 
+    def test_desk_downloads_must_resolve_inside_the_roots(self):
+        # F4: a desk's downloads folder is resolved through the roots gate; outside them, downloads are off.
+        self.boot("trusted")
+        roots = os.path.join(self.desk_dir, "roots")
+        os.makedirs(roots)
+        self.plugin.roots = [os.path.realpath(roots)]
+        outside = os.path.join(self.desk_dir, "outside")
+        os.makedirs(outside)
+        os.makedirs(os.path.join(self.desk_dir, "desk-a"))
+        os.symlink(outside, os.path.join(self.desk_dir, "desk-a", "downloads"))
+        self.assertIsNone(self.plugin._desk_downloads("desk-a"), "a linked downloads folder outside the roots")
+        self.plugin.roots = [os.path.realpath(self.desk_dir)]
+        self.assertEqual(self.plugin._desk_downloads("desk-a"),
+                         os.path.realpath(os.path.join(self.desk_dir, "desk-a", "downloads")))
+
 
 def _pillow():
     try:

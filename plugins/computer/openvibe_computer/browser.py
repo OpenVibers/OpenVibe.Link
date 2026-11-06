@@ -217,6 +217,8 @@ class Browser:
         self.session = None
         self.used_at = 0.0
         self.download_dir = None   # a desk's own downloads folder (set before the first action), else the browser's default
+        self.allow_downloads = False   # below level full the browser is told to deny every download (F4)
+        self._downloads_state = None   # what was last told to the browser: "deny", "allow" or None
         self.window = (1280, 900)  # the window's size
         self.page_size = None      # on a browser desk, the page's exact size (the desk's: its page is its screen)
         self.write_mu = threading.Lock()   # one message at a time on the pipe: actions and the live view share it
@@ -275,11 +277,24 @@ class Browser:
         self._attach(target)
         # Pages this page opens (a sign-in popup, a link to a new tab) are followed: see _follow.
         self.call("Target.setDiscoverTargets", {"discover": True}, session=False)
-        if self.download_dir:
-            self.call("Browser.setDownloadBehavior", {"behavior": "allow", "downloadPath": self.download_dir}, session=False)
+        self._apply_download_policy()
         if self.after_start:
             hook, self.after_start = self.after_start, None
             hook()
+
+    def _apply_download_policy(self):
+        """Below level full nothing is downloaded (not into a desk folder, not the browser's own); at full a desk's own
+        folder is allowed. The plugin decides before the browser starts."""
+        if not self.allow_downloads:
+            self.call("Browser.setDownloadBehavior", {"behavior": "deny"}, session=False)
+            self._downloads_state = "deny"
+        elif self.download_dir:
+            self.call("Browser.setDownloadBehavior", {"behavior": "allow", "downloadPath": self.download_dir}, session=False)
+            self._downloads_state = "allow"
+        elif self._downloads_state == "deny":
+            # Back to the browser's own download folder after a level was raised (full, on the owner's screen).
+            self.call("Browser.setDownloadBehavior", {"behavior": "default"}, session=False)
+            self._downloads_state = None
 
     def _attach(self, target):
         """Drive that page: a session of its own, its events on, and a browser desk's exact size."""

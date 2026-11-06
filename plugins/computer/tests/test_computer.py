@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import io
 import json
 import os
@@ -7,13 +8,14 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), "sdk"))
 
-from openvibe_computer import Computer  # noqa: E402
-from openvibe_plugin import Runtime  # noqa: E402
+from openvibe_computer import Computer, _parse_notify_send  # noqa: E402
+from openvibe_plugin import Fault, Runtime  # noqa: E402
 
 
 class Out(io.StringIO):
@@ -578,6 +580,387 @@ class ComputerTest(unittest.TestCase):
         self.assertEqual(self.argvs[-1], ["cliclick", "kp:return"])
         r = reply(self.out, self.cmd("input", {"action": "scroll", "dy": 2}))
         self.assertEqual((r["op"], r["fault_code"]), ("nack", "unsupported"))
+
+    # ---- the 2026-11-05 review: approval content, identity, stop and lifetime ---------------------------------------
+    def boot_control(self):
+        """A plugin whose environment names the Node's own config and state directories, both inside the roots."""
+        self.dir = tempfile.mkdtemp(prefix="ov-computer-")
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.dir, ignore_errors=True))
+        cfg, state = os.path.join(self.dir, "config"), os.path.join(self.dir, "state")
+        os.makedirs(cfg)
+        os.makedirs(state)
+        with open(os.path.join(cfg, "config.json"), "w") as f:
+            f.write('{"level": "observe"}')
+        with open(os.path.join(cfg, "credential.json"), "w") as f:
+            f.write("{}")
+        with open(os.path.join(state, "latch.json"), "w") as f:
+            f.write("{}")
+        open(os.path.join(state, "node.sock"), "w").close()
+        self.cfg, self.state = cfg, state
+        self.out = Out()
+        self.plugin = Computer(env={"OPENVIBE_NODE_CONFIG": cfg, "OPENVIBE_NODE_STATE": state}, platform="linux")
+        self.rt = Runtime(self.plugin, infile=io.StringIO(""), outfile=self.out)
+        self.rt.dispatch({"op": "hello", "config": {"level": "full", "roots": [self.dir]}})
+        self.n = 0
+
+    def test_control_files_are_never_reachable_by_the_file_api(self):
+        # F2: read, list, stat, mkdir and write all refuse the Node's config/state, even at full, and through aliases.
+        self.boot_control()
+        for path, op in ((os.path.join(self.cfg, "config.json"), "stat"),
+                         (os.path.join(self.cfg, "config.json"), "read"),
+                         (os.path.join(self.state, "latch.json"), "read"),
+                         (os.path.join(self.state, "node.sock"), "stat"),
+                         (self.cfg, "list"),
+                         (self.state, "list"),
+                         (os.path.join(self.state, "new"), "mkdir")):
+            value = {"op": op, "path": path}
+            if op == "write":
+                value["content_b64"] = "eA=="
+            r = reply(self.out, self.cmd("fs", value))
+            self.assertEqual((r["op"], r["fault_code"]), ("nack", "not_allowed"), (op, path))
+        alias = os.path.join(self.dir, "alias.json")
+        os.symlink(os.path.join(self.cfg, "config.json"), alias)
+        self.assertEqual(reply(self.out, self.cmd("fs", {"op": "stat", "path": alias}))["fault_code"], "not_allowed",
+                         "a symlink to a control file")
+        hard = os.path.join(self.dir, "hard.json")
+        os.link(os.path.join(self.cfg, "config.json"), hard)
+        self.assertEqual(reply(self.out, self.cmd("fs", {"op": "read", "path": hard}))["fault_code"], "not_allowed",
+                         "a hard link to a control file")
+        r = reply(self.out, self.cmd("fs", {"op": "write", "path": os.path.join(self.cfg, "config.json"),
+                                            "content_b64": "eA==", "mode": "overwrite"}))
+        self.assertEqual(r["fault_code"], "not_allowed", "an approved/trusted overwrite of config.json")
+        with open(os.path.join(self.cfg, "config.json")) as f:
+            self.assertEqual(f.read(), '{"level": "observe"}')
+
+    def test_a_home_layout_still_serves_a_root_inside_it(self):
+        # F2: with --home, config and state are one directory; a root below it stays usable while its control entries
+        # (and the state's own folders) are not.
+        self.dir = tempfile.mkdtemp(prefix="ov-home-")
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.dir, ignore_errors=True))
+        work = os.path.join(self.dir, "work")
+        os.makedirs(work)
+        os.makedirs(os.path.join(self.dir, "plugins"))
+        with open(os.path.join(self.dir, "config.json"), "w") as f:
+            f.write("{}")
+        with open(os.path.join(self.dir, "latch.json"), "w") as f:
+            f.write("{}")
+        with open(os.path.join(work, "notes.txt"), "w") as f:
+            f.write("hello\n")
+        self.out = Out()
+        self.plugin = Computer(env={"OPENVIBE_NODE_CONFIG": self.dir, "OPENVIBE_NODE_STATE": self.dir},
+                               platform="linux")
+        self.rt = Runtime(self.plugin, infile=io.StringIO(""), outfile=self.out)
+        self.rt.dispatch({"op": "hello", "config": {"level": "full", "roots": [work]}})
+        self.n = 0
+        self.assertEqual(reply(self.out, self.cmd("fs", {"op": "read", "path": os.path.join(work, "notes.txt")}))["op"],
+                         "ack", "a root inside the Node home works")
+        for path in (self.dir, os.path.join(self.dir, "config.json"), os.path.join(self.dir, "latch.json"),
+                     os.path.join(self.dir, "latch.json.tmp"), os.path.join(self.dir, "plugins")):
+            r = reply(self.out, self.cmd("fs", {"op": "stat", "path": path}))
+            self.assertEqual((r["op"], r["fault_code"]), ("nack", "not_allowed"), path)
+
+    def test_exec_approval_shows_the_whole_request_escaped(self):
+        # F5: the full argv, resolved program, cwd, stdin size/digest and the account warning; nothing raw.
+        self.boot("ask")
+        stdin = "secret input\n"
+        long_arg = "A" * 400
+        argv = [sys.executable, "-c", "print('x')", long_arg, "tail-UNIQUE-MARK", "line\n\x1b[31mred\u202eevil"]
+        cid = self.cmd("exec", {"argv": argv, "stdin": stdin})
+        ev = self.out.wait_for(lambda m: m.get("name") == "approval" and m.get("id") == cid)
+        summary = ev["summary"]
+        self.assertIn("tail-UNIQUE-MARK", summary, "the whole argv, not only its first 300 characters")
+        self.assertIn(os.path.realpath(sys.executable), summary, "the resolved executable")
+        self.assertIn("executable", summary)
+        self.assertIn("cwd", summary)
+        self.assertIn(os.path.realpath(self.dir), summary, "the cwd")
+        self.assertIn("%d bytes" % len(stdin.encode()), summary)
+        self.assertIn(hashlib.sha256(stdin.encode()).hexdigest()[:16], summary, "a short digest of stdin")
+        self.assertIn("everything", summary, "says the program runs with what the account can reach, not only the roots")
+        self.assertNotIn("\x1b", summary)
+        self.assertNotIn("\u202e", summary)
+        self.assertNotIn("\n", summary)
+        second = [sys.executable, "-c", "print('x')", long_arg, "other-tail"]
+        cid = self.cmd("exec", {"argv": second})
+        ev = self.out.wait_for(lambda m: m.get("name") == "approval" and m.get("id") == cid)
+        self.assertNotEqual(summary, ev["summary"], "requests that differ after 300 characters look different")
+        # A detached program shows its cwd too (it is not started here: no desk runs in this test).
+        self.plugin._desk_env = lambda v: {}
+        self.plugin.desks.kind = lambda name: "desktop"
+        cmd = type("C", (), {"deadline": time.monotonic() + 30})()
+        _, detached = self.plugin._exec_op(cmd, {"argv": ["/usr/bin/true"], "cwd": self.dir, "desk": "private",
+                                                 "detach": True}, "trusted")
+        self.assertIn(os.path.realpath(self.dir), detached)
+        self.assertIn("everything", detached)
+
+    def test_write_and_input_approvals_show_their_content(self):
+        self.boot("ask")
+        data = b"the hidden bytes"
+        target = os.path.join(self.dir, "out.bin")
+        cid = self.cmd("fs", {"op": "write", "path": target, "content_b64": base64.b64encode(data).decode()})
+        ev = self.out.wait_for(lambda m: m.get("name") == "approval" and m.get("id") == cid)
+        summary = ev["summary"]
+        for part in (target, "create", "%d bytes" % len(data), hashlib.sha256(data).hexdigest()[:16]):
+            self.assertIn(part, summary)
+        self.assertNotIn("hidden bytes", summary)
+        self.boot_input("ask")
+        text = "line\n\x1b[2J" + "A" * 300
+        cid = self.cmd("input", {"action": "type", "text": text})
+        ev = self.out.wait_for(lambda m: m.get("name") == "approval" and m.get("id") == cid)
+        self.assertIn("%d characters" % len(text), ev["summary"])
+        self.assertIn(hashlib.sha256(text.encode()).hexdigest()[:16], ev["summary"])
+        self.assertNotIn("\x1b", ev["summary"])
+        cid = self.cmd("input", {"action": "type", "text": "hello\tinput"})
+        ev = self.out.wait_for(lambda m: m.get("name") == "approval" and m.get("id") == cid)
+        self.assertIn("hello", ev["summary"])
+        self.assertIn("\\t", ev["summary"], "a control character is escaped, not run")
+        self.assertNotIn("\t", ev["summary"])
+
+    def test_a_too_long_request_is_not_approved_on_a_short_surface(self):
+        # F5: notify-send cannot show the whole request, so its buttons are not offered; the full view is approvals.
+        self.boot("ask")
+        prompts = self.desktop()
+        cid = self.cmd("exec", {"argv": [sys.executable, "-c", "L" * 500]})
+        self.out.wait_for(lambda m: m.get("name") == "approval" and m.get("id") == cid)
+        argv = prompts[0].argv
+        self.assertNotIn("--action=approve=Approve", argv, "no approval button on cut text")
+        self.assertIn("openvibe-node approvals", " ".join(argv))
+
+    def test_a_stale_prompt_answer_is_discarded(self):
+        # F6: an answer from the prompt instance that is no longer the one shown is not the owner's answer.
+        self.boot("ask")
+        cid = self.cmd("exec", {"argv": ["echo", "stale"]})
+        self.out.wait_for(lambda m: m.get("name") == "approval" and m.get("id") == cid)
+        stale = FakePrompt([])
+        stale.answer("approve\n")
+        current = FakePrompt([])
+        with self.plugin.mu:
+            self.plugin.prompts[cid] = current
+        self.plugin._await_prompt(cid, stale, _parse_notify_send)
+        time.sleep(0.1)
+        self.assertIn(cid, self.plugin.pending, "a stale prompt did not approve")
+        self.assertIs(self.plugin.prompts.get(cid), current, "and did not take down the current prompt")
+
+    def test_a_duplicate_pending_id_is_rejected(self):
+        # F6: a repeated ID must not replace what the owner is looking at.
+        self.boot("ask")
+        for _ in range(2):
+            self.rt.dispatch({"op": "command", "id": "dup", "kind": "exec", "value": {"argv": ["echo", "one"]},
+                              "deadline_ms": 30000})
+        r = reply(self.out, "dup")
+        self.assertEqual((r["op"], r["fault_code"]), ("nack", "not_ready"))
+        self.assertIn("already", r["message"])
+        events = [m for m in self.out.msgs() if m.get("name") == "approval" and m.get("id") == "dup"]
+        self.assertEqual(len(events), 1, "the first request still waits")
+
+    def test_an_approved_request_is_refused_while_input_runs(self):
+        # F7: every approval path checks the input guard at the execution gate.
+        self.boot("ask")
+        target = os.path.join(self.dir, "while-typing")
+        cid = self.cmd("fs", {"op": "write", "path": target, "content_b64": "eA=="})
+        self.out.wait_for(lambda m: m.get("name") == "approval" and m.get("id") == cid)
+        self.plugin.input_busy = 1
+        self.plugin.on_approval(cid, True)
+        r = reply(self.out, cid)
+        self.assertEqual((r["op"], r["fault_code"]), ("nack", "not_ready"))
+        self.assertFalse(os.path.exists(target))
+        self.plugin.input_busy = 0
+
+    def test_work_authorized_before_stop_never_starts(self):
+        # F8: the stop generation is checked atomically before an authorized closure runs.
+        self.boot("trusted")
+        captured = {}
+        self.plugin._thread = lambda cid, run: captured.setdefault("run", run)
+        self.cmd("exec", {"argv": [sys.executable, "-c", "print('after stop')"]})
+        self.plugin.stop()
+        with self.assertRaises(Fault) as e:
+            captured["run"]()
+        self.assertEqual(e.exception.code, "local_stop")
+
+    def test_stop_kills_an_input_driver(self):
+        # F8: input subprocesses are tracked and killed by stop.
+        self.boot_input("trusted")
+        started, done, killed = threading.Event(), threading.Event(), []
+
+        class Driver:
+            pid = 1234567
+
+            def communicate(self_, timeout=None):
+                started.set()
+                done.wait(10)
+                return b"", b""
+
+            def poll(self_):
+                return 0 if done.is_set() else None
+
+            def send_signal(self_, sig):
+                pass
+
+        driver = Driver()
+        self.plugin.popen = lambda argv, **kw: driver
+        self.plugin._kill = lambda proc: (killed.append(proc), proc.done.set() if hasattr(proc, "done") else done.set())
+        self.cmd("input", {"action": "type", "text": "x"})
+        self.assertTrue(started.wait(5))
+        self.assertIn(driver, self.plugin.inputs, "the input driver is tracked")
+        self.plugin.stop()
+        self.assertIn(driver, killed, "stop kills the input driver")
+
+    def test_stop_kills_a_descendant_that_outlived_its_parent(self):
+        # F8: an exec program runs in a kept process group; a child that outlives it is ended by stop.
+        if not sys.platform.startswith("linux") or not os.path.isdir("/proc"):
+            self.skipTest("process groups and /proc on Linux")
+        self.boot("trusted", timeout_s=30)
+        code = ("import subprocess,sys,time\n"
+                "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'],\n"
+                "                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+                "print(p.pid, flush=True)\n"
+                "time.sleep(0.2)\n")
+        r = reply(self.out, self.cmd("exec", {"argv": [sys.executable, "-c", code]}))
+        self.assertEqual(r["op"], "ack", r)
+        pid = int(r["data"]["stdout"].strip())
+        self.addCleanup(lambda: _kill_pid(pid))
+        end = time.monotonic() + 5
+        while time.monotonic() < end and not os.path.exists("/proc/%d" % pid):
+            time.sleep(0.02)
+        self.assertTrue(os.path.exists("/proc/%d" % pid), "the child outlives its parent")
+        self.plugin.stop()
+        end = time.monotonic() + 5
+        while time.monotonic() < end and os.path.exists("/proc/%d" % pid):
+            time.sleep(0.05)
+        self.assertFalse(os.path.exists("/proc/%d" % pid), "stop ended the child too")
+
+    def test_stop_kills_a_descendant_that_changed_session(self):
+        # F8: a child that leaves the process group is still found (it carries the exec tree marker) and ended.
+        if not sys.platform.startswith("linux") or not os.path.isdir("/proc"):
+            self.skipTest("process groups and /proc on Linux")
+        self.boot("trusted", timeout_s=30)
+        code = ("import subprocess,sys,time\n"
+                "p = subprocess.Popen([sys.executable, '-c', 'import os,time; os.setsid(); time.sleep(120)'],\n"
+                "                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+                "print(p.pid, flush=True)\n"
+                "time.sleep(0.2)\n")
+        r = reply(self.out, self.cmd("exec", {"argv": [sys.executable, "-c", code]}))
+        pid = int(r["data"]["stdout"].strip())
+        self.addCleanup(lambda: _kill_pid(pid))
+        end = time.monotonic() + 5
+        while time.monotonic() < end and not os.path.exists("/proc/%d" % pid):
+            time.sleep(0.02)
+        self.assertTrue(os.path.exists("/proc/%d" % pid))
+        self.plugin.stop()
+        end = time.monotonic() + 5
+        while time.monotonic() < end and os.path.exists("/proc/%d" % pid):
+            time.sleep(0.05)
+        self.assertFalse(os.path.exists("/proc/%d" % pid), "stop ended the escaped descendant too")
+
+    def test_stop_joins_the_screen_capture(self):
+        # F8: stopping a live screen joins the capture, so no frame is emitted after it.
+        self.boot_stream("trusted")
+        src = os.path.join(self.dir, "screen.jpg")
+        self.plugin._native_jpeg = lambda tool, path: [
+            sys.executable, "-c", "import shutil,sys,time; shutil.copy(sys.argv[1], sys.argv[2]); time.sleep(30)",
+            src, path]
+        reply(self.out, self.cmd("screen_stream", {"action": "start", "seconds": 60, "fps": 5}))
+        end = time.monotonic() + 5
+        while time.monotonic() < end and not (self.plugin.stream and self.plugin.stream.get("capture")):
+            time.sleep(0.02)
+        self.assertTrue(self.plugin.stream and self.plugin.stream.get("capture"), "a capture is in flight")
+        self.plugin.stop()
+        live = [t for t in threading.enumerate() if t.name == "computer-screen-stream"]
+        self.assertEqual(live, [], "the capture thread ended before stop returned")
+        frames = [m for m in self.out.msgs() if m.get("op") == "video" and m.get("stream") == "screen"]
+        time.sleep(0.2)
+        self.assertEqual(frames, [m for m in self.out.msgs() if m.get("op") == "video" and m.get("stream") == "screen"],
+                         "no frame after stop")
+
+    def test_root_after_setup_is_refused_at_the_execution_gate(self):
+        # F9: the effective UID is revalidated at every execution gate, not only at setup.
+        self.boot("trusted")
+        target = os.path.join(self.dir, "root-write")
+        with mock.patch("openvibe_computer.os.geteuid", return_value=0):
+            r = reply(self.out, self.cmd("fs", {"op": "write", "path": target, "content_b64": "eA=="}))
+        self.assertEqual((r["op"], r["fault_code"]), ("nack", "not_allowed"))
+        self.assertFalse(os.path.exists(target))
+
+    def test_exec_sets_no_new_privs(self):
+        # F9: Linux exec'd programs cannot gain privileges.
+        if not sys.platform.startswith("linux") or not os.path.exists("/proc/self/status"):
+            self.skipTest("PR_SET_NO_NEW_PRIVS on Linux")
+        self.boot("trusted")
+        r = reply(self.out, self.cmd("exec", {"argv": [sys.executable, "-c",
+                                                       "print(open('/proc/self/status').read())"]}))
+        self.assertEqual(r["op"], "ack", r)
+        self.assertRegex(r["data"]["stdout"], r"(?m)^NoNewPrivs:\s*1$")
+
+    def test_no_new_privs_unavailable_fails_closed(self):
+        # F9: when no_new_privs cannot be set, the program is not run at all.
+        self.boot("trusted")
+        import openvibe_computer as module
+        with mock.patch.object(module, "_no_new_privs_available", return_value=False):
+            r = reply(self.out, self.cmd("exec", {"argv": [sys.executable, "-c", "print('ran')"]}))
+        self.assertEqual((r["op"], r["fault_code"]), ("nack", "unsupported"))
+        self.assertIn("no_new_privs", r["message"])
+
+    def test_a_late_approval_does_not_run(self):
+        # F10: the stored expiry is checked when the answer arrives, even if poll has not run.
+        self.boot("ask", approval_timeout_s=10)
+        t = [1000.0]
+        self.plugin.clock = lambda: t[0]
+        self.rt.clock = self.plugin.clock
+        target = os.path.join(self.dir, "late")
+        cid = self.cmd("fs", {"op": "write", "path": target, "content_b64": "eA=="})
+        self.out.wait_for(lambda m: m.get("name") == "approval" and m.get("id") == cid)
+        t[0] += 11
+        self.plugin.on_approval(cid, True)
+        r = reply(self.out, cid)
+        self.assertEqual((r["op"], r["fault_code"]), ("nack", "expired"))
+        self.assertFalse(os.path.exists(target))
+
+    def test_approval_expiry_is_the_requests_deadline(self):
+        # F10: an approval never outlives the command's own deadline.
+        self.boot("ask", approval_timeout_s=60)
+        t = [1000.0]
+        self.plugin.clock = lambda: t[0]
+        self.rt.clock = self.plugin.clock
+        target = os.path.join(self.dir, "late-request")
+        cid = self.cmd("fs", {"op": "write", "path": target, "content_b64": "eA=="}, deadline_ms=2000)
+        self.out.wait_for(lambda m: m.get("name") == "approval" and m.get("id") == cid)
+        self.assertLessEqual(self.plugin.pending[cid][1], t[0] + 2.0, "the approval stores min(deadline, expiry)")
+        t[0] += 3
+        self.plugin.on_approval(cid, True)
+        r = reply(self.out, cid)
+        self.assertEqual(r["fault_code"], "expired")
+        self.assertFalse(os.path.exists(target))
+
+    def test_approved_requests_take_a_running_slot(self):
+        # F10: approvals go through the same MAX_RUNNING as _start, not around it.
+        self.boot("ask")
+        started, release = [], threading.Event()
+
+        def fake_exec(argv, cwd, stdin, timeout, env=None):
+            started.append(argv)
+            release.wait(10)
+            return {"exit_code": 0, "stdout": "", "stderr": "", "truncated": False, "timed_out": False, "duration_ms": 0}
+        self.plugin._exec = fake_exec
+        cids = [self.cmd("exec", {"argv": ["blocker", str(n)]}) for n in range(3)]
+        try:
+            for cid in cids[:2]:
+                self.plugin.on_approval(cid, True)
+            end = time.monotonic() + 5
+            while len(started) < 2 and time.monotonic() < end:
+                time.sleep(0.02)
+            self.plugin.on_approval(cids[2], True)
+            time.sleep(0.1)
+            self.assertEqual(len(started), 2, "the third approval did not start")
+            r = reply(self.out, cids[2])
+            self.assertEqual((r["op"], r["fault_code"]), ("nack", "not_ready"))
+        finally:
+            release.set()
+
+
+def _kill_pid(pid):
+    try:
+        os.kill(pid, 9)
+    except OSError:
+        pass
 
 
 if __name__ == "__main__":
