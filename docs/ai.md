@@ -52,6 +52,49 @@ computer's models** for the machine on openvibe.bot/machines.
 | `models` | everything the server lists | the models you offer (a list) |
 | `max_tokens` | `2048` | the most one reply may be (at most 32768) |
 | `timeout_s` | `180` | how long one reply may take (at most 900) |
+| `offer` | off | the network offer, below |
+
+## Offer to the network
+
+Your machine can serve other people's OpenVibe requests, and earn credits for it. It is off until you turn it on, and
+it is opt-in for the caller too: only a request that asks for community capacity is ever placed here, because your
+machine sees the prompt. Every such answer is labelled as coming from a community machine.
+
+```json
+{
+  "plugins": [{
+    "name": "ai",
+    "offer": {
+      "enabled": true,
+      "models": ["llama3.1:8b"],
+      "hours": { "start": "18:00", "end": "23:30", "tz": "Europe/Lisbon" },
+      "concurrency": 2,
+      "price": { "in_per_million": 0, "out_per_million": 0 },
+      "audience": "everyone"
+    }
+  }]
+}
+```
+
+| key | default | meaning |
+|---|---|---|
+| `enabled` | `false` | offer this machine's models to the network |
+| `models` | the models you serve | which of them may be used; the router only sends one it sees here |
+| `hours` | all day | `{start, end, tz}` in 24-hour local time; an overnight window wraps, and start == end is all day |
+| `concurrency` | `1` | how many replies may run at once, 1-8; another is refused as busy, never queued |
+| `price` | `0` / `0` | credits per million input and output tokens; `0` volunteers the model |
+| `audience` | `everyone` | `everyone`, `followers` (the owner's channel followers) or `group` (with a `group` id) |
+
+The Node enforces `enabled`, `hours`, `models` and `concurrency` on the machine. The router (OpenVibe.AI) enforces
+`audience`, because only it can resolve a requester's followers or group. Before any traffic, the router runs canary
+prompts with known answers and checks the model name the local server reports against the one you declared; about 1%
+of answers are re-run on another trusted machine with the same model and compared. A new machine serves the free tier
+only until it passes. Failed verification stops traffic to it.
+
+`status.capabilities.ai` advertises the offer as `ai.offer` (`enabled`, `models`, `hours`, `concurrency`, `price`,
+`audience`, `open_now`, `ready`) so Bot and Network can list it. It also reports `ai_community_requests`,
+`ai_community_tokens_in` and `ai_community_tokens_out` once it has served something. The credits are recorded by the
+router; cash payouts are a separate, later switch.
 
 ## Where your models answer
 

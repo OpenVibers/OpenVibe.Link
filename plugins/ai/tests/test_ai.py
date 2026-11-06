@@ -1,6 +1,7 @@
 """The ai plugin (openvibe_ai): the person's own model server, reached from OpenVibe with no open port. Against a fake
 OpenAI-compatible server: it offers the server's models, relays one chat completion and answers the reply, refuses a
 model the machine does not offer and a second request while one runs, and says so when no server answers."""
+import datetime
 import http.server
 import io
 import json
@@ -88,9 +89,9 @@ class AiPluginTest(unittest.TestCase):
         FakeServer.hold.set()
         self.srv.shutdown()
 
-    def boot(self, **config):
+    def boot(self, now=None, **config):
         self.out = Out()
-        self.p = Ai()
+        self.p = Ai(now=now)
         self.p.log = lambda *a: None
         self.rt = Runtime(self.p, infile=io.StringIO(""), outfile=self.out)
         self.rt.feed_line(json.dumps({"op": "hello", "config": {"endpoint": self.endpoint, **config}}))
@@ -201,6 +202,54 @@ class AiPluginTest(unittest.TestCase):
         FakeServer.hold.set()
         self.assertEqual(self.out.wait_for(lambda m: m.get("id") == "slow1" and m.get("op") in ("ack", "nack"))["op"], "ack")
         self.assertEqual(self.ask({"model": "llama3.1:8b", "messages": [{"role": "user", "content": "again"}]})["op"], "ack", "free again")
+
+    def test_an_offer_to_the_network_is_advertised_with_its_settings(self):
+        noon = lambda: datetime.datetime(2026, 11, 6, 12, 0, tzinfo=datetime.timezone.utc)
+        caps = self.boot(now=noon, offer={"enabled": True, "models": ["llama3.1:8b"], "hours": {"start": "09:00", "end": "17:00", "tz": "UTC"},
+                                          "concurrency": 2, "price": {"in_per_million": 10, "out_per_million": 30}, "audience": "followers"})[0]["capabilities"]["ai"]
+        offer = caps["offer"]
+        self.assertEqual((offer["enabled"], offer["models"], offer["concurrency"], offer["audience"]), (True, ["llama3.1:8b"], 2, "followers"))
+        self.assertEqual(offer["price"], {"in_per_million": 10.0, "out_per_million": 30.0})
+        self.assertTrue(offer["open_now"] and offer["ready"], offer)
+
+    def test_an_offer_outside_its_hours_is_closed_and_refuses_community_work(self):
+        night = lambda: datetime.datetime(2026, 11, 6, 2, 0, tzinfo=datetime.timezone.utc)
+        caps = self.boot(now=night, offer={"enabled": True, "hours": {"start": "09:00", "end": "17:00", "tz": "UTC"}})[0]["capabilities"]["ai"]
+        self.assertFalse(caps["offer"]["open_now"])
+        self.assertFalse(caps["offer"]["ready"])
+        r = self.ask({"model": "community/llama3.1:8b", "messages": [{"role": "user", "content": "x"}]})
+        self.assertEqual((r["op"], r["fault_code"]), ("nack", "not_allowed"))
+
+    def test_a_machine_not_offering_its_models_refuses_community_work(self):
+        self.boot()
+        r = self.ask({"model": "community/llama3.1:8b", "messages": [{"role": "user", "content": "x"}]})
+        self.assertEqual((r["op"], r["fault_code"]), ("nack", "not_allowed"), "the offer is off by default")
+        self.assertEqual(self.ask({"model": "llama3.1:8b", "messages": [{"role": "user", "content": "hi"}]})["op"], "ack",
+                         "the owner's own requests still work")
+
+    def test_a_community_reply_is_counted_and_labelled(self):
+        noon = lambda: datetime.datetime(2026, 11, 6, 12, 0, tzinfo=datetime.timezone.utc)
+        self.boot(now=noon, offer={"enabled": True})
+        r = self.ask({"model": "community/llama3.1:8b", "messages": [{"role": "user", "content": "hello"}]})
+        self.assertEqual(r["op"], "ack", r)
+        self.assertIs(r["data"]["community"], True)
+        self.assertEqual(FakeServer.seen[-1][1]["model"], "llama3.1:8b", "the community/ prefix never reaches the model server")
+        self.assertEqual(self.p.poll()["sensors"]["ai_community_requests"], 1)
+        self.assertEqual(self.p.poll()["sensors"]["ai_community_tokens_in"], 12)
+        self.assertEqual(self.p.poll()["sensors"]["ai_community_tokens_out"], 4)
+
+    def test_community_work_obeys_the_offers_concurrency(self):
+        noon = lambda: datetime.datetime(2026, 11, 6, 12, 0, tzinfo=datetime.timezone.utc)
+        self.boot(now=noon, offer={"enabled": True, "concurrency": 1})
+        self.n += 1
+        self.rt.feed_line(json.dumps({"op": "command", "id": "slowc", "kind": "ai",
+                                      "value": {"model": "community/slow", "messages": [{"role": "user", "content": "x"}]}, "deadline_ms": 30000}))
+        time.sleep(0.2)
+        r = self.ask({"model": "community/llama3.1:8b", "messages": [{"role": "user", "content": "x"}]})
+        self.assertEqual((r["op"], r["fault_code"]), ("nack", "not_ready"))
+        FakeServer.hold.set()
+        self.assertEqual(self.out.wait_for(lambda m: m.get("id") == "slowc" and m.get("op") in ("ack", "nack"))["op"], "ack")
+        self.assertEqual(self.ask({"model": "community/llama3.1:8b", "messages": [{"role": "user", "content": "again"}]})["op"], "ack")
 
     def test_no_server_answers(self):
         self.srv.shutdown()
