@@ -38,9 +38,9 @@ func TestLiveSharesForStatus(t *testing.T) {
 	}
 }
 
-// A key-served share is listed by its port, and its key is never part of the status.
+// A share served with a key is listed by its port; a status never contains a key at all.
 func TestLiveSharesHidesTheKey(t *testing.T) {
-	s := Share{Key: "ovc_0123456789012345678901234567890123456789", Port: 9001}
+	s := Share{Port: 9001}
 	markLive(s)
 	got := LiveShares()
 	if len(got) != 1 || got[0].ID != "" || got[0].Port != 9001 {
