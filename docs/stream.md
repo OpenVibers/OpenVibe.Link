@@ -101,12 +101,15 @@ OPENVIBE_VIEW_TICKET=wvt_… scripts/stream-viewer.sh --whep https://openvibe.li
 The probe draws a QR of `time.Now().UnixMilli()` in the corner of every frame with the built-in PCM encoder (no ffmpeg,
 no display) and publishes it with the same WHIP path and silent audio. The viewer joins over WHEP, decodes the QR from
 each frame with OpenCV, and reports p50/p95/max; the S1 pass line is **p95 under 1000 ms over 60 s**. `--self-test`
-checks the statistics and the decoder without a network.
+checks the statistics and the decoder without a network. `scripts/stream-viewer.sh` installs `aiohttp` with the other
+dependencies, and the viewer reads OpenCV's decoded string (the points are the second return value of
+`detectAndDecode`).
 
-**The production number is not measured yet.** Live's S1 routes are being built in
-`live-agent-streams-s1`; the viewer needs a WHEP endpoint (the design allows one for third-party players), and Live's
-S1 player speaks mediasoup over `/ws/broadcast`. Once that endpoint exists, run the two commands above and put the p95
-in this file and in the PR.
+**Production, 2026-11-06:** a private agent stream on openvibe.live, published by the v0.41.0 linux/amd64 binary's
+`stream --probe` from Xvfb `:99` and watched through the WHEP endpoint for 60 s, measured **p50 148.5 ms, p95 168.5 ms,
+max 186 ms** (597 QR frames). The S1 pass line (p95 under 1000 ms) passed. Raising and lowering the curtain during the
+check made the embed show "Private screen" and clear it again; the stream was ended and its publish ticket revoked
+afterwards.
 
 ## Tests
 
