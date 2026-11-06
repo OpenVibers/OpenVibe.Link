@@ -110,6 +110,7 @@ type Config struct {
 	DeviceKind string         `json:"device_kind,omitempty"`
 	Plugins    []PluginConfig `json:"plugins"`
 	Video      VideoConfig    `json:"video"`
+	Stream     StreamConfig   `json:"stream,omitzero"`
 	// Limits are the local owner's caps, applied on top of the server's (the stricter value wins).
 	Limits LocalLimits `json:"limits"`
 	// Python is the interpreter for plugins without an explicit command (default: <state>/venv/bin/python, then python3).
@@ -334,6 +335,20 @@ type PluginConfig struct {
 	StrictTiming bool `json:"strict_timing,omitempty"`
 }
 
+// StreamConfig is the agent desk stream (Agent Streams S1). LiveURL is where POST /api/streams/agent and the state,
+// ticket, curtain and frame calls go; the default is production.
+type StreamConfig struct {
+	LiveURL string `json:"live_url,omitempty"`
+}
+
+// LiveOrigin is the agent-stream API origin, production unless configured.
+func (c StreamConfig) LiveOrigin() string {
+	if c.LiveURL != "" {
+		return c.LiveURL
+	}
+	return "https://openvibe.live"
+}
+
 // VideoConfig selects the camera source published over WHIP.
 type VideoConfig struct {
 	// Source: "auto" (default: a plugin's h264_command if its program exists, else a plugin's JPEG frames, else the
@@ -449,6 +464,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Video.WHIPURL != "" && !strings.HasPrefix(c.Video.WHIPURL, "https://") && !strings.HasPrefix(c.Video.WHIPURL, "http://") {
 		return errors.New("config: video.whip_url must be an https:// URL")
+	}
+	if c.Stream.LiveURL != "" && !strings.HasPrefix(c.Stream.LiveURL, "https://") {
+		return errors.New("config: stream.live_url must be an https:// origin")
 	}
 	for _, l := range []*float64{c.Limits.MaxSpeed, c.Limits.MaxTurn} {
 		if l != nil && (*l < 0 || *l > 1) {

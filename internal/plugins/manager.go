@@ -25,6 +25,7 @@ var capabilityFor = map[string]string{
 	protocol.KindInput:        "input",
 	protocol.KindBrowser:      "browser",
 	protocol.KindDesk:         "desk",
+	protocol.KindDeskStream:   "desk.stream",
 	protocol.KindAI:           "ai",
 }
 

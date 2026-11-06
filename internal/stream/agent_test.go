@@ -1,0 +1,316 @@
+package stream
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
+	"github.com/OpenVibers/OpenVibe.Node/internal/video"
+)
+
+type fakeAPI struct {
+	mu       sync.Mutex
+	state    func() State
+	renews   []credentials.Secret
+	newKey   string
+	curtains []string
+	frames   int32
+	ended    int32
+	revoked  int32
+}
+
+func (f *fakeAPI) State(context.Context, string, credentials.Secret) (State, error) {
+	if f.state != nil {
+		return f.state(), nil
+	}
+	return State{Encode: true, Curtain: Curtain{}}, nil
+}
+func (f *fakeAPI) Renew(_ context.Context, _ string, old credentials.Secret) (Publish, error) {
+	f.mu.Lock()
+	f.renews = append(f.renews, old)
+	f.mu.Unlock()
+	return Publish{WHIPURL: "https://whip.example/x", Ticket: credentials.NewSecret(f.newKey),
+		ExpiresAt: time.Now().Add(4 * time.Hour)}, nil
+}
+func (f *fakeAPI) Curtain(_ context.Context, _ string, _ credentials.Secret, up bool, reason string) error {
+	f.mu.Lock()
+	f.curtains = append(f.curtains, reason)
+	f.mu.Unlock()
+	return nil
+}
+func (f *fakeAPI) PostFrame(context.Context, string, credentials.Secret, []byte) error {
+	atomic.AddInt32(&f.frames, 1)
+	return nil
+}
+func (f *fakeAPI) End(context.Context, string, credentials.Secret) error {
+	atomic.AddInt32(&f.ended, 1)
+	return nil
+}
+func (f *fakeAPI) Revoke(context.Context, string, credentials.Secret) error {
+	atomic.AddInt32(&f.revoked, 1)
+	return nil
+}
+
+type fakePub struct {
+	paused atomic.Bool
+	key    atomic.Value
+}
+
+func (p *fakePub) Run(ctx context.Context, _ video.Source) { <-ctx.Done() }
+func (p *fakePub) SetPaused(v bool)                        { p.paused.Store(v) }
+func (p *fakePub) SetPublishKey(k credentials.Secret) {
+	if !k.IsZero() {
+		p.key.Store(k)
+	}
+}
+func (p *fakePub) State() string     { return video.StateLive }
+func (p *fakePub) Frames() int64     { return 1 }
+func (p *fakePub) LastError() string { return "" }
+
+type fakeSource struct {
+	out  chan string
+	once sync.Once
+}
+
+func (s *fakeSource) Name() string     { return "fake" }
+func (s *fakeSource) RequestKeyframe() {}
+func (s *fakeSource) Run(ctx context.Context, sink func(video.Sample)) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case v := <-s.out:
+			sink(video.Sample{Data: []byte(v), Duration: 10 * time.Millisecond})
+		}
+	}
+}
+
+func newTestAgent(t *testing.T, api *fakeAPI, o AgentOptions) (*Agent, *fakePub) {
+	t.Helper()
+	if o.ID == "" {
+		o.ID = testID
+	}
+	if o.Publish.WHIPURL == "" {
+		o.Publish = Publish{WHIPURL: "https://whip.example/whip/agent/" + testID, Ticket: credentials.NewSecret(testTicket),
+			ExpiresAt: time.Now().Add(4 * time.Hour)}
+	}
+	if o.Capture.Kind == "" {
+		o.Capture = Capture{Kind: CaptureTest, Width: 320, Height: 240}
+	}
+	if o.Log == nil {
+		o.Log = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+	if o.Snapshot == nil {
+		o.Snapshot = func(context.Context) ([]byte, error) { return blackJPEG(64, 36), nil }
+	}
+	pub := &fakePub{}
+	o.NewPublisher = func(video.Options) publisher { return pub }
+	if o.NewSource == nil {
+		o.NewSource = func(Capture, EncodeOptions) video.Source { return &fakeSource{out: make(chan string, 8)} }
+	}
+	a, err := NewAgent(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a, pub
+}
+
+func TestAgentSnapshotModeWhenLiveSaysNoEncode(t *testing.T) {
+	var no atomic.Bool
+	api := &fakeAPI{}
+	api.state = func() State {
+		if no.Load() {
+			return State{Encode: false}
+		}
+		return State{Encode: true}
+	}
+	a, pub := newTestAgent(t, api, AgentOptions{Client: api, StateEvery: 10 * time.Millisecond,
+		SnapshotEvery: 15 * time.Millisecond, CurtainFrames: []video.Sample{{Data: []byte("C"), Key: true}},
+		CurtainJPEG: blackJPEG(16, 9)})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { a.Run(ctx); close(done) }()
+	no.Store(true)
+	deadline := time.Now().Add(5 * time.Second)
+	for a.Status().Encode {
+		if time.Now().After(deadline) {
+			t.Fatal("encode never went false")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(30 * time.Millisecond)
+	before := atomic.LoadInt32(&api.frames)
+	time.Sleep(80 * time.Millisecond)
+	after := atomic.LoadInt32(&api.frames)
+	if after <= before {
+		t.Fatalf("no snapshot while encode is false (%d → %d)", before, after)
+	}
+	if !pub.paused.Load() {
+		t.Fatal("the publisher was not paused in snapshot mode")
+	}
+	cancel()
+	<-done
+	if atomic.LoadInt32(&api.ended) != 1 {
+		t.Fatalf("End called %d times", api.ended)
+	}
+}
+
+func TestAgentRenewsAtThreeHours(t *testing.T) {
+	api := &fakeAPI{newKey: testTicket[:len(testTicket)-1] + "Z"}
+	a, pub := newTestAgent(t, api, AgentOptions{Client: api, Now: func() time.Time { return time.Unix(1_800_000_000, 0) }})
+	if d := a.renewDelay(); d != 3*time.Hour {
+		t.Fatalf("renewDelay = %v, want 3h", d)
+	}
+	// A ticket that dies sooner than three hours is renewed before it does.
+	a.expiresAt = a.opt.Now().Add(1 * time.Hour)
+	if d := a.renewDelay(); d != 45*time.Minute {
+		t.Fatalf("renewDelay with a one-hour ticket = %v, want 45m", d)
+	}
+	// And the renewal replaces the key the next WHIP session reconnects with.
+	a2, pub2 := newTestAgent(t, api, AgentOptions{Client: api, RenewAfter: 20 * time.Millisecond,
+		CurtainFrames: []video.Sample{{Data: []byte("C"), Key: true}}, CurtainJPEG: blackJPEG(16, 9)})
+	ctx, cancel := context.WithCancel(context.Background())
+	go a2.Run(ctx)
+	time.Sleep(80 * time.Millisecond)
+	cancel()
+	api.mu.Lock()
+	n := len(api.renews)
+	api.mu.Unlock()
+	if n == 0 {
+		t.Fatal("the ticket was never renewed")
+	}
+	got, _ := pub2.key.Load().(credentials.Secret)
+	if got.Reveal() != api.newKey {
+		t.Fatalf("publisher key after renewal = %v", got)
+	}
+	_ = pub
+}
+
+func TestDeskSourceCurtainBlanksEveryFrame(t *testing.T) {
+	api := &fakeAPI{}
+	src := &fakeSource{out: make(chan string, 8)}
+	a, _ := newTestAgent(t, api, AgentOptions{Client: api,
+		NewSource:     func(Capture, EncodeOptions) video.Source { return src },
+		CurtainFrames: []video.Sample{{Data: []byte("CURTAIN"), Key: true, Duration: 100 * time.Millisecond}}})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var mu sync.Mutex
+	var seen []string
+	done := make(chan struct{})
+	go func() {
+		_ = a.ds.Run(ctx, func(s video.Sample) {
+			mu.Lock()
+			seen = append(seen, string(s.Data))
+			mu.Unlock()
+		})
+		close(done)
+	}()
+	send := func(v string) {
+		select {
+		case src.out <- v:
+		case <-time.After(time.Second):
+			t.Fatal("source blocked")
+		}
+	}
+	time.Sleep(20 * time.Millisecond)
+	send("RAW1")
+	time.Sleep(20 * time.Millisecond)
+	a.SetCurtain(true, "manual")
+	time.Sleep(20 * time.Millisecond)
+	send("RAW2")
+	time.Sleep(150 * time.Millisecond)
+	mu.Lock()
+	got := append([]string(nil), seen...)
+	mu.Unlock()
+	if !containsStr(got, "RAW1") {
+		t.Fatalf("no frame before the curtain: %v", got)
+	}
+	if containsStr(got, "RAW2") {
+		t.Fatalf("a captured frame leaked through the curtain: %v", got)
+	}
+	if !containsStr(got, "CURTAIN") {
+		t.Fatalf("the curtain frame was not sent: %v", got)
+	}
+	a.SetCurtain(false, "manual")
+	time.Sleep(30 * time.Millisecond)
+	send("RAW3")
+	time.Sleep(30 * time.Millisecond)
+	mu.Lock()
+	got = append([]string(nil), seen...)
+	mu.Unlock()
+	if !containsStr(got, "RAW3") {
+		t.Fatalf("no frame after the curtain came down: %v", got)
+	}
+	cancel()
+	<-done
+}
+
+func TestTheTicketNeverReachesALogOrStatus(t *testing.T) {
+	var buf bytes.Buffer
+	api := &fakeAPI{}
+	a, _ := newTestAgent(t, api, AgentOptions{Client: api, Log: slog.New(slog.NewTextHandler(&buf, nil)),
+		CurtainFrames: []video.Sample{{Data: []byte("C"), Key: true}}, CurtainJPEG: blackJPEG(16, 9)})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { a.Run(ctx); close(done) }()
+	time.Sleep(40 * time.Millisecond)
+	cancel()
+	<-done
+	if strings.Contains(buf.String(), "wpt_") || strings.Contains(buf.String(), testTicket) {
+		t.Fatalf("a ticket reached the log: %s", buf.String())
+	}
+	st := a.Status()
+	b, _ := json.Marshal(st)
+	if strings.Contains(string(b), "wpt_") {
+		t.Fatalf("a ticket reached status: %s", b)
+	}
+	// The Secret type is enough on its own: %v, %+v and JSON all redact it.
+	pub := Publish{WHIPURL: "https://whip.example/x", Ticket: credentials.NewSecret(testTicket)}
+	for _, s := range []string{fmt.Sprintf("%v", pub.Ticket), fmt.Sprintf("%+v", pub), fmt.Sprintf("%#v", pub.Ticket)} {
+		if strings.Contains(s, testTicket) {
+			t.Fatalf("a Secret printed its value: %s", s)
+		}
+	}
+}
+
+func TestAgentRevokeIsTheKillSwitch(t *testing.T) {
+	api := &fakeAPI{}
+	a, _ := newTestAgent(t, api, AgentOptions{Client: api, CurtainFrames: []video.Sample{{Data: []byte("C"), Key: true}},
+		CurtainJPEG: blackJPEG(16, 9)})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() { a.Run(ctx); close(done) }()
+	time.Sleep(20 * time.Millisecond)
+	a.Revoke()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Revoke did not end the agent")
+	}
+	time.Sleep(20 * time.Millisecond)
+	if atomic.LoadInt32(&api.revoked) == 0 {
+		t.Fatal("Revoke was not sent to Live")
+	}
+	if atomic.LoadInt32(&api.ended) != 0 {
+		t.Fatal("End was sent after the kill switch")
+	}
+}
+
+func containsStr(xs []string, want string) bool {
+	for _, x := range xs {
+		if strings.Contains(x, want) {
+			return true
+		}
+	}
+	return false
+}

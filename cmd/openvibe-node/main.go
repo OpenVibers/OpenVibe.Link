@@ -84,6 +84,9 @@ Usage:
   openvibe-node memory scan [--tools a,b] [--project DIR …] [--json]
                     read the memory files of the coding tools on this machine
                     (read-only, local, secrets removed)
+  openvibe-node stream --probe --whip-url URL [--seconds N] [--size WxH] [--json]
+                    publish a QR of the millisecond clock for the headless latency viewer (the ticket comes from
+                    OPENVIBE_STREAM_TICKET, never argv)
   openvibe-node share --key ovc_… --port N           put this machine's port N on the web (OpenVibe Connect),
                                                    behind OpenVibe sign-in, until Ctrl-C
   openvibe-node share add|list|remove …             the shares the Node service keeps up (openvibe-node share)
@@ -147,6 +150,9 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 	}
 	if cmd == "desk-sandbox" { // its own flags, up to "--": a browser's flags after it are never the Node's
 		return cmdDeskSandbox(rest, stderr)
+	}
+	if cmd == "stream" { // its own flags: --probe and the latency probe's
+		return cmdStream(rest, stdin, stdout, stderr)
 	}
 	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
 	fs.SetOutput(stderr)

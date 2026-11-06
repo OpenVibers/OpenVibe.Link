@@ -192,13 +192,19 @@ const (
 	// "messages", "max_tokens"?, "temperature"?} → {model, message, usage?}. It reads and changes nothing on the
 	// machine, so it never acts and runs while a stop is latched like a read.
 	KindAI = "ai"
+	// KindDeskStream is an agent's own desk stream (Agent Streams S1, live.agent-stream@1): {"action": "start", "title",
+	// "task": {source, ref, title, url?}, "visibility": "private"|"unlisted"|"public", "allow_sites"?}, or
+	// {"action": "stop"|"status"|"curtain", "up"?, "reason"?}. The core mints the stream and its wpt_ ticket on Live,
+	// routes start to the computer plugin for the desk's capture source, then publishes over WHIP. Starting and
+	// stopping act; status does not.
+	KindDeskStream = "desk.stream"
 )
 
 // Kinds lists every command kind the Node understands.
-var Kinds = []string{KindDrive, KindActuator, KindPTZ, KindSay, KindDisplay, KindHalt, KindButton, KindPoint, KindExec, KindFS, KindScreen, KindProbe, KindInput, KindBrowser, KindScreenStream, KindDesk, KindAI}
+var Kinds = []string{KindDrive, KindActuator, KindPTZ, KindSay, KindDisplay, KindHalt, KindButton, KindPoint, KindExec, KindFS, KindScreen, KindProbe, KindInput, KindBrowser, KindScreenStream, KindDesk, KindDeskStream, KindAI}
 
 // ComputerKinds move nothing: they carry long deadlines (DefaultComputerMS, at most MaxComputerMS) and no clamping.
-var ComputerKinds = map[string]bool{KindExec: true, KindFS: true, KindScreen: true, KindProbe: true, KindInput: true, KindBrowser: true, KindScreenStream: true, KindDesk: true, KindAI: true}
+var ComputerKinds = map[string]bool{KindExec: true, KindFS: true, KindScreen: true, KindProbe: true, KindInput: true, KindBrowser: true, KindScreenStream: true, KindDesk: true, KindDeskStream: true, KindAI: true}
 
 const (
 	// DefaultComputerMS is a computer command's reply window when the server sends no deadline; MaxComputerMS caps
@@ -235,6 +241,12 @@ func ComputerActs(kind string, value json.RawMessage) bool {
 		}
 		_ = json.Unmarshal(value, &v)
 		return v.Action != "status" && v.Action != "list"
+	case KindDeskStream:
+		var v struct {
+			Action string `json:"action"`
+		}
+		_ = json.Unmarshal(value, &v)
+		return v.Action != "status"
 	}
 	return false
 }
