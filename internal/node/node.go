@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/OpenVibers/OpenVibe.Node/internal/config"
+	"github.com/OpenVibers/OpenVibe.Node/internal/connect"
 	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
 	"github.com/OpenVibers/OpenVibe.Node/internal/firstrun"
 	"github.com/OpenVibers/OpenVibe.Node/internal/fleet"
@@ -1272,6 +1273,9 @@ type Status struct {
 	// Roles are what the machine does for the network, as the owner set them on the hub (plan L34): the ids of the
 	// catalogue. Empty when the owner set none.
 	Roles []string `json:"roles,omitempty"`
+	// Shares are the OpenVibe Connect shares this Node keeps up (CON-4): their port, address, whether the tunnel is
+	// up and how many requests the app answered. Empty when the Node serves none.
+	Shares []connect.Status `json:"shares,omitempty"`
 }
 
 type LinkStatus struct {
@@ -1328,6 +1332,7 @@ func (n *Node) Status() Status {
 	}
 	s.Screen = n.screenStatus()
 	s.DeskStream = n.deskStreamStatus()
+	s.Shares = connect.LiveShares()
 	s.Video.State = video.StateOff
 	if n.pub != nil {
 		s.Video.State, s.Video.Frames, s.Video.LastError = n.pub.State(), n.pub.Frames(), n.pub.LastError()

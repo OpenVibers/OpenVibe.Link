@@ -123,12 +123,30 @@ func Run(ctx context.Context, s Share, o Options) error {
 	if o.MaxWait == 0 {
 		o.MaxWait = 30 * time.Second
 	}
+	// The Node service's status lists the shares it keeps up (LiveShares). A foreground share has its own process,
+	// so the service's status never shows it.
+	markLive(s)
+	defer forgetLive(s)
+	userReady, userRequest := o.OnReady, o.OnRequest
+	o.OnReady = func(r Ready) {
+		liveReady(s, r)
+		if userReady != nil {
+			userReady(r)
+		}
+	}
+	o.OnRequest = func(method, path string, status int, d time.Duration) {
+		liveRequest(s)
+		if userRequest != nil {
+			userRequest(method, path, status, d)
+		}
+	}
 	wait := o.MinWait
 	for {
 		err := runOnce(ctx, s, o, func() { wait = o.MinWait })
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		liveDown(s, err)
 		if errors.Is(err, ErrStopped) {
 			return err
 		}

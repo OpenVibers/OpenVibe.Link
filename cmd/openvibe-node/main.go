@@ -808,6 +808,35 @@ func cmdAnswer(g *globals, cmd, id string, stdout io.Writer) error {
 	return nil
 }
 
+// sharesText lists the OpenVibe Connect shares this Node keeps up (CON-4). A share that is reconnecting says why; a
+// key-served share is named by its port and never shows the key.
+func sharesText(shares []connect.Status) string {
+	if len(shares) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Shares:   %d kept up\n", len(shares))
+	for _, s := range shares {
+		state := "not connected"
+		if s.Connected {
+			state = "connected"
+			if s.Requests > 0 {
+				state = fmt.Sprintf("connected, %d requests", s.Requests)
+			}
+		}
+		where := s.URL
+		if where == "" {
+			where = "(address shown once it connects)"
+		}
+		fmt.Fprintf(&b, "  localhost:%d  %s  %s", s.Port, where, state)
+		if !s.Connected && s.LastError != "" {
+			fmt.Fprintf(&b, " (%s)", s.LastError)
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
 func cmdStatus(g *globals, asJSON bool, stdout io.Writer) error {
 	resp, err := localctl.Call(g.paths.SocketPath(), localctl.Request{Cmd: localctl.CmdStatus}, 2*time.Second)
 	if err != nil {
@@ -834,6 +863,7 @@ func cmdStatus(g *globals, asJSON bool, stdout io.Writer) error {
 		link = "down: " + s.Link.LastError
 	}
 	fmt.Fprintf(stdout, "Link:     %s, %d reconnects\n", link, s.Link.Reconnects)
+	fmt.Fprint(stdout, sharesText(s.Shares))
 	fmt.Fprintf(stdout, "Stop:     %s\n", latchText(s.Latch))
 	fmt.Fprintf(stdout, "Limits:   speed %.2f, turn %.2f, command deadline ≤ %d ms\n", s.Limits.MaxSpeed, s.Limits.MaxTurn, s.Limits.MaxCommandMS)
 	fmt.Fprintf(stdout, "Video:    %s", s.Video.State)

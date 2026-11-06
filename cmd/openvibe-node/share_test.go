@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/OpenVibers/OpenVibe.Node/internal/connect"
 )
 
 // `openvibe-node share`: usage, add, list (the key only redacted), remove, and the file only the Node's account reads.
@@ -60,6 +62,8 @@ func TestShareByIDNeedsThePairing(t *testing.T) {
 	for _, args := range [][]string{
 		{"share", "--share", "shr_01K9ZZZZZZZZZZZZZZZZZZZZZZ", "--home", home},
 		{"share", "add", "--share", "shr_01K9ZZZZZZZZZZZZZZZZZZZZZZ", "--port", "8790", "--home", home},
+		{"share", "8790", "--home", home},
+		{"share", "add", "8790", "--home", home},
 		{"share", "mine", "--home", home},
 	} {
 		errb.Reset()
@@ -70,5 +74,24 @@ func TestShareByIDNeedsThePairing(t *testing.T) {
 	errb.Reset()
 	if code := run([]string{"share", "--share", "shr_nope", "--home", home}, &out, &errb); code != 1 || !strings.Contains(errb.String(), "shr_") {
 		t.Fatalf("a bad id: %d %q", code, errb.String())
+	}
+}
+
+// `openvibe-node status` lists the shares the service keeps up (CON-4).
+func TestSharesText(t *testing.T) {
+	if got := sharesText(nil); got != "" {
+		t.Fatalf("no shares: %q", got)
+	}
+	got := sharesText([]connect.Status{
+		{ID: "shr_01K9ZZZZZZZZZZZZZZZZZZZZZZ", Port: 8790, Host: "bot--alex.openvibe.website", URL: "https://bot--alex.openvibe.website", Connected: true, Requests: 3},
+		{Port: 9001, LastError: "dial: connection refused"},
+	})
+	for _, want := range []string{"Shares:   2 kept up", "localhost:8790", "https://bot--alex.openvibe.website", "connected, 3 requests", "localhost:9001", "not connected", "dial: connection refused"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("status is missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "ovc_") {
+		t.Fatalf("status printed a key:\n%s", got)
 	}
 }

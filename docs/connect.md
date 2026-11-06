@@ -12,9 +12,12 @@ principal). On a share's page on connect.openvibe.website, pick it under "Or ser
 then on the computer:
 
 ```sh
+openvibe-node share 8790                          # serve the share this computer was picked for on that port
 openvibe-node share mine                          # the shares this computer was picked for
 openvibe-node share --share shr_…                 # serve one now, until Ctrl-C
+openvibe-node share --share shr_… --port 8790     # the same, with the port named
 sudo openvibe-node share add --share shr_…        # or keep it up with the Node service
+sudo openvibe-node share add 8790                 # the same, found by its local port
 ```
 
 There is no key to copy or leak. Before every connection the Node buys its node token for OpenVibe Connect (audience
@@ -52,10 +55,13 @@ openvibe-node share list
 openvibe-node share remove 8790        # or the key, or the address
 ```
 
+`openvibe-node status` lists every share the service keeps up: its local port, its address on Connect, whether the
+tunnel is connected (and why not), and how many requests the app has answered. A share with no address yet says so.
+
 The saved shares are in the Node's config directory, `connect-shares.json`, readable only by the Node's account
-(0600). The service starts every saved share when it starts, so restart it after `add` or `remove`. A share the server
-ends for good (its key was replaced, it was closed, or another computer took it over) stays stopped and says so in the
-log; `share list` shows each share's address once it has connected.
+(0600). The service starts every saved share when it starts, and stops every one when the Node stops; restart it after
+`add` or `remove`. A share the server ends for good (its key was replaced, it was closed, or another computer took it
+over) stays stopped and says so in the log; `share list` shows each share's address once it has connected.
 
 ## What the Node does and does not do
 
