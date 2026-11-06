@@ -33,6 +33,7 @@ import (
 
 	"github.com/OpenVibers/OpenVibe.Node/internal/localctl"
 	"github.com/OpenVibers/OpenVibe.Node/internal/node"
+	"github.com/OpenVibers/OpenVibe.Node/internal/safety"
 )
 
 // trayPoll is how often the tray asks the Node what changed.
@@ -69,7 +70,7 @@ func viewOf(st *node.Status, list []node.Approval, err error) trayView {
 	if lv, ok := st.Telemetry.Sensors["computer_level"].(string); ok {
 		v.Level = lv
 	}
-	v.Stopped = st.Latch.Local || st.Latch.Remote
+	v.Stopped = st.Latch.Local || st.Latch.Remote || st.Latch.Computer
 	link := "offline"
 	if st.Link.Connected {
 		link = "online"
@@ -121,14 +122,20 @@ func panelURL(server string) string {
 
 // slotLabel is one waiting request in the menu: its kind and what it would do, cut to fit a menu.
 func slotLabel(a node.Approval) string {
-	s := strings.Join(strings.Fields(a.Summary), " ")
+	s := safety.DisplayText(a.Summary)
 	if len([]rune(s)) > 70 {
 		s = string([]rune(s)[:69]) + "…"
 	}
 	if a.Kind != "" {
-		return a.Kind + ": " + s
+		return safety.DisplayText(a.Kind) + ": " + s
 	}
 	return s
+}
+
+// traySlot binds the rendered label and both buttons to one immutable approval.
+type traySlot struct {
+	Label    string
+	Approval node.Approval
 }
 
 // trayUI is the notification-area side (systray on Linux and Windows; a fake in tests).
@@ -138,7 +145,7 @@ type trayUI interface {
 	SetHeader(string)
 	SetLevel(string)
 	SetStopped(bool)
-	SetSlots([]string) // one label per waiting request, at most traySlots; the rest hidden
+	SetSlots([]traySlot) // one label per waiting request, at most traySlots; the rest hidden
 	SetPanel(bool)
 }
 
@@ -168,12 +175,13 @@ func (nopNotifier) Shut()                      {}
 
 // trayCore polls the Node and drives the UI and the notifications; the platform files only wire it up.
 type trayCore struct {
-	sock  string
-	ui    trayUI
-	note  notifier
-	mu    sync.Mutex
-	view  trayView
-	shown map[string]bool // approval ids with a notification up
+	sock   string
+	ui     trayUI
+	note   notifier
+	pollMu sync.Mutex // serialize concurrent UI refreshes
+	mu     sync.Mutex
+	view   trayView
+	shown  map[string]bool // approval ids with a notification up
 }
 
 func newTrayCore(sock string, ui trayUI, note notifier) *trayCore {
@@ -189,6 +197,8 @@ func (t *trayCore) call(req localctl.Request) (localctl.Response, error) {
 
 // tick asks the Node for its status and approvals, says the tray is there, and updates everything.
 func (t *trayCore) tick() trayView {
+	t.pollMu.Lock()
+	defer t.pollMu.Unlock()
 	var st *node.Status
 	var list []node.Approval
 	resp, err := t.call(localctl.Request{Cmd: localctl.CmdStatus})
@@ -229,31 +239,21 @@ func (t *trayCore) tick() trayView {
 	for _, a := range fresh {
 		t.note.Ask(a, "")
 	}
-	labels := make([]string, 0, traySlots)
+	slots := make([]traySlot, 0, traySlots)
 	for i, a := range v.Waiting {
 		if i == traySlots {
 			break
 		}
-		labels = append(labels, slotLabel(a))
+		slots = append(slots, traySlot{Label: slotLabel(a), Approval: a})
 	}
 	t.ui.SetIcon(v.State)
 	t.ui.SetTooltip(v.Tooltip)
 	t.ui.SetHeader(v.Header)
 	t.ui.SetLevel(v.Level)
 	t.ui.SetStopped(v.Stopped)
-	t.ui.SetSlots(labels)
+	t.ui.SetSlots(slots)
 	t.ui.SetPanel(v.Panel != "")
 	return v
-}
-
-// slotID is the approval id the menu's slot i shows now ("" if none).
-func (t *trayCore) slotID(i int) (node.Approval, bool) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if i < 0 || i >= len(t.view.Waiting) {
-		return node.Approval{}, false
-	}
-	return t.view.Waiting[i], true
 }
 
 // answer approves or denies one request; a refusal (the agent just used the mouse or keyboard) asks again.
@@ -286,6 +286,7 @@ func (t *trayCore) answerByID(id string, approved bool) error {
 		if t.view.Waiting[i].ID == id {
 			a := t.view.Waiting[i]
 			found = &a
+			break
 		}
 	}
 	t.mu.Unlock()
@@ -457,4 +458,17 @@ func trayICO(state string) []byte {
 	_ = binary.Write(&out, binary.LittleEndian, entry)
 	out.Write(dib.Bytes())
 	return out.Bytes()
+}
+
+// forwardTrayClicks captures the nonce when the button is created, not at click
+// handling time. Removing the menu closes its channel and ends this goroutine.
+func forwardTrayClicks(clicks <-chan struct{}, answers chan<- trayAnswer, nonce string, approved bool) {
+	go func() {
+		for range clicks {
+			select {
+			case answers <- trayAnswer{ID: nonce, Approved: approved}:
+			default:
+			}
+		}
+	}()
 }

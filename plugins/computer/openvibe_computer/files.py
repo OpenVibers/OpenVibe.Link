@@ -175,6 +175,14 @@ def _walk(fd, name, flags, mode=0, follow=False):
     return current
 
 
+def _resolved_path(fd):
+    """The path a handle points at now (Linux): what the object is called."""
+    try:
+        return os.readlink("/proc/self/fd/%d" % fd)
+    except OSError:
+        return None
+
+
 class Files:
     """The folders this machine allows, and the names an agent may ask for inside them."""
 
@@ -198,7 +206,7 @@ class Files:
         if not self.native:
             return self._by_name(path, level, create, guard)
         base, rel = self._split(path, level)
-        return Target(self, base, rel, path, level, guard)
+        return Target(self, base, rel, path, level, guard, create=create)
 
     def _split(self, path, level):
         """The folder a path belongs to, and the name under it."""
@@ -228,7 +236,7 @@ class Files:
             real = os.path.realpath(path)
         if level != "full" and not self._inside(real):
             raise Fault("not_allowed", "%s is outside this machine's allowed folders" % real)
-        return Target(self, None, None, real, level, guard, by_name=True)
+        return Target(self, None, None, path, level, guard, by_name=True, create=create, real=real)
 
 
 class Target:
@@ -238,15 +246,58 @@ class Target:
     uses is the object the handle points at, not the name that was checked.
     """
 
-    def __init__(self, files, base, rel, path, level, guard=None, by_name=False):
+    def __init__(self, files, base, rel, path, level, guard=None, by_name=False, create="no", real=None):
         self.files = files
         self.base = base
         self.rel = rel
-        self.path = path
+        self.requested = path   # the name the agent asked for
         self.level = level
         self.guard = guard
         self.by_name = by_name
+        self.create = create
+        self.real = real         # without handles: the name resolved the way it always was
+        self._display = None
         self.checked = None   # what the folder was when it was checked, by its own numbers
+
+    @property
+    def path(self):
+        """Where the name points now: what the owner is shown, and what the answer names."""
+        if self._display is None:
+            self._display = self._compute_display()
+        return self._display
+
+    def _compute_display(self):
+        """The path the object is at now, as the kernel sees it."""
+        if self.by_name:
+            if self.real is not None:
+                return self.real
+            return self._name_display()
+        try:
+            if self.create == "no":
+                fd = self._open(_O_PATH | _O_CLOEXEC)
+                try:
+                    resolved = _resolved_path(fd)
+                finally:
+                    os.close(fd)
+                if resolved:
+                    return resolved
+            else:
+                parent, name = self._parent()
+                try:
+                    resolved = _resolved_path(parent)
+                finally:
+                    os.close(parent)
+                if resolved:
+                    return os.path.join(resolved, name)
+        except Fault:
+            pass
+        return self._name_display()
+
+    def _name_display(self):
+        """The name resolved the way it was before the handles: what the path names."""
+        if self.create == "no" or os.path.lexists(self.requested):
+            return os.path.realpath(self.requested)
+        return os.path.join(os.path.realpath(os.path.dirname(self.requested)), os.path.basename(self.requested))
 
     # ---- resolution ---------------------------------------------------------------------------------
     def _open(self, flags, mode=0):

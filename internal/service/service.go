@@ -127,6 +127,7 @@ ExecStart={{Path | cmdEscape}}{{range Arguments}} {{. | cmd}}{{end}}
 {{if ChRoot}}RootDirectory={{ChRoot | cmd}}
 {{end}}{{if WorkingDirectory}}WorkingDirectory={{WorkingDirectory | cmdEscape}}
 {{end}}{{if UserName}}User={{UserName}}
+NoNewPrivileges=yes
 {{end}}{{if ReloadSignal}}ExecReload=/bin/kill -{{ReloadSignal}} "$MAINPID"
 {{end}}{{if PIDFile}}PIDFile={{PIDFile | cmd}}
 {{end}}{{if OutputFileSupport}}StandardOutput=file:{{LogDirectory}}/{{Name}}.out

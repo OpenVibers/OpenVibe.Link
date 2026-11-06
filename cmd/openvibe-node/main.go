@@ -26,6 +26,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -627,6 +628,14 @@ func serviceOptions(g *globals, user string) service.Options {
 }
 
 func cmdInstall(g *globals, user string, stdout io.Writer) error {
+	cfg, err := loadConfig(g)
+	if err != nil {
+		return err
+	}
+	if err := validateComputerService(cfg, user); err != nil {
+		return err
+	}
+
 	if err := g.paths.Ensure(); err != nil {
 		return fmt.Errorf("cannot create %s (run with sudo): %w", g.paths.ConfigDir, err)
 	}
@@ -650,10 +659,17 @@ func cmdInstall(g *globals, user string, stdout io.Writer) error {
 }
 
 func cmdStop(g *globals, stdout io.Writer) error {
-	_, err := localctl.Call(g.paths.SocketPath(), localctl.Request{Cmd: localctl.CmdStop}, 2*time.Second)
+	resp, err := localctl.Call(g.paths.SocketPath(), localctl.Request{Cmd: localctl.CmdStop}, 2*time.Second)
 	if err == nil {
 		fmt.Fprintln(stdout, "Stopped. Every actuator is held stopped until `openvibe-node resume`.")
 		return nil
+	}
+	if resp.Error != "" {
+		return fmt.Errorf("stop failed: %s", resp.Error)
+	}
+	var op *net.OpError
+	if !errors.As(err, &op) || op.Op != "dial" {
+		return fmt.Errorf("stop failed: %w", err)
 	}
 	// No running Node answered: latch it in the file, which a running Node polls and a starting Node obeys.
 	if ferr := safety.WriteLocalFile(g.paths.LatchFile(), true); ferr != nil {
@@ -722,7 +738,9 @@ func cmdApprovals(g *globals, asJSON bool, stdout io.Writer) error {
 	}
 	for _, a := range list {
 		age := time.Since(time.UnixMilli(a.At)).Round(time.Second)
-		fmt.Fprintf(stdout, "%s  %s, %s ago: %s\n", a.ID, a.Kind, age, a.Summary)
+		// The id is quoted so it can be copied into a command; kind and summary are untrusted text and are shown
+		// with their control, ANSI and bidi characters made visible.
+		fmt.Fprintf(stdout, "%q  %s, %s ago: %s\n", a.ID, safety.DisplayText(a.Kind), age, safety.DisplayText(a.Summary))
 	}
 	fmt.Fprintln(stdout, "\nopenvibe-node approve <ID> lets one run; openvibe-node deny <ID> refuses it.")
 	return nil
@@ -829,6 +847,9 @@ func deviceLine(device, principal, server string) string {
 }
 
 func latchText(l safety.LatchState) string {
+	if l.Computer {
+		return "STOPPED for computer control (an e-stop on this computer); `openvibe-node resume` on this machine is required"
+	}
 	switch {
 	case l.Local && l.Remote:
 		return "STOPPED locally and by the server (" + l.RemoteReason + "); `openvibe-node resume` releases both"
@@ -963,4 +984,42 @@ func reportCommunityProfile(ctx context.Context, server string, profile json.Raw
 		return
 	}
 	fmt.Fprintf(stdout, "The robot's community profile %s (version %s) is the one Bot reviewed and signed (key %s).\n", res.ID, res.Version, res.KeyID)
+}
+
+// validateComputerService refuses a privileged service for a computer plugin that is not the documented
+// shared desk host: the computer plugin must not run as root on an ordinary machine.
+func validateComputerService(cfg *config.Config, account string) error {
+	for _, p := range cfg.Plugins {
+		if p.Disabled || p.Name != "computer" {
+			continue
+		}
+		if sharedDeskHost(cfg, p) {
+			continue
+		}
+		if account == "" {
+			return errors.New("computer control requires an unprivileged service user; only a configured shared desk host may install a privileged service")
+		}
+		u, err := user.Lookup(account)
+		if err != nil {
+			return fmt.Errorf("computer service user: %w", err)
+		}
+		if u.Uid == "0" {
+			return errors.New("computer service user must not have UID 0")
+		}
+	}
+	return nil
+}
+
+// sharedDeskHost is the one documented mode that runs as root (docs/computer.md, "Desk hosts for other
+// people"): Linux, every desk in the worker's sandbox, the worker on, and the computer plugin at the level
+// the installer gives such a host (trusted, or observe: nobody sits at it to approve).
+func sharedDeskHost(cfg *config.Config, p config.PluginConfig) bool {
+	if runtime.GOOS != "linux" || !cfg.Worker.Enabled || p.Config["desk_isolation"] != "sandbox" {
+		return false
+	}
+	switch p.Config["level"] {
+	case "trusted", "observe":
+		return true
+	}
+	return false
 }

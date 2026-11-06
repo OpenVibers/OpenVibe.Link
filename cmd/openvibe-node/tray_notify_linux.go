@@ -10,6 +10,7 @@ import (
 	"github.com/godbus/dbus/v5"
 
 	"github.com/OpenVibers/OpenVibe.Node/internal/node"
+	"github.com/OpenVibers/OpenVibe.Node/internal/safety"
 )
 
 // Desktop notifications over org.freedesktop.Notifications (every Linux desktop): a waiting request with Approve and
@@ -118,7 +119,7 @@ func (n *dbusNotifier) text(s string) string {
 }
 
 func (n *dbusNotifier) Ask(a node.Approval, again string) {
-	body := a.Summary
+	body := safety.DisplayText(a.Summary)
 	if again != "" {
 		body = again + "\n" + body
 	}
@@ -126,7 +127,7 @@ func (n *dbusNotifier) Ask(a node.Approval, again string) {
 	if n.actions {
 		actions = []string{"approve", "Approve", "deny", "Deny"}
 	} else {
-		body += "\nopenvibe-node approve " + a.ID + "  (or deny " + a.ID + ")"
+		body += "\nopenvibe-node approve " + safety.QuoteHint(a.ID) + "  (or deny " + safety.QuoteHint(a.ID) + ")"
 	}
 	n.mu.Lock()
 	replaces := n.byID[a.ID]
