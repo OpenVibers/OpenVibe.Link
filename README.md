@@ -30,6 +30,7 @@ serves it at `https://<name>--<you>.openvibe.website` behind OpenVibe sign-in, a
 up with the service ([docs/connect.md](docs/connect.md)).
 
 ```sh
+openvibe-node            # guided first run: pair, check the link, report this machine's first job
 openvibe-node status     # link, plugins, video, battery, stop latch
 openvibe-node stop       # kill switch: stop every motor now and keep it stopped
 openvibe-node resume

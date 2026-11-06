@@ -34,6 +34,7 @@ type Server struct {
 	bot *fakebot.Server
 
 	mu         sync.Mutex
+	health     int             // GET /api/health status; 200 unless a test sets it
 	codes      map[string]bool // normalized code → live
 	credential string          // the node credential, once paired
 	revoked    bool
@@ -44,16 +45,31 @@ type Server struct {
 
 // New starts the fake Network; bot (may be nil) learns every token it mints.
 func New(bot *fakebot.Server) *Server {
-	s := &Server{TTL: 300, bot: bot, codes: map[string]bool{}}
+	s := &Server{TTL: 300, bot: bot, codes: map[string]bool{}, health: http.StatusOK}
 	mux := http.NewServeMux()
 	mux.HandleFunc(protocol.NodePairingPath, s.pair)
 	mux.HandleFunc(protocol.TokenPath, s.token)
+	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
+		s.mu.Lock()
+		status := s.health
+		s.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	})
 	s.HTTP = httptest.NewServer(mux)
 	return s
 }
 
 func (s *Server) Close()      { s.HTTP.Close() }
 func (s *Server) URL() string { return s.HTTP.URL }
+
+// SetHealth makes the fake /api/health answer with status (the guide's self-check reads it).
+func (s *Server) SetHealth(status int) {
+	s.mu.Lock()
+	s.health = status
+	s.mu.Unlock()
+}
 
 // AddCode makes a one-time code (normalized, without the dash) live for PairingID.
 func (s *Server) AddCode(code string) {

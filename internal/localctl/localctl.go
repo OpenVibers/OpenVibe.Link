@@ -28,12 +28,17 @@ const (
 	// CmdTray: `openvibe-node tray` shows the approvals (On) or has quit; the computer plugin's own desktop prompts
 	// stay quiet while it does.
 	CmdTray = "tray"
+	// CmdFirstRun carries the guided first run's telemetry events (Data) to the running Node, which sends them on the
+	// device link: the installer starts the service before the guide runs, and a second device connection would
+	// replace it.
+	CmdFirstRun = "first_run"
 )
 
 type Request struct {
-	Cmd string `json:"cmd"`
-	ID  string `json:"id,omitempty"` // approve and deny: the locally minted approval nonce (never the cloud command ID)
-	On  bool   `json:"on,omitempty"` // tray: the tray is running
+	Cmd  string          `json:"cmd"`
+	ID   string          `json:"id,omitempty"`   // approve and deny: the locally minted approval nonce (never the cloud command ID)
+	On   bool            `json:"on,omitempty"`   // tray: the tray is running
+	Data json.RawMessage `json:"data,omitempty"` // first_run: the telemetry events to report
 }
 
 type Response struct {

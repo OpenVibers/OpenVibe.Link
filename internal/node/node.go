@@ -27,6 +27,7 @@ import (
 
 	"github.com/OpenVibers/OpenVibe.Node/internal/config"
 	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
+	"github.com/OpenVibers/OpenVibe.Node/internal/firstrun"
 	"github.com/OpenVibers/OpenVibe.Node/internal/fleet"
 	"github.com/OpenVibers/OpenVibe.Node/internal/link"
 	"github.com/OpenVibers/OpenVibe.Node/internal/localctl"
@@ -1465,6 +1466,32 @@ func (n *Node) control(r localctl.Request) localctl.Response {
 		return localctl.Response{OK: true}
 	case localctl.CmdTray:
 		n.tellTray(r.On)
+		return localctl.Response{OK: true}
+	case localctl.CmdFirstRun:
+		// The guided first run's one event per step, sent on this connection (the installer starts the service before
+		// the guide, so a second device connection would replace it). Only a first-run event for a known step goes on.
+		var t protocol.Telemetry
+		if len(r.Data) == 0 || len(r.Data) > 16<<10 {
+			return localctl.Response{Error: "first_run: no events"}
+		}
+		if err := json.Unmarshal(r.Data, &t); err != nil || len(t.Events) == 0 || len(t.Events) > 16 {
+			return localctl.Response{Error: "first_run: the data is not a telemetry frame with events"}
+		}
+		for _, e := range t.Events {
+			if !firstrun.ValidEvent(e) {
+				return localctl.Response{Error: "first_run: only node.first_run events for a known step are accepted"}
+			}
+		}
+		if !n.reporting() {
+			return localctl.Response{Error: "first_run: the node is not connected to OpenVibe.Bot yet"}
+		}
+		// One event per telemetry frame, as the step names say.
+		for _, e := range t.Events {
+			n.mu.Lock()
+			n.events = append(n.events, e)
+			n.mu.Unlock()
+			n.flushTelemetry(true)
+		}
 		return localctl.Response{OK: true}
 	case localctl.CmdStop:
 		n.mgr.EstopAll(plugins.EstopLocal, "openvibe-node stop") // at once, then persist

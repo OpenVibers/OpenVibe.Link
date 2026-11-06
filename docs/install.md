@@ -111,6 +111,28 @@ Requirements: `python3` with `venv` (`sudo apt install python3 python3-venv`), `
 `rpicam-apps` (preinstalled on Raspberry Pi OS). For Cozmo's voice, `espeak-ng`. `ffmpeg` is optional (better video
 from plugins that send JPEG frames).
 
+## First run (guided and measured)
+
+After the installer, run the Node with no command:
+
+```sh
+sudo openvibe-node
+```
+
+It walks through the first run once: it asks for the code from openvibe.bot/machines if the machine is not paired yet
+(pasting the whole install command there works too, for a Network pairing), checks that the machine reaches
+OpenVibe.Bot and OpenVibe.Network, runs one harmless first job that reads the machine's OS, CPUs, memory and free
+disk, and prints what to do next. The job opens nothing and runs as the service account; it only reads those counts.
+
+The Node reports one telemetry event per step (`installed`, `paired`, `self_check` with ok or a reason, `first_job`)
+over the same device link it already uses. An event carries the Node version, the OS and architecture, and for the
+first job those counts: never a path, a username, an IP or a secret. Bot stores the step times, so an admin can see how
+many installs reach each step and how long they take (`/admin/first-run`), and the machine's page shows what the first
+job found.
+
+`openvibe-node first-run` is the same command when a script wants to say it. `--code CODE`, `--network URL
+--pairing pair_…` and `--home DIR` work as flags instead of the prompt.
+
 ## By hand
 
 ```sh

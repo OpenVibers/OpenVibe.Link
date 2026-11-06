@@ -47,6 +47,7 @@ func (p Paths) SocketPath() string     { return filepath.Join(p.StateDir, "node.
 func (p Paths) PluginsDir() string     { return filepath.Join(p.StateDir, "plugins") }
 func (p Paths) VenvDir() string        { return filepath.Join(p.StateDir, "venv") }
 func (p Paths) FramesDir() string      { return filepath.Join(p.StateDir, "frames") }
+func (p Paths) FirstRunFile() string   { return filepath.Join(p.StateDir, "firstrun.json") }
 
 // Ensure creates the directories with owner-only permissions.
 func (p Paths) Ensure() error {
