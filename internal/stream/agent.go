@@ -370,7 +370,8 @@ func (a *Agent) ObserveCurtain(up bool, reason string) {
 	now := a.opt.Now()
 	a.mu.Lock()
 	a.lastPluginAt = now
-	a.pluginDown = false
+	// pluginDown is the supervisor's verdict, not the plugin's own word: a faulted plugin that still beats cannot
+	// clear it. Only PluginBack does.
 	if up {
 		a.clearSince = time.Time{}
 	} else if a.curtain && a.clearSince.IsZero() {

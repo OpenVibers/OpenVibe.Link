@@ -393,6 +393,13 @@ func TestPluginExitRaisesAtOnceAndRefusesADown(t *testing.T) {
 	if !a.curtainNow2() {
 		t.Fatal("a down was accepted while the plugin is lost")
 	}
+	// Nor may the plugin's own clear heartbeat: the supervisor says it is down.
+	clock.add(3 * time.Second)
+	a.ObserveCurtain(false, "detector")
+	a.watchCurtain()
+	if !a.curtainNow2() {
+		t.Fatal("a heartbeat cleared the supervisor's verdict")
+	}
 }
 
 func TestPluginBackClearsAfterTwoSeconds(t *testing.T) {
