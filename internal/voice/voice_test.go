@@ -45,6 +45,13 @@ func (f *fakeTTS) Speak(ctx context.Context, text, voiceID string) ([]int16, int
 	return pcm, 48000, nil
 }
 
+// callCount is how many times Chat was asked. The desk asks in the background, so the count is read under the lock.
+func (f *fakeTTS) callCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.calls)
+}
+
 // fakeEncoder hands back one frame per 20 ms of PCM, so the test can count the frames.
 type fakeEncoder struct{}
 
@@ -134,7 +141,7 @@ func TestTheMuteIsEffectiveWithinASecond(t *testing.T) {
 	tts := &fakeTTS{}
 	p := testPlayer(t, tts)
 	_ = p.Poll(context.Background(), []Line{{ID: 1, Text: "A line."}}, State{}, Curtain{})
-	waitFor(t, "the line to start", func() bool { return len(tts.calls) > 0 })
+	waitFor(t, "the line to start", func() bool { return tts.callCount() > 0 })
 	p.SetMuted(true)
 	if !p.Muted() {
 		t.Fatal("the player is not muted")
