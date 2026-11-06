@@ -28,13 +28,14 @@ openvibe.bot shows this command with the robot's id and a fresh code. `--driver`
 OpenVibe.Network gets `--network <URL> --pairing pair_… --code ABCD-1234` instead of `--robot`. Details, manual
 install, Windows and configuration: [docs/install.md](docs/install.md).
 
-**Put a port on the web** with [OpenVibe Connect](https://connect.openvibe.website): `openvibe-node share --key ovc_… --port 8790`
-serves it at `https://<name>--<you>.openvibe.website` behind OpenVibe sign-in, and `openvibe-node share add` keeps it
-up with the service ([docs/connect.md](docs/connect.md)).
+**Put a port on the web** with [OpenVibe Connect](https://connect.openvibe.website): `openvibe-node share 8790`
+serves the share this computer was picked for at `https://<name>--<you>.openvibe.website` behind OpenVibe sign-in (or
+`openvibe-node share --key ovc_… --port 8790` with a key), and `openvibe-node share add` keeps it up with the service;
+`openvibe-node status` lists each share ([docs/connect.md](docs/connect.md)).
 
 ```sh
 openvibe-node            # guided first run: pair, check the link, report this machine's first job
-openvibe-node status     # link, plugins, video, battery, stop latch
+openvibe-node status     # link, plugins, video, battery, shares, stop latch
 openvibe-node stop       # kill switch: stop every motor now and keep it stopped
 openvibe-node resume
 openvibe-node quit       # end the node cleanly (nothing latched), e.g. from a stream launcher

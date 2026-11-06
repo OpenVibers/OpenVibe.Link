@@ -22,3 +22,7 @@ internal/memory/testdata/redact-corpus.json:private-key:6
 internal/memory/testdata/redact-corpus.json:private-key:30
 internal/memory/testdata/redact-corpus.json:private-key:42
 internal/memory/testdata/redact-corpus.json:private-key:474
+
+# The Connect status test lists a share by its port; the fake key it used to carry was removed, but the
+# finding remains in this branch's first commit (a test literal, never a real key).
+internal/connect/live_test.go:generic-api-key:43
