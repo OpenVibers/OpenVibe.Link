@@ -7,7 +7,7 @@ replaces it, and the installer disables the kit's own autostart (`docs/install.m
 ## 0. The one command
 
 ```sh
-curl -fsSL https://openvibe.bot/install | sh
+curl -fsSL https://node.openvibe.network/install | sh
 ```
 
 On the Pi, with the kit's board on it: it turns on I2C and SPI, installs the camera tools and the plugin's packages,
@@ -30,13 +30,13 @@ there (pick **Adeept ADR036 mecanum** on that page for the mecanum chassis). Sec
 ## 2. Pair (one pasted command from openvibe.bot)
 
 ```sh
-curl -fsSL https://openvibe.bot/install | sh -s -- --robot rob_… --code XXXX-XXXX --driver adeept
+curl -fsSL https://node.openvibe.network/install | sh -s -- --robot rob_… --code XXXX-XXXX --driver adeept
 ```
 
 Network pairing, if openvibe.bot offers the Network form:
 
 ```sh
-curl -fsSL https://openvibe.bot/install | sh -s -- --network https://openvibe.network --pairing pair_… --code XXXX-XXXX --driver adeept
+curl -fsSL https://node.openvibe.network/install | sh -s -- --network https://openvibe.network --pairing pair_… --code XXXX-XXXX --driver adeept
 ```
 
 Then check the written config (`cat /etc/openvibe-node/config.json`): `plugins` names `adeept_adr036` with backend

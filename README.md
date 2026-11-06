@@ -7,8 +7,11 @@ agents, at the level you set on the machine) can use the device. It connects out
 On a robot's Raspberry Pi (or other Linux computer), the one command:
 
 ```sh
-curl -fsSL https://openvibe.bot/install | sh
+curl -fsSL https://node.openvibe.network/install | sh
 ```
+
+The same installer is also at <https://openvibe.bot/install>, which keeps working; `node.openvibe.network` is the
+Node's own address, where it also has a page that says what it is and how to install it.
 
 It turns on I2C and SPI, installs the camera tools, finds the kit (an Adeept ADR036 4WD, a ROS 2 robot), shows a code
 to approve at openvibe.bot/link, and pairs: the robot is made, drivable on its panel and, if you chose it, live on your
@@ -17,7 +20,7 @@ OpenVibe.Live channel ([docs/install.md](docs/install.md#the-one-command-raspber
 With a robot already added on openvibe.bot:
 
 ```sh
-curl -fsSL https://openvibe.bot/install | sh -s -- --robot rob_… --code ABCD-1234 --driver adeept
+curl -fsSL https://node.openvibe.network/install | sh -s -- --robot rob_… --code ABCD-1234 --driver adeept
 ```
 
 openvibe.bot shows this command with the robot's id and a fresh code. `--driver` is `adeept`, `adeept-mecanum`, `cozmo`, `ros2`,

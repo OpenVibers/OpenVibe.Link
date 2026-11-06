@@ -37,7 +37,7 @@ fault.
 1. On openvibe.bot, add a robot with the **ROS 2 robot** model (`ros2.diffdrive`; `ros2.holonomic` for mecanum or
    omni wheels) and keep its pairing code.
 2. On the computer that will run the Node:
-   `curl -fsSL https://openvibe.bot/install | sh -s -- --robot <rob_…> --code <CODE> --driver ros2`
+   `curl -fsSL https://node.openvibe.network/install | sh -s -- --robot <rob_…> --code <CODE> --driver ros2`
 3. Edit `config.json` (the installer prints where it is) if your topics differ from the defaults, then restart the
    Node's service:
 

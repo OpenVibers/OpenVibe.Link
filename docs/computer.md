@@ -11,7 +11,7 @@ itself**: nothing in the cloud can raise that level.
 On Linux, from your own account (the installer uses sudo itself):
 
 ```sh
-curl -fsSL https://openvibe.bot/install | sh -s -- --network <URL> --pairing pair_… --code ABCD-1234 --computer ask
+curl -fsSL https://node.openvibe.network/install | sh -s -- --network <URL> --pairing pair_… --code ABCD-1234 --computer ask
 ```
 
 `--computer LEVEL` runs the Node's service as **your** account (never root, never the `openvibe-node` system account)
@@ -264,7 +264,7 @@ task's desk from the profile `agent`.
 
 An old laptop, a mini PC or a spare workstation can host desks for your agents: no screen, keyboard or login needed.
 ```
-curl -fsSL https://openvibe.bot/install | sh -s -- --network … --pairing pair_… --code … --desk-host
+curl -fsSL https://node.openvibe.network/install | sh -s -- --network … --pairing pair_… --code … --desk-host
 ```
 - **Its own account.** The Node runs as `openvibe-desk` (home `/var/lib/openvibe-desk`), never as a person. An agent
   there never reaches anyone's own files, browser or sessions. The computer plugin runs at `trusted` for that account's
@@ -287,7 +287,7 @@ A desk host OpenVibe or a community member runs for **other people's** agents (t
 must keep each person's desk away from the machine and from every other desk. Such a host runs browser desks only, and
 each desk's browser runs in the job worker's sandbox (docs/worker.md):
 ```
-curl -fsSL https://openvibe.bot/install | sudo sh -s -- --network … --pairing pair_… --code … --desk-host --shared
+curl -fsSL https://node.openvibe.network/install | sudo sh -s -- --network … --pairing pair_… --code … --desk-host --shared
 ```
 - **Each desk sandboxed.** The plugin starts a desk's browser as `openvibe-node desk-sandbox -- <browser> …`: its own
   user, mount, network, PID and IPC namespaces, as the unprivileged `openvibe-job` (`worker.run_as`), in a cgroup of its

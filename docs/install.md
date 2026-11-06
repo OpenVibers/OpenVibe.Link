@@ -8,8 +8,11 @@ ports, works behind any home router), and a local kill switch stops everything i
 On the robot's computer, with nothing set up on openvibe.bot first:
 
 ```sh
-curl -fsSL https://openvibe.bot/install | sh
+curl -fsSL https://node.openvibe.network/install | sh
 ```
+
+The same installer is also at <https://openvibe.bot/install>, which keeps working; `node.openvibe.network` is the
+Node's own address and has a page that says what it is and how to install it.
 
 On a Raspberry Pi it turns on I2C and SPI (now and after a reboot, through `raspi-config`), installs what is missing of
 `i2c-tools`, the camera tools (`rpicam-apps`), `python3-venv`, `python3-lgpio` and `qrencode`, and looks at the I2C bus:
@@ -45,7 +48,7 @@ write Raspberry Pi OS Lite (64-bit) with Raspberry Pi Imager, copy the page's `u
 card's `bootfs` drive, and switch the robot on. On first boot the Pi joins your Wi-Fi, turns on SSH, and runs
 
 ```sh
-curl -fsSL https://openvibe.bot/install | sh -s -- --setup osk_…
+curl -fsSL https://node.openvibe.network/install | sh -s -- --setup osk_…
 ```
 
 with the card's setup key (`OPENVIBE_SETUP_KEY` works too). openvibe.bot approves that claim at once for the person who
@@ -60,7 +63,7 @@ Its output is in `journalctl -u openvibe-setup` on the Pi.
 2. On the device, run that command, adding `--driver` for your robot:
 
    ```sh
-   curl -fsSL https://openvibe.bot/install | sh -s -- --robot rob_01J8Z4M2Q0R7T9YV3K6N8P1W2X --code ABCD-1234 --driver adeept
+   curl -fsSL https://node.openvibe.network/install | sh -s -- --robot rob_01J8Z4M2Q0R7T9YV3K6N8P1W2X --code ABCD-1234 --driver adeept
    ```
 
    The shape is `--robot rob_… --code CODE [--driver adeept|adeept-mecanum|cozmo|looi|ros2|ros2-holonomic|none]`. `--robot` is the robot's
@@ -86,7 +89,7 @@ has the details.
 - **Network pairing**: `--network <URL> --pairing pair_… --code CODE`, e.g.
 
   ```sh
-  curl -fsSL https://openvibe.bot/install | sh -s -- --network https://openvibe.network --pairing pair_01J8Z4M2Q0R7T9YV3K6N8P1W2Y --code ABCD-1234 --driver adeept
+  curl -fsSL https://node.openvibe.network/install | sh -s -- --network https://openvibe.network --pairing pair_01J8Z4M2Q0R7T9YV3K6N8P1W2Y --code ABCD-1234 --driver adeept
   ```
 
   The Node redeems the code on OpenVibe.Network (`POST <network>/api/v1/node-pairing`) and stores the machine's node

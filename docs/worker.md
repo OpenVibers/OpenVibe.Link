@@ -12,7 +12,7 @@ commands, which `platform.runtime-class@1` also lets `linux` describe.
 ## A machine that runs your coding tasks (`--worker`)
 
 The simplest way to turn the worker on is the installer's `--worker` (Linux), which openvibe.bot/machines prints with a
-one-time code: `curl -fsSL https://openvibe.bot/install | sh -s -- --network … --pairing pair_… --code … --worker`. It:
+one-time code: `curl -fsSL https://node.openvibe.network/install | sh -s -- --network … --pairing pair_… --code … --worker`. It:
 
 - pairs the machine for its owner's own jobs (a Network pairing with ref `worker:<owner>`; OpenVibe.Bot reports it to
   the network as a `user-owned` offer naming the owner, OpenVibe.Run places only that person's jobs on it, and Bot

@@ -23,7 +23,7 @@ The installer does it with `--ai` (Node v0.28.0), added to the command openvibe.
 install you already have. It says which model server answers, or how to get one:
 
 ```sh
-curl -fsSL https://openvibe.bot/install | sh -s -- --network … --pairing pair_… --code … --ai
+curl -fsSL https://node.openvibe.network/install | sh -s -- --network … --pairing pair_… --code … --ai
 ```
 
 `--ai-endpoint http://127.0.0.1:8090` names a server on another port (it implies `--ai`). `--ai` works with `--worker`,
