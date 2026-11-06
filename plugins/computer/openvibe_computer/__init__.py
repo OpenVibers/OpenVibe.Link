@@ -906,11 +906,11 @@ class Computer(Plugin):
         if not os.path.isabs(path):
             raise Fault("bad_value", "path must be absolute")
         target = self._files(level).target(os.path.normpath(path), level, create=create, guard=self._control_guard)
-        if self._is_control(target.requested):
-            raise Fault("not_allowed", "%s is one of the Node's own control files or folders" % target.requested)
-        target.check_now(create)
-        if self._is_control(target.path):
+        # The Node's own files are refused by the name the agent asked for and by the name it resolves to: on macOS
+        # the folder the Node runs in is reached through a link, so only the resolved name says where it is.
+        if self._is_control(target.requested) or self._is_control(target.path):
             raise Fault("not_allowed", "%s is one of the Node's own control files or folders" % target.path)
+        target.check_now(create)
         return target
 
     # ---- commands --------------------------------------------------------------------------------------------------
