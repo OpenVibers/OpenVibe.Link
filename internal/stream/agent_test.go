@@ -63,16 +63,25 @@ func (f *fakeAPI) Revoke(context.Context, string, credentials.Secret) error {
 type fakePub struct {
 	paused atomic.Bool
 	key    atomic.Value
+	state  atomic.Value
 }
 
-func (p *fakePub) Run(ctx context.Context, _ video.Source) { <-ctx.Done() }
-func (p *fakePub) SetPaused(v bool)                        { p.paused.Store(v) }
+func (p *fakePub) Run(ctx context.Context, src video.Source) {
+	go func() { _ = src.Run(ctx, func(video.Sample) {}) }()
+	<-ctx.Done()
+}
+func (p *fakePub) SetPaused(v bool) { p.paused.Store(v) }
 func (p *fakePub) SetPublishKey(k credentials.Secret) {
 	if !k.IsZero() {
 		p.key.Store(k)
 	}
 }
-func (p *fakePub) State() string     { return video.StateLive }
+func (p *fakePub) State() string {
+	if s, _ := p.state.Load().(string); s != "" {
+		return s
+	}
+	return video.StateLive
+}
 func (p *fakePub) Frames() int64     { return 1 }
 func (p *fakePub) LastError() string { return "" }
 
@@ -112,8 +121,11 @@ func newTestAgent(t *testing.T, api *fakeAPI, o AgentOptions) (*Agent, *fakePub)
 	if o.Snapshot == nil {
 		o.Snapshot = func(context.Context) ([]byte, error) { return blackJPEG(64, 36), nil }
 	}
-	pub := &fakePub{}
-	o.NewPublisher = func(video.Options) publisher { return pub }
+	var pub *fakePub
+	if o.NewPublisher == nil {
+		pub = &fakePub{}
+		o.NewPublisher = func(video.Options) publisher { return pub }
+	}
 	if o.NewSource == nil {
 		o.NewSource = func(Capture, EncodeOptions) video.Source { return &fakeSource{out: make(chan string, 8)} }
 	}
@@ -279,6 +291,39 @@ func TestTheTicketNeverReachesALogOrStatus(t *testing.T) {
 		if strings.Contains(s, testTicket) {
 			t.Fatalf("a Secret printed its value: %s", s)
 		}
+	}
+}
+
+func TestRepeatedRetriesDownshiftTo720p(t *testing.T) {
+	api := &fakeAPI{}
+	var widths []int
+	var mu sync.Mutex
+	pub := &fakePub{}
+	pub.state.Store(video.StateRetrying)
+	a, _ := newTestAgent(t, api, AgentOptions{Client: api, StateEvery: 5 * time.Millisecond,
+		CurtainFrames: []video.Sample{{Data: []byte("C"), Key: true}}, CurtainJPEG: blackJPEG(16, 9),
+		NewPublisher: func(video.Options) publisher { return pub },
+		NewSource: func(_ Capture, e EncodeOptions) video.Source {
+			mu.Lock()
+			widths = append(widths, e.Width)
+			mu.Unlock()
+			return &fakeSource{out: make(chan string, 1)}
+		}})
+	ctx, cancel := context.WithCancel(context.Background())
+	go a.Run(ctx)
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	mu.Lock()
+	got := append([]int(nil), widths...)
+	mu.Unlock()
+	seen720 := false
+	for _, w := range got {
+		if w == 1280 {
+			seen720 = true
+		}
+	}
+	if !seen720 {
+		t.Fatalf("no 720p restart: %v", got)
 	}
 }
 

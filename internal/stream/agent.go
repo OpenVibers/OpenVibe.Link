@@ -69,15 +69,17 @@ type Agent struct {
 	pub    publisher
 	ds     *deskSource
 
-	mu        sync.Mutex
-	ticket    credentials.Secret
-	encode    bool
-	curtain   bool
-	reason    string
-	viewers   int
-	ended     bool
-	revoked   bool
-	expiresAt time.Time
+	mu          sync.Mutex
+	ticket      credentials.Secret
+	encode      bool
+	curtain     bool
+	reason      string
+	viewers     int
+	ended       bool
+	revoked     bool
+	expiresAt   time.Time
+	retries     int
+	downshifted bool
 
 	snapMu sync.Mutex
 }
@@ -216,6 +218,7 @@ func (a *Agent) poll(ctx context.Context) error {
 	if st.Encode != a.encodeNow() {
 		a.SetEncode(st.Encode)
 	}
+	a.checkBandwidth()
 	if st.EndsAt != nil && !st.EndsAt.After(a.opt.Now()) {
 		a.log.Info("desk stream ended at Live", "stream", a.opt.ID)
 		a.cancel()
@@ -254,6 +257,37 @@ func (a *Agent) renew(ctx context.Context) {
 	a.mu.Unlock()
 	a.pub.SetPublishKey(p.Ticket)
 	a.log.Info("desk stream ticket renewed", "stream", a.opt.ID, "expires_at", p.ExpiresAt.UTC().Format(time.RFC3339))
+}
+
+// checkBandwidth is the design's 720p rung: two WHIP retries close together mean the link is struggling, so the
+// capture restarts at 720p. It never goes back up (S2's simulcast is the real answer).
+func (a *Agent) checkBandwidth() {
+	pub := a.pub
+	if pub == nil {
+		return
+	}
+	if pub.State() != video.StateRetrying {
+		a.mu.Lock()
+		a.retries = 0
+		a.mu.Unlock()
+		return
+	}
+	a.mu.Lock()
+	if a.downshifted {
+		a.mu.Unlock()
+		return
+	}
+	a.retries++
+	down := a.retries >= 2
+	if down {
+		a.downshifted = true
+		a.opt.Encode = a.opt.Encode.LowBandwidth()
+	}
+	a.mu.Unlock()
+	if down {
+		a.log.Info("desk stream downshifted to 720p after repeated WHIP retries", "stream", a.opt.ID)
+		a.ds.restart()
+	}
 }
 
 func (a *Agent) ticketNow() credentials.Secret {
@@ -490,7 +524,10 @@ func (d *deskSource) startEncoder() {
 	d.encGen++
 	gen := d.encGen
 	d.encRun, d.encStop = true, cancel
-	src := d.a.opt.NewSource(d.a.opt.Capture, d.a.opt.Encode)
+	d.a.mu.Lock()
+	enc := d.a.opt.Encode
+	d.a.mu.Unlock()
+	src := d.a.opt.NewSource(d.a.opt.Capture, enc)
 	d.mu.Unlock()
 	go func() {
 		_ = src.Run(ctx, func(s video.Sample) {

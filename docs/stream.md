@@ -44,7 +44,8 @@ screen), `private`, or `desk-<name>`; a browser desk is captured from its own pa
 * a keyframe every 2 s of wall clock (`-force_key_frames expr:gte(t,n_forced*2)`, `-g 60` at 30 fps);
 * variable rate: `mpdecimate` drops unchanged frames and `-fps_mode vfr` keeps the capture's timestamps (about 5 fps on
   a still screen, up to 30 when it moves);
-* 1080p30 (or the desk's size), with a 720p rung for a low bandwidth estimate (`EncodeOptions.LowBandwidth`);
+* 1080p30 (or the desk's size), with a 720p rung: after two WHIP retries the core restarts the capture at 720p
+  (`EncodeOptions.LowBandwidth`);
 * CBR capped at 4 Mb/s (`-b:v 4000k -maxrate 4000k -bufsize 4000k -x264-params nal-hrd=cbr`).
 
 Capture is `x11grab` or (ffmpeg 7.1+) `pipewire` on Linux, `ddagrab` on Windows, `avfoundation` on macOS, and
@@ -70,7 +71,8 @@ The plugin's detectors answer `None` (clear), a reason (raise), or raise (fail c
   named in an `exec` (`/.env`, `*credentials*`, `id_rsa`, `*.pem`, `*.key`, a password manager);
 * `env_print` — an `exec` ran `env`/`printenv` or printed three or more environment assignments;
 * `manual` — the hotkey (Ctrl+Alt+P on X11, `SIGUSR1` for a service), Curtain now, or the `curtain` command;
-* `site` — a browser desk navigated outside its `allow_sites`;
+* `site` — a browser desk navigated outside its `allow_sites` (checked on the agent's own actions and on every
+  main-frame navigation the browser reports);
 * `detector` — any detector failed or returned something it could not decide.
 
 The curtain starts **up** and only comes down after every detector has been clear for 2 s, or when the owner lowers
