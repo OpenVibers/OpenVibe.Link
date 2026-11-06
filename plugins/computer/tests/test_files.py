@@ -263,7 +263,7 @@ class HardLinkTest(unittest.TestCase):
         self.outside = tempfile.mkdtemp(prefix="ov-hard-out-")
         self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
         self.addCleanup(shutil.rmtree, self.outside, ignore_errors=True)
-        with open(os.path.join(self.dir, "notes.txt"), "w") as f:
+        with open(os.path.join(self.dir, "notes.txt"), "w", newline="\n") as f:   # the same bytes on Windows
             f.write("hello\n")
         self.out = Out()
         self.plugin = Computer(env={}, platform=sys.platform)

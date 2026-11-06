@@ -347,7 +347,17 @@ class Target:
             os.close(parent)
 
     def identity(self):
-        """What the path names now, by its own numbers: a folder that was swapped is a different one."""
+        """What the path names now, by its own numbers: a folder that was swapped is a different one.
+
+        Without handles (macOS, Windows) the name is stat'ed: a folder cannot be opened as a file there, and the
+        name is all there is to compare.
+        """
+        if self.by_name:
+            try:
+                st = os.stat(self.path)
+            except OSError:
+                return None
+            return (st.st_dev, st.st_ino)
         fd = self.open_dir()
         try:
             st = os.fstat(fd)
