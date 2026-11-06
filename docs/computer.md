@@ -1,8 +1,10 @@
 # The computer plugin: your machine for your agents
 
 The `computer` plugin gives the machine's terminal, files and screen to its owner's agents (OpenVibe.Actor, plan
-T14/T17), through OpenVibe.Bot and the Node's one outbound link. It is **off** unless you turn it on, it never runs
-as root, and **you set what it may do on the machine itself**: nothing in the cloud can raise that level.
+T14/T17), through OpenVibe.Bot and the Node's one outbound link. It is **off** unless you turn it on, it runs as your
+own account (never root: the one exception is a shared desk host for other people, where the Node runs as root and
+every desk sits in its own sandbox, see "Desk hosts for other people"), and **you set what it may do on the machine
+itself**: nothing in the cloud can raise that level.
 
 ## Turn it on
 
@@ -35,6 +37,17 @@ By hand, or on another system, add it to `plugins` in the Node's `config.json` a
 `observe` is the default. Folders are `roots` (default: the home folder of the account running the Node); a path is
 checked after symlinks are resolved, so a link out of a folder is outside it.
 
+**The folders limit the plugin's own actions**: its reads, its writes, its screen and its browser. They do **not**
+limit a program. At `trusted` a program runs without asking, and at `ask` one runs when you approve it; either way it
+runs as your account, with everything that account can reach, not only the folders. An approved program can read and
+write anywhere your account can.
+
+**How a folder is kept.** On Linux the plugin opens every folder once and resolves each name under that handle
+(`openat2` with `RESOLVE_BENEATH`, or one component at a time where the kernel is older), so a name that is swapped
+for a link after it was checked cannot move the work outside the folder. A link out of the folder is refused, and so is
+a file with more than one name (a hard link to a file outside the folder), below `full`. On macOS and Windows the
+plugin compares path names only: there a name that changes under it is still a name.
+
 **Approvals** (level `ask`): a request waits on the machine until you answer it, for at most `approval_timeout_s`
 (default 120 s) and never longer than the request's own deadline:
 
@@ -48,6 +61,10 @@ A request shows what it would do in full: every argument of a program, the progr
 whether stdin is given with its size and digest; a write's path, mode, size and content digest; the whole text to type,
 or its length and digest. Control, ANSI and bidi characters are escaped. A notification or dialog that cannot show all
 of it offers no **Approve** button: answer that request from `openvibe-node approvals`.
+
+**What an approval does not limit.** Approving a program lets it run as your account, with everything that account can
+reach: the folders are the plugin's own limit, not a sandbox around the program. Read what it would do before you
+approve it.
 
 **The tray** (Linux and Windows): `openvibe-node tray` puts the Node in your notification area. The installer's
 `--computer` starts it when you sign in (`openvibe-node tray --autostart on|off` does it by hand). It runs in your
