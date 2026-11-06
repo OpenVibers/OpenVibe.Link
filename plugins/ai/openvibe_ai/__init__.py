@@ -5,9 +5,17 @@ their owner, for Vibe's answers or an agent's thinking, without the prompt leavi
 open port: OpenVibe.AI asks OpenVibe.Bot, Bot sends the Node one ``ai`` command over the connection the Node already
 keeps, and this plugin relays it to the local model server and answers with the reply.
 
-It reaches one place only, the server in its config, and it reads and changes nothing else on the machine. One request
-runs at a time (a model is heavy); another is refused as busy, never queued. The owner turns it on twice: by adding the
-plugin here, and by "Let my AI use this computer's models" on openvibe.bot/machines.
+It reaches one place only, the server in its config, and it reads and changes nothing else on the machine. A request
+runs at once up to the owner's ``offer.concurrency`` (1 by default: a model is heavy); another is refused as busy,
+never queued. The owner turns it on twice: by adding the plugin here, and by "Let my AI use this computer's models" on
+openvibe.bot/machines.
+
+Offer to the network (the /sell settings, plugin 0.3.0): ``offer.enabled`` lets other people's requests that opt in to
+community capacity run here; the plugin advertises the offer in ``describe`` (status.capabilities.ai.ai.offer), Bot
+publishes it as a Network user-owned offer, and OpenVibe.AI places verified, opted-in requests on it. The plugin
+enforces enabled, the local-time ``hours``, the ``models`` offered and ``concurrency``; the router enforces
+``audience`` (everyone, followers, or one group) because only it can resolve a requester's followers. The prompt is
+visible to this machine, so only requests that opt in ever come here, and every answer says so.
 
 Config (the plugin's block in config.json):
 
@@ -17,6 +25,13 @@ Config (the plugin's block in config.json):
 * ``models``: the models offered (a list); by default every model the server lists.
 * ``max_tokens``: the most a reply may be (default 2048, at most 32768).
 * ``timeout_s``: how long one reply may take (default 180, at most 900).
+* ``offer``: the network offer, off unless ``enabled`` is true: ``models`` (default: the served ones), ``hours``
+  (``{start, end, tz}``, HH:MM local time, an overnight window allowed, start == end means all day), ``concurrency``
+  (1-8), ``price`` (``{in_per_million, out_per_million}`` credits, 0 to volunteer) and ``audience``
+  (``everyone``, ``followers``, or ``group`` with a ``group`` id), ``idle_only`` (default true: pause while the GPU,
+  a game/OBS/Steam process or the person at the keyboard is using the machine) and ``quiet_minutes`` (default 5) before
+  it resumes. The offer also carries the privacy sentence shown when it is turned on: a community machine sees the
+  prompt, only opted-in requests come here, and every answer is labelled.
 
 Command ``ai`` ``{"model", "messages": [{"role", "content"}], "max_tokens"?, "temperature"?, "tools"?, "tool_choice"?}``
 → ``{model, message: {role: "assistant", content, tool_calls?}, usage?, finish_reason?}``.
@@ -27,8 +42,13 @@ them and sends the next command with the assistant's message (its ``tool_calls``
 ``describe`` says ``tools: true`` so a caller knows this machine can.
 """
 
+import datetime
 import json
+import os
 import re
+import shutil
+import subprocess
+import sys
 import threading
 import time
 import urllib.error
@@ -36,7 +56,7 @@ import urllib.request
 
 from openvibe_plugin import Deferred, Fault, Plugin
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 DEFAULT_ENDPOINTS = ("http://127.0.0.1:11434", "http://127.0.0.1:1234", "http://127.0.0.1:8080")
 MAX_REPLY_CHARS = 200 * 1024     # well inside the core's answer limit (512 KB)
 MAX_MESSAGES = 200
@@ -46,6 +66,8 @@ MAX_TOOLS = 64
 MAX_CALLS = 32
 MAX_TOOLS_BYTES = 256 * 1024
 NAME = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+HOUR = re.compile(r"^([01][0-9]|2[0-3]):([0-5][0-9])$")
+AUDIENCES = ("everyone", "followers", "group")
 
 
 def _call(c):
@@ -121,25 +143,183 @@ def _int(v, name, lo, hi, default):
     return int(max(lo, min(hi, v)))
 
 
+def _amount(v, name):
+    """A price per million tokens: a number from 0 to 1,000,000 credits (0 volunteers the model)."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not 0 <= v <= 1000000:
+        raise Fault("bad_value", "%s must be a number from 0 to 1000000" % name)
+    return float(v)
+
+
+def _offer_config(cfg, served):
+    """The owner's offer to the network (the /sell settings), normalized; enabled is false by default.
+
+    ``offer.models`` defaults to the models this machine serves; ``hours`` is one local-time window (start == end
+    means all day and an overnight window is allowed); ``concurrency`` caps how many community replies run at once;
+    ``price`` is credits per million input and output tokens (0 is volunteering); ``audience`` is everyone, followers
+    or one group. The Node enforces enabled, hours, models and concurrency; the router enforces the audience, since
+    only it can resolve a requester's followers and groups.
+    """
+    raw = cfg.get("offer")
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise Fault("bad_value", "offer is the network-offer settings object")
+    enabled = raw.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise Fault("bad_value", "offer.enabled is true or false")
+    models = raw.get("models", served)
+    if not isinstance(models, list) or not all(isinstance(m, str) and 0 < len(m) <= 200 for m in models):
+        raise Fault("bad_value", "offer.models is a list of model names this machine serves")
+    models = [m for m in models if m in served] if served else []
+    hours = raw.get("hours") or {}
+    if not isinstance(hours, dict):
+        raise Fault("bad_value", "offer.hours is {start, end, tz}")
+    start = hours.get("start", "00:00")
+    end = hours.get("end", "00:00")
+    if not isinstance(start, str) or not HOUR.match(start) or not isinstance(end, str) or not HOUR.match(end):
+        raise Fault("bad_value", "offer.hours.start and offer.hours.end are HH:MM (24-hour)")
+    tz = hours.get("tz", "UTC")
+    if not isinstance(tz, str) or not tz or len(tz) > 64:
+        raise Fault("bad_value", "offer.hours.tz is an IANA time zone such as UTC or Europe/Lisbon")
+    if tz != "UTC":   # Windows Python has no system zone database unless the tzdata package is installed; UTC never needs it.
+        try:
+            from zoneinfo import ZoneInfo
+            ZoneInfo(tz)
+        except Exception:
+            raise Fault("bad_value", "offer.hours.tz is an IANA time zone such as UTC or Europe/Lisbon")
+    concurrency = _int(raw.get("concurrency"), "offer.concurrency", 1, 8, 1)
+    price = raw.get("price") or {}
+    if not isinstance(price, dict):
+        raise Fault("bad_value", "offer.price is {in_per_million, out_per_million}")
+    in_per_million = _amount(price.get("in_per_million", 0), "offer.price.in_per_million")
+    out_per_million = _amount(price.get("out_per_million", 0), "offer.price.out_per_million")
+    audience = raw.get("audience", "everyone")
+    if audience not in AUDIENCES:
+        raise Fault("bad_value", "offer.audience is everyone, followers or group")
+    idle_only = raw.get("idle_only", True)
+    if not isinstance(idle_only, bool):
+        raise Fault("bad_value", "offer.idle_only is true or false")
+    quiet_minutes = _int(raw.get("quiet_minutes"), "offer.quiet_minutes", 0, 120, 5)
+    busy_gpu_percent = _int(raw.get("busy_gpu_percent"), "offer.busy_gpu_percent", 1, 100, 20)
+    busy_processes = raw.get("busy_processes", ["obs", "obs64", "obs-studio", "steam", "steamwebhelper", "lutris", "heroic", "gameoverlayui"])
+    if not isinstance(busy_processes, list) or not all(isinstance(x, str) and 0 < len(x) <= 80 for x in busy_processes):
+        raise Fault("bad_value", "offer.busy_processes is a list of process names")
+    group = raw.get("group")
+    if audience == "group" and (not isinstance(group, str) or not group.strip() or len(group) > 80):
+        raise Fault("bad_value", "offer.group is the group id whose members may use this offer")
+    if audience != "group":
+        group = None
+    return {
+        "enabled": enabled,
+        "models": models,
+        "hours": {"start": start, "end": end, "tz": tz},
+        "concurrency": concurrency,
+        "price": {"in_per_million": in_per_million, "out_per_million": out_per_million},
+        "audience": audience,
+        "group": group,
+        "idle_only": idle_only,
+        "quiet_minutes": quiet_minutes,
+        "busy_gpu_percent": busy_gpu_percent,
+        "busy_processes": [x.lower() for x in busy_processes],
+    }
+
+
+def _minutes(hhmm):
+    return int(hhmm[:2]) * 60 + int(hhmm[3:])
+
+
+def _run(cmd, timeout=2.0):
+    """A short local probe's output, or '' when the tool is absent, times out or fails."""
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout).stdout
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return ""
+
+
+def _gpu_busy(threshold):
+    """NVIDIA (nvidia-smi) or AMD (rocm-smi) utilization over the threshold; unknown tools mean 'not busy'."""
+    if shutil.which("nvidia-smi"):
+        out = _run(["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"])
+        for part in re.split(r"[,\s]+", out):
+            if part.isdigit() and int(part) >= threshold:
+                return True
+    if shutil.which("rocm-smi"):
+        out = _run(["rocm-smi", "--showuse"])
+        for pct in re.findall(r"(?:GPU use|GPU utilization)[^0-9]*(\d+)", out, re.I):
+            if int(pct) >= threshold:
+                return True
+    return False
+
+
+def _process_busy(names):
+    """A game, OBS or another heavy process the owner listed is running."""
+    if not names:
+        return False
+    if sys.platform == "win32":
+        out = _run(["tasklist", "/FO", "CSV", "/NH"], 3.0)
+    else:
+        out = _run(["ps", "-A", "-o", "comm="], 3.0)
+    low = out.lower()
+    return any(name in low for name in names)
+
+
+def _input_idle_ms():
+    """How long since the person last touched the keyboard or mouse, or None when it cannot be read."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            class LASTINPUTINFO(ctypes.Structure):
+                _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
+            info = LASTINPUTINFO()
+            info.cbSize = ctypes.sizeof(info)
+            if ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info)):
+                return max(0, int(ctypes.windll.kernel32.GetTickCount()) - int(info.dwTime))
+        elif sys.platform == "darwin":
+            out = _run(["ioreg", "-c", "IOHIDSystem"], 2.0)
+            m = re.search(r'"HIDIdleTime"\s*=\s*(\d+)', out)
+            if m:
+                return int(m.group(1)) // 1000000
+        elif shutil.which("xprintidle"):
+            out = _run(["xprintidle"], 1.0).strip()
+            if out.isdigit():
+                return int(out)
+    except Exception:
+        return None
+    return None
+
+
 class Ai(Plugin):
     driver = "ai"
     version = VERSION
     motion_kinds = frozenset()   # it moves nothing
 
-    def __init__(self, opener=None, clock=time.monotonic):
+    def __init__(self, opener=None, clock=time.monotonic, now=None, busy_probe=None):
         self.opener = opener or urllib.request.urlopen
         self.clock = clock
+        self.now = now or (lambda: datetime.datetime.now(datetime.timezone.utc))
+        # Injected in tests: returns (busy, reason). In production this reads GPU use, heavy processes and input idle.
+        self.busy_probe = busy_probe
+        self.quiet_since = None
+        self.busy_reason = None
+        self._busy_cache = (0.0, False, None)
         self.endpoint = None
         self.models = []
         self.max_tokens = 2048
         self.timeout_s = 180
-        self.busy = threading.Lock()
+        # The community offer: how many replies may run at once and how many are running now. The owner's own
+        # requests and the network's share the same slots; nothing is queued.
+        self.offer = _offer_config({}, [])
+        self.active = 0
+        self.lock = threading.Lock()
         self.cfg = {}
         self.reachable = False
         # How fast each model answers here, in tokens a second of its reply (an average that favours the latest
         # answers), and the model that answered last: the telemetry Bot shows beside the machine's models.
         self.speed = {}
         self.last_model = None
+        # What this machine served to the network, as sensors and for the /sell view: tokens counted by the local
+        # server's usage, never the prompt or the answer.
+        self.community = {"requests": 0, "tokens_in": 0, "tokens_out": 0}
 
     # ---- the model server -----------------------------------------------------------------------------------------
     def _get(self, url, timeout):
@@ -180,6 +360,91 @@ class Ai(Plugin):
         if wanted is not None and (not isinstance(wanted, list) or not all(isinstance(m, str) and m for m in wanted)):
             raise Fault("bad_value", "models is a list of model names")
         self.models = [m for m in (listed or []) if wanted is None or m in wanted] if listed is not None else list(wanted or [])
+        before = self.offer.get("idle_only")
+        self.offer = _offer_config(cfg, self.models)
+        if before is None or before != self.offer["idle_only"]:
+            self.quiet_since = None
+            self._busy_cache = (0.0, False, None)
+
+    def _raw_busy(self):
+        """(busy, reason) from the injected probe or the machine's own signals, cached for five seconds."""
+        if not self.offer["idle_only"]:
+            return False, None
+        now = self.clock()
+        if self._busy_cache[0] and now - self._busy_cache[0] < 5.0:
+            return self._busy_cache[1], self._busy_cache[2]
+        if self.busy_probe is not None:
+            busy, reason = self.busy_probe()
+        else:
+            if _gpu_busy(self.offer["busy_gpu_percent"]):
+                busy, reason = True, "gpu"
+            elif _process_busy(self.offer["busy_processes"]):
+                busy, reason = True, "process"
+            else:
+                idle = _input_idle_ms()
+                if idle is not None and idle < (self.offer["quiet_minutes"] or 0) * 60000:
+                    busy, reason = True, "keyboard"
+                else:
+                    busy, reason = False, None
+        self._busy_cache = (now, bool(busy), reason)
+        return bool(busy), reason
+
+    def _paused(self):
+        """Idle-only: busy now, or not yet quiet for the owner's minutes. Never pauses the owner's own requests."""
+        if not self.offer["idle_only"]:
+            return False
+        busy, reason = self._raw_busy()
+        if busy:
+            self.quiet_since = None
+            self.busy_reason = reason
+            return True
+        if self.quiet_since is None:
+            self.quiet_since = self.clock()
+        if self.clock() - self.quiet_since < (self.offer["quiet_minutes"] or 0) * 60:
+            self.busy_reason = "quiet"
+            return True
+        self.busy_reason = None
+        return False
+
+    def _within_hours(self):
+        """Is the offer open now, in its own time zone? start == end is all day; an overnight window wraps."""
+        h = self.offer["hours"]
+        try:
+            if h["tz"] == "UTC":
+                at = self.now().astimezone(datetime.timezone.utc)
+            else:
+                from zoneinfo import ZoneInfo
+                at = self.now().astimezone(ZoneInfo(h["tz"]))
+        except Exception:
+            return False
+        start, end = _minutes(h["start"]), _minutes(h["end"])
+        minute = at.hour * 60 + at.minute
+        if start == end:
+            return True
+        if start < end:
+            return start <= minute < end
+        return minute >= start or minute < end
+
+    def _offer_view(self):
+        """The offer as Bot, Network and AI see it (status.capabilities.ai.offer)."""
+        open_now = self._within_hours()
+        paused = self._paused() if self.offer["enabled"] else False
+        return {
+            "enabled": self.offer["enabled"],
+            "models": list(self.offer["models"]),
+            "hours": dict(self.offer["hours"]),
+            "concurrency": self.offer["concurrency"],
+            "price": dict(self.offer["price"]),
+            "audience": self.offer["audience"],
+            "group": self.offer["group"],
+            "idle_only": self.offer["idle_only"],
+            "quiet_minutes": self.offer["quiet_minutes"],
+            "open_now": open_now,
+            "paused": paused,
+            "busy_reason": self.busy_reason,
+            "privacy": "A community machine sees the prompt. Only requests that allow community capacity are sent here, and every answer is labelled Community.",
+            "ready": bool(self.offer["enabled"] and self.reachable and self.offer["models"] and open_now and not paused),
+        }
 
     def describe(self, config):
         try:
@@ -187,7 +452,9 @@ class Ai(Plugin):
         except Fault:
             return {}
         return {"ai": {"models": self.models, "ready": self.reachable and bool(self.models),
-                       "max_tokens": self.max_tokens, "tools": True}}
+                       "max_tokens": self.max_tokens, "tools": True,
+                       "speed": {m: round(r, 1) for m, r in self.speed.items()},
+                       "offer": self._offer_view()}}
 
     def setup(self, config):
         self._configure(config)
@@ -201,8 +468,22 @@ class Ai(Plugin):
         v = cmd.value if isinstance(cmd.value, dict) else {}
         model = v.get("model")
         messages = v.get("messages")
+        # The router marks a community request with the community/ model prefix (the ai command's value is closed to
+        # extra fields); strip it before the local server sees the name. v.community is accepted for older callers.
+        community = v.get("community") is True or (isinstance(model, str) and model.startswith("community/"))
+        if isinstance(model, str) and model.startswith("community/"):
+            model = model[len("community/"):]
         if not isinstance(model, str) or not model or len(model) > 200:
             raise Fault("bad_value", "model is the name of a model this machine offers")
+        if community:
+            if not self.offer["enabled"]:
+                raise Fault("not_allowed", "this machine is not offering its models to the network")
+            if not self._within_hours():
+                raise Fault("not_allowed", "the owner\'s offer is outside its hours")
+            if self._paused():
+                raise Fault("not_allowed", "the machine is in use or has not been quiet for %d minutes" % (self.offer["quiet_minutes"] or 0))
+            if model not in self.offer["models"]:
+                raise Fault("bad_value", "this machine does not offer %s to the network (it offers: %s)" % (model, ", ".join(self.offer["models"][:20]) or "none"))
         sent = [_message(m) for m in messages] if isinstance(messages, list) and 0 < len(messages) <= MAX_MESSAGES else None
         if not sent or any(m is None for m in sent):
             raise Fault("bad_value", "messages are 1 to %d of {role: system|user|assistant|tool, content: text}; tool_calls on an assistant message, tool_call_id on a tool one" % MAX_MESSAGES)
@@ -226,15 +507,22 @@ class Ai(Plugin):
         temperature = v.get("temperature")
         if temperature is not None and (isinstance(temperature, bool) or not isinstance(temperature, (int, float)) or not 0 <= temperature <= 2):
             raise Fault("bad_value", "temperature is 0 to 2")
-        if not self.busy.acquire(blocking=False):
-            raise Fault("not_ready", "the model is answering another request on this machine: try again in a moment")
+        capacity = self.offer["concurrency"] if self.offer["enabled"] else 1
+        with self.lock:
+            if self.active >= capacity:
+                raise Fault("not_ready", "the model is answering another request on this machine: try again in a moment")
+            self.active += 1
         body = {"model": model, "messages": sent, "max_tokens": max_tokens, "stream": False}
         if temperature is not None:
             body["temperature"] = temperature
         if tools:
             body["tools"] = tools
             body["tool_choice"] = tool_choice or "auto"
-        threading.Thread(target=self._reply, args=(cmd.id, body), name="ai-reply", daemon=True).start()
+        try:
+            threading.Thread(target=self._reply, args=(cmd.id, body, community), name="ai-reply", daemon=True).start()
+        except Exception:
+            self._release()
+            raise
         raise Deferred()
 
     def _measure(self, model, tokens, ms):
@@ -247,13 +535,24 @@ class Ai(Plugin):
         self.speed[model] = rate if before is None else before * 0.7 + rate * 0.3
         self.last_model = model
 
+    def _release(self):
+        with self.lock:
+            self.active = max(0, self.active - 1)
+
     def poll(self):
-        """Sensors: whether a model is answering now (ai_busy), and the last model's speed here (ai_model,
-        ai_tokens_per_s) once one has answered."""
-        sensors = {"ai_busy": 1 if self.busy.locked() else 0}
+        """Sensors: whether a model is answering now (ai_busy), the last model's speed here (ai_model,
+        ai_tokens_per_s) once one has answered, and what this machine served to the network (ai_community_*)."""
+        with self.lock:
+            busy = 1 if self.active else 0
+            served = dict(self.community)
+        sensors = {"ai_busy": busy}
         if self.last_model is not None and self.last_model in self.speed:
             sensors["ai_model"] = self.last_model[:120]
             sensors["ai_tokens_per_s"] = round(self.speed[self.last_model], 1)
+        if served["requests"]:
+            sensors["ai_community_requests"] = served["requests"]
+            sensors["ai_community_tokens_in"] = served["tokens_in"]
+            sensors["ai_community_tokens_out"] = served["tokens_out"]
         return {"sensors": sensors}
 
     def _configure_again(self):
@@ -262,7 +561,7 @@ class Ai(Plugin):
         except Fault:
             pass
 
-    def _reply(self, cid, body):
+    def _reply(self, cid, body, community=False):
         try:
             req = urllib.request.Request(self.endpoint + "/v1/chat/completions", data=json.dumps(body).encode("utf-8"),
                                          headers={"Content-Type": "application/json", "Accept": "application/json"})
@@ -295,10 +594,17 @@ class Ai(Plugin):
                 out["usage"] = {k: int(usage[k]) for k in ("prompt_tokens", "completion_tokens", "total_tokens")
                                 if isinstance(usage.get(k), (int, float))}
             self._measure(body["model"], (out.get("usage") or {}).get("completion_tokens"), out["ms"])
+            if community:
+                usage = out.get("usage") or {}
+                with self.lock:
+                    self.community["requests"] += 1
+                    self.community["tokens_in"] += int(usage.get("prompt_tokens") or 0)
+                    self.community["tokens_out"] += int(usage.get("completion_tokens") or 0)
+                out["community"] = True
             self.complete(cid, out)
         except urllib.error.HTTPError as e:
             self.fail(cid, "hardware", "the model server answered %d" % e.code)
         except (OSError, ValueError, urllib.error.URLError) as e:
             self.fail(cid, "hardware", "the model server did not answer: %s" % (getattr(e, "reason", None) or e))
         finally:
-            self.busy.release()
+            self._release()
