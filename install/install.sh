@@ -1087,3 +1087,4 @@ print("  camera   %s%s" % (v.get("state") or "off", (" (" + v["last_error"] + ")
 fi
 
 say "done. Check it with: sudo openvibe-node status   Stop everything with: sudo openvibe-node stop"
+say "first run: sudo openvibe-node   (checks the link and reports this machine's first job on openvibe.bot/machines)"

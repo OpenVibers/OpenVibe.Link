@@ -1,5 +1,6 @@
 // Command openvibe-node connects a computer, server, Raspberry Pi or robot to OpenVibe.
 //
+//	openvibe-node                 guided first run: pair, self-check, one first job, then what to do next
 //	openvibe-node pair <CODE>     redeem a one-time pairing code and store the device credential
 //	                              (--network/--pairing: pair on OpenVibe.Network and bind the device on Bot)
 //	openvibe-node credential import  take a rotated credential: reads the rotate response JSON on stdin
@@ -36,6 +37,7 @@ import (
 	"github.com/OpenVibers/OpenVibe.Node/internal/config"
 	"github.com/OpenVibers/OpenVibe.Node/internal/connect"
 	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
+	"github.com/OpenVibers/OpenVibe.Node/internal/firstrun"
 	"github.com/OpenVibers/OpenVibe.Node/internal/link"
 	"github.com/OpenVibers/OpenVibe.Node/internal/localctl"
 	"github.com/OpenVibers/OpenVibe.Node/internal/node"
@@ -52,6 +54,9 @@ var version = "dev"
 const usage = `openvibe-node %s: connect this device to OpenVibe.
 
 Usage:
+  openvibe-node [--code CODE] [--network URL --pairing pair_…] [--home DIR]
+                    guided first run: pair with a code from openvibe.bot/machines, check this machine can reach
+                    OpenVibe, run one harmless first job, and report each step; the same as 'openvibe-node first-run'
   openvibe-node pair <CODE> [--robot rob_…] [--name NAME] [--server URL] [--kind onboard|bridge] [--force]
   openvibe-node pair --network URL --pairing pair_… --code CODE [--name NAME] [--server URL] [--force]
   openvibe-node credential import   store the credential from a rotate response, read as JSON on stdin
@@ -106,8 +111,33 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 // runWithStdin is run with the command's stdin, so tests can feed `credential import`.
 func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help" || args[0] == "--version") {
+		if args[0] == "--version" {
+			fmt.Fprintf(stdout, "openvibe-node %s %s/%s\n", version, runtime.GOOS, runtime.GOARCH)
+			return 0
+		}
 		fmt.Fprintf(stdout, usage, version)
+		return 0
+	}
+	// A bare `openvibe-node` (or flags with no command) is the guided first run; it needs its own flag set, because
+	// its flags include the pairing ones and there is no command word to hang them on.
+	if len(args) == 0 || args[0] == "first-run" || strings.HasPrefix(args[0], "-") {
+		g := &globals{}
+		var ga guideArgs
+		rest := args
+		if len(args) > 0 && args[0] == "first-run" {
+			rest = args[1:]
+		}
+		positional, err := parseGuideFlags(rest, g, &ga, stderr)
+		if err != nil {
+			return 2
+		}
+		g.paths = config.DefaultPaths(g.home)
+		g.log = newLogger(stderr, g.logLevel)
+		if err := cmdFirstRun(g, ga, positional, stdin, stdout); err != nil {
+			fmt.Fprintln(stderr, "error:", err)
+			return 1
+		}
 		return 0
 	}
 	cmd, rest := args[0], args[1:]
@@ -652,8 +682,13 @@ func cmdInstall(g *globals, user string, stdout io.Writer) error {
 		return fmt.Errorf("installed, but could not start: %w", err)
 	}
 	fmt.Fprintln(stdout, "Installed and started the openvibe-node service.")
+	// The guided first run's clock starts here. Best effort: a record that cannot be written never fails an install.
+	if r, rerr := firstrun.Load(g.paths.FirstRunFile()); rerr == nil && !r.Has(firstrun.StepInstalled) {
+		r.Upsert(firstrun.Step{Name: firstrun.StepInstalled, At: time.Now().UTC()})
+		_ = r.Save(g.paths.FirstRunFile())
+	}
 	if _, err := credentials.Load(g.paths.CredentialFile(), nil); err != nil {
-		fmt.Fprintln(stdout, "Not paired yet: run `sudo openvibe-node pair <CODE>`.")
+		fmt.Fprintln(stdout, "Not paired yet: run `sudo openvibe-node first-run` to pair and finish the setup.")
 	}
 	return nil
 }

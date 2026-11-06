@@ -58,9 +58,10 @@ type Server struct {
 	credInURL    bool
 	binds        atomic.Int64
 
-	conns chan *Conn
-	count atomic.Int64
-	dials atomic.Int64
+	conns  chan *Conn
+	count  atomic.Int64
+	dials  atomic.Int64
+	health atomic.Int64 // GET /api/health status; 200 unless a test sets it
 }
 
 type refusal struct {
@@ -71,9 +72,13 @@ type refusal struct {
 // RobotID is the robot AddCode and AddCredential attach devices to.
 const RobotID = "rob_01J8Z4M2Q0R7T9YV3K6N8P1W2X"
 
+// SetHealth makes the fake /api/health answer with status (the guide's self-check reads it).
+func (s *Server) SetHealth(status int) { s.health.Store(int64(status)) }
+
 // New starts the fake server.
 func New() *Server {
 	s := &Server{codes: map[string]string{}, creds: map[string]string{}, robots: map[string]string{}, live: map[string]*Conn{}}
+	s.health.Store(http.StatusOK)
 	s.estop = map[string]bool{}
 	s.conns = make(chan *Conn, 16)
 	s.Config = protocol.Config{HeartbeatMS: 1000, Limits: protocol.Limits{MaxCommandMS: 1000, HeartbeatMS: 1000}}
@@ -82,6 +87,12 @@ func New() *Server {
 	mux.HandleFunc(protocol.PairPath, s.pair)
 	mux.HandleFunc(protocol.DevicePath, s.device)
 	mux.HandleFunc(protocol.BindPath, s.bind)
+	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
+		status := int(s.health.Load())
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	})
 	mux.HandleFunc("/whip/", func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		h := s.WHIP
