@@ -308,3 +308,24 @@ class HardLinkTest(unittest.TestCase):
         r = reply(self.out, self.cmd("fs", {"op": "read", "path": inside}))
         self.assertEqual(r["op"], "ack", r)
         self.assertEqual(base64.b64decode(r["data"]["content_b64"]), b"hello\n")
+
+
+class WalkTest(unittest.TestCase):
+    @unittest.skipUnless(LINUX, "the handle-based file operations are Linux's")
+    def test_the_walker_refuses_a_name_that_climbs_out(self):
+        # Without openat2 the walker resolves under the folder's handle; a ".." must not leave it, whoever calls it.
+        from openvibe_computer import files
+        from openvibe_plugin import Fault
+        root = tempfile.mkdtemp()
+        try:
+            os.makedirs(os.path.join(root, "proj"))
+            fd = os.open(os.path.join(root, "proj"), os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                with self.assertRaises(Fault):
+                    files._walk(fd, "../outside", os.O_RDONLY)
+                with self.assertRaises(Fault):
+                    files._walk(fd, "a/../../outside", os.O_RDONLY)
+            finally:
+                os.close(fd)
+        finally:
+            shutil.rmtree(root)

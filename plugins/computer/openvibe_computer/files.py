@@ -155,6 +155,11 @@ def _walk(fd, name, flags, mode=0, follow=False):
     parts = [p for p in name.split("/") if p and p != "."]
     if not parts:
         return os.dup(fd)
+    # A ".." would climb out of the folder's handle. _path normalizes every name first, so none should reach here;
+    # the walker refuses one anyway, so the folder limit does not rest on its caller (openat2's RESOLVE_BENEATH does
+    # the same on the other path).
+    if not follow and ".." in parts:
+        raise Fault("not_allowed", "%s climbs out of the folder" % name)
     current = os.dup(fd)
     try:
         for i, part in enumerate(parts):
