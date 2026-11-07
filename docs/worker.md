@@ -21,6 +21,11 @@ one-time code: `curl -fsSL https://node.openvibe.network/install | sh -s -- --ne
   (it installs `nftables`, `iproute2` and `util-linux` with apt when they are missing and turns IPv4 forwarding on);
 - installs the OpenVibe.Codes job runner (`openvibe-codes job`, artifact `openvibe-codes@1.0.0`) into
   `/opt/openvibe-codes` when Node.js 20 or newer is installed system-wide, and declares it as a `code` entry;
+- with `--plan-logins` (which turns the worker on too), names the coding tools' own login files that are already signed
+  in on this computer as the worker's `plan_logins`, and sets the service's HOME to your home so they sit under the
+  Node user's home. A tool whose login file is missing or empty is skipped with a line giving its own login command; a
+  login file whose CLI is not on this PATH is still named, with a line to install the CLI system-wide. The installer
+  only looks at whether a login file is there; it never reads, copies or prints its content;
 - sizes the caps for a coding task (an hour, 4 GiB of memory, 3 GiB of scratch, one job at a time). Your own values win
   on a second run, and so do the keys you added.
 
@@ -335,8 +340,18 @@ do), and the Node copies each one into that one job's private home, **read-only*
 never change it), at the same path it has under the owner's home. The copy goes with the job: it is made in the job's
 own directory and disappears when the job ends. Its content is never logged, never uploaded and never part of a result.
 
+The installer's `--plan-logins` does this on Linux: it names the files that are already there
+(`~/.claude/.credentials.json`, `~/.codex/auth.json`, `~/.local/share/opencode/auth.json` and
+`~/.commandcode/auth.json`), skips a tool whose login file is missing or empty with a line giving that tool's own login
+command, and sets the service's `HOME` to your home. It only looks at whether each file is there: its content is
+never read, copied or printed. Sign a tool in with its own login, then run the installer again with `--plan-logins` to
+name the new file.
+
 - **What may be named.** An absolute path under the Node user's home, and a plain file. A path outside the home, a
   directory or a symlink is refused when the config loads.
+- **Which home.** The service's `HOME`, which `install.sh --plan-logins` sets to the owner's home. A
+  `sudo openvibe-node …` command uses the sudo user's home for the same check, so the CLI and the service see the same
+  folder rather than root's.
 - **A file that is not there is skipped**, not an error: the CLI it belongs to is simply not signed in. A file that is
   there but cannot be read, or is not a plain file, ends the job: a half-copied credential is worse than none.
 - **What the job sees.** `openvibe-codes logins` (the Codes job runner) reports each CLI as installed, signed in, and

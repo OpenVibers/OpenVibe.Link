@@ -79,7 +79,10 @@ this computer's models" on openvibe.bot/machines ([docs/ai.md](docs/ai.md)). The
 
 **A machine that runs your jobs:** add it on openvibe.bot/machines, which prints the same installer with `--worker`: the
 job worker runs each job as an unprivileged user in a sandbox, and the OpenVibe.Codes job runner lets you start a coding
-task on openvibe.codes/run from any browser and have this machine do it ([docs/worker.md](docs/worker.md)).
+task on openvibe.codes/run from any browser and have this machine do it ([docs/worker.md](docs/worker.md)). Add
+`--plan-logins` to use the coding plans you already signed in for here: it names those login files for your jobs, sets
+the service's HOME to your home, and says how to sign in a tool that is not ready, without ever reading or printing a
+login's content.
 
 **What the machine does for the network:** the owner sets the machine's roles on openvibe.network/machines
 (`codes.worker`, `desks.host`, `ai.host`, `bot.robot`). The Node reads them at its check-in, keeps them, and applies
