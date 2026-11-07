@@ -174,10 +174,14 @@ llama.cpp's RPC has no authentication of its own, so the plugin never exposes it
 
 ### Setting one up
 
-You need Linux on every machine, `unshare` and `ip` (util-linux and iproute2), OpenSSL, and llama.cpp built with
-`GGML_RPC=ON` (the tested revision is `bcb0152876e8f0b684ba70d3defcab6cdf35adb5`; its RPC server is
-`ggml-rpc-server`, `rpc-server` in older releases). Each machine must be paired through OpenVibe.Network. On
-Ubuntu 24.04, unprivileged user namespaces must be allowed (`kernel.apparmor_restrict_unprivileged_userns=0`).
+You need Linux on every machine, `bubblewrap` (recommended) or `unshare` and `ip` (util-linux and iproute2), OpenSSL,
+and llama.cpp built with `GGML_RPC=ON` (the tested revision is `bcb0152876e8f0b684ba70d3defcab6cdf35adb5`; its RPC
+server is `ggml-rpc-server`, `rpc-server` in older releases). Each machine must be paired through OpenVibe.Network.
+The engine runs in a private network namespace: bubblewrap is tried first and works on a default Ubuntu 24.04 even
+though `kernel.apparmor_restrict_unprivileged_userns=1`; without bubblewrap, `unshare` needs unprivileged user
+namespaces allowed (`kernel.apparmor_restrict_unprivileged_userns=0` on Ubuntu 24.04). If neither can make a
+namespace, pooling refuses instead of using the host network and says: "Pooling needs an isolated network for the
+engine. Install bubblewrap (sudo apt install bubblewrap) and try again."
 
 1. On every machine, give the ai plugin a pool configuration:
 

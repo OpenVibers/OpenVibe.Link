@@ -25,6 +25,72 @@ import urllib.parse
 from .pool import Identity, Tunnel, fit_table, probe, relay, validate_pool
 
 
+BWRAP = 'bwrap'
+UNSHARE = 'unshare'
+ISOLATION_METHODS = (BWRAP, UNSHARE)
+# One plain sentence the Node app can show. The engine never gets the host network instead.
+ISOLATION_HELP = ('Pooling needs an isolated network for the engine. '
+                  'Install bubblewrap (sudo apt install bubblewrap) and try again.')
+
+_UNSET = object()
+_method = _UNSET
+
+
+def namespace_prefix(method, net_admin=False):
+    """The command that puts what follows in a private user and network namespace.
+
+    bubblewrap is preferred: Ubuntu's AppArmor profile lets it make the user namespace even when
+    kernel.apparmor_restrict_unprivileged_userns=1, and it brings the namespace's loopback up itself. unshare is the
+    fallback that works where user namespaces are unrestricted. net_admin is only for a caller that must configure
+    more of the namespace (the test's stand-in LAN); the engine needs nothing beyond bubblewrap's loopback."""
+    if method == BWRAP:
+        caps = ['--cap-add', 'CAP_NET_ADMIN'] if net_admin else []
+        return ['bwrap', '--unshare-net', '--unshare-user', '--die-with-parent'] + caps + ['--dev-bind', '/', '/', '--']
+    return ['unshare', '--user', '--map-root-user', '--net', '--fork', '--kill-child']
+
+
+def _guard(method):
+    """setpriv: the engine dies with the thread that started it, never outliving a crashed plugin.
+
+    bwrap refuses inherited capabilities (it expects a setuid install), and the engine runs inside a namespaced
+    process with no need for ours: drop what this process passes in before bwrap."""
+    if not shutil.which('setpriv'):
+        return []
+    guard = ['setpriv', '--pdeathsig', 'KILL']
+    if method == BWRAP:
+        guard += ['--inh-caps=-all', '--ambient-caps=-all']
+    return guard
+
+
+def _probe(method):
+    """Can this method make the namespace on this machine? One throwaway `true`, nothing else."""
+    try:
+        result = subprocess.run(_guard(method) + namespace_prefix(method) + ['true'], stdin=subprocess.DEVNULL,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
+
+
+def isolation_method():
+    """bwrap or unshare, whichever can make the namespace; probed once and cached. None when neither can."""
+    global _method
+    if _method is _UNSET:
+        _method = next((m for m in ISOLATION_METHODS if shutil.which(m) and _probe(m)), None)
+        if _method is not None:
+            print('pool engine isolation: ' + _method, file=sys.stderr, flush=True)
+    return _method
+
+
+def _worker_environment():
+    """The worker imports openvibe_ai, so its package directory must be on PYTHONPATH whatever the plugin's cwd."""
+    environment = dict(os.environ)
+    package = str(Path(__file__).resolve().parent.parent)
+    existing = environment.get('PYTHONPATH')
+    environment['PYTHONPATH'] = package + (os.pathsep + existing if existing else '')
+    return environment
+
+
 def _tree(pid):
     """pid and its descendants, read from /proc (Linux); just pid elsewhere."""
     found, todo = set(), [pid]
@@ -45,17 +111,22 @@ class Namespace:
     def __init__(self, cfg):
         if sys.platform != 'linux':
             raise RuntimeError('pool isolation is currently supported on Linux only')
+        method = isolation_method()
+        if method is None:
+            raise RuntimeError(ISOLATION_HELP)
         cfg = dict(cfg, host_namespace=os.readlink('/proc/self/ns/net'))
-        # setpriv --pdeathsig: the engine dies with the thread that started it, never outliving a crashed plugin.
-        guard = ['setpriv', '--pdeathsig', 'KILL'] if shutil.which('setpriv') else []
-        self.process = subprocess.Popen(guard + ['unshare', '--user', '--map-root-user', '--net', '--fork', '--kill-child',
-                                         sys.executable, '-m', 'openvibe_ai.pool_worker'],
+        self.sockets = [Path(cfg[key]) for key in ('rpc_socket', 'api_socket') if cfg.get(key)]
+        self.process = subprocess.Popen(_guard(method) + namespace_prefix(method) +
+                                        [sys.executable, '-m', 'openvibe_ai.pool_worker'],
+                                        env=_worker_environment(),
                                         stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                         start_new_session=True)
         self.process.stdin.write((json.dumps(cfg) + '\n').encode())
         self.process.stdin.close()
         time.sleep(.15)
         if self.process.poll() is not None:
+            # The probe chose a working method, so this is the worker or the engine, not a licence to use the host
+            # network. (A machine with neither method never reaches here: it gets ISOLATION_HELP above.)
             raise RuntimeError('pool isolation failed; no host-network fallback')
 
     def close(self):
@@ -67,6 +138,9 @@ class Namespace:
             except subprocess.TimeoutExpired:
                 os.killpg(self.process.pid, signal.SIGKILL)
                 self.process.wait()
+        # bwrap kills its child on teardown, so the worker may not reach its own cleanup: remove what it owns here.
+        for path in self.sockets:
+            path.unlink(missing_ok=True)
 
 
 class Forwarder:

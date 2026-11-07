@@ -1,10 +1,10 @@
 """Two machines pool and serve a model through llama.cpp RPC, on a throwaway local network.
 
-Run by test_pool_linux.py inside `unshare --user --map-root-user --net`: that namespace is the "LAN" (192.168.77.2 and
-.3 on its loopback), and each machine's engine runs in a nested namespace of its own, exactly as on a real machine.
-With POOL_RPC_BINARY, POOL_LLAMA_BINARY and POOL_MODEL it runs real llama.cpp (the pool workflow); without them,
-stand-in engines that speak TCP and HTTP the same way, so the transport, the isolation and the pool's rules are
-checked on every run. Prints one PASS line.
+Run by test_pool_linux.py inside a private user/network namespace (bubblewrap or unshare): that namespace is the
+"LAN" (192.168.77.2 and .3 on its loopback), and each machine's engine runs in a nested namespace of its own, exactly
+as on a real machine. With POOL_RPC_BINARY, POOL_LLAMA_BINARY and POOL_MODEL it runs real llama.cpp (the pool
+workflow); without them, stand-in engines that speak TCP and HTTP the same way, so the transport, the isolation and
+the pool's rules are checked on every run. Prints one PASS line.
 """
 import json
 import os

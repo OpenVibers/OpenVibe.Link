@@ -1,4 +1,4 @@
-"""Runs ONLY inside an unshared user/network namespace. No remotely chosen commands."""
+"""Runs ONLY inside a private user/network namespace (bubblewrap or unshare). No remotely chosen commands."""
 import json
 import os
 from pathlib import Path
@@ -32,7 +32,12 @@ def main():
     # Never accidentally run the worker on the host network, even when called directly.
     if os.readlink('/proc/self/ns/net') == cfg['host_namespace']:
         raise RuntimeError('RPC requires an isolated network namespace')
-    subprocess.run(['ip', 'link', 'set', 'lo', 'up'], check=True, stdout=subprocess.DEVNULL)
+    # bwrap brings the namespace's loopback up itself (and the engine cannot add capabilities on top); unshare needs
+    # this and grants the capability. Best effort either way, then the engine's own bind is the real test.
+    try:
+        subprocess.run(['ip', 'link', 'set', 'lo', 'up'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        pass
     stopped = threading.Event()
     listeners = []
     def unix_bridge(path, target):
