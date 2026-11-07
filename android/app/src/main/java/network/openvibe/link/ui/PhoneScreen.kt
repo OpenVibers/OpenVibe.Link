@@ -53,7 +53,7 @@ fun PhoneScreen(previewInfo: JSONObject? = null, preview: Boolean = false) {
                 labelled("Account", Store.deviceLabel.ifBlank { "this phone" })
                 info?.optString("network")?.takeIf { it.isNotEmpty() }?.let { labelled("Network", it) }
                 val node = info?.optString("principal").orEmpty()
-                if (node.isNotEmpty()) labelled("Machine", node)
+                if (node.isNotEmpty()) labelled("Node", node)
             }
         }
 

@@ -1,8 +1,12 @@
 package network.openvibe.link
 
 import android.os.Bundle
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Modifier
 import network.openvibe.link.data.ActionItem
 import network.openvibe.link.ui.ActivityScreen
 import network.openvibe.link.ui.ApprovalsScreen
@@ -23,11 +27,17 @@ class PreviewActivity : ComponentActivity() {
         val screen = intent.getStringExtra("screen") ?: "approvals"
         setContent {
             LinkTheme {
-                when (screen) {
-                    "activity" -> ActivityScreen(preview = SAMPLE_ACTIVITY)
-                    "phone" -> PhoneScreen(previewInfo = SAMPLE_DEVICE, preview = true)
-                    "pair" -> PairScreen(initialCode = "ABCD-1234")
-                    else -> ApprovalsScreen(preview = SAMPLE_APPROVALS)
+                // The theme's own background: the screens assume the app's Scaffold paints it.
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background,
+                ) {
+                    when (screen) {
+                        "activity" -> ActivityScreen(preview = SAMPLE_ACTIVITY)
+                        "phone" -> PhoneScreen(previewInfo = SAMPLE_DEVICE, preview = true)
+                        "pair" -> PairScreen(initialCode = "ABCD-1234")
+                        else -> ApprovalsScreen(preview = SAMPLE_APPROVALS)
+                    }
                 }
             }
         }

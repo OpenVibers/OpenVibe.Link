@@ -41,6 +41,22 @@ a key the Android Keystore holds, and nothing on the phone is backed up.
 Approvals and Activity need your OpenVibe account as well as the pairing: tap **Sign in to OpenVibe**. That is a public
 OAuth client (`link`) with PKCE S256 and no secret in the APK; the tokens are encrypted with the same Keystore key.
 
+### The screens
+
+Rendered from the Composables (Pixel 5, light theme; a dark phone uses Vibe's dark tokens):
+
+| Pair | Approvals |
+|---|---|
+| ![Pair](screenshots/pair.png) | ![Approvals](screenshots/approvals.png) |
+
+| Activity | This phone |
+|---|---|
+| ![Activity](screenshots/activity.png) | ![This phone](screenshots/phone.png) |
+
+The CI's second job takes the same four on an emulator (non-blocking). The app also has a debug-only `PreviewActivity`
+that draws one screen with sample data without an account — what these pictures come from:
+`adb shell am start -n network.openvibe.link/.PreviewActivity --es screen approvals`.
+
 ## Send to OpenVibe
 
 Share a file or a photo from any app and pick **Send to OpenVibe**. It goes to your **Download** drive
