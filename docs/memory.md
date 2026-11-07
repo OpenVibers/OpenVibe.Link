@@ -25,6 +25,8 @@ openvibe-node memory scan [--tools a,b] [--project DIR …] [--json]
 openvibe-node memory upload [--tools a,b] [--project DIR …] [--dry-run] [--yes]
 openvibe-node memory status [--show]
 openvibe-node memory sync [--tools a,b] [--project DIR …] [--dry-run] [--yes]
+openvibe-node memory export [--out FILE] [--scope SCOPE] [--force]
+openvibe-node memory import --file FILE [--dry-run] [--yes]
 ```
 
 | Flag | What it does |
@@ -32,12 +34,16 @@ openvibe-node memory sync [--tools a,b] [--project DIR …] [--dry-run] [--yes]
 | `--tools a,b` | only these adapters (default: all) |
 | `--project DIR` | read this project as well; may be given more than once |
 | `--json` | print the items as JSON (scan) |
-| `--dry-run` | print the summary and send nothing (upload) |
-| `--yes` | do not ask before sending (upload) |
+| `--dry-run` | print the summary and send nothing (upload, import) |
+| `--yes` | do not ask before sending (upload, import) |
 | `--show` | print the items themselves (status) |
 | `--endpoint URL` | the memory store (default `https://ai.openvibe.services`) |
 | `--token-env NAME` | the variable the access token is read from (default `OPENVIBE_TOKEN`) |
 | `--user-home DIR` | read this directory as the person's home (default: yours) |
+| `--out FILE` | export: where to write the portable file (`-` for stdout; default `openvibe-memory-YYYY-MM-DD.json`) |
+| `--scope SCOPE` | export: only `user` or one `project:<slug>` |
+| `--force` | export: replace a file that already exists |
+| `--file FILE` | import: the portable file (`-` for stdin) |
 | `--tools a,b` | sync: turn these tools on |
 | `--disable a,b` | sync: turn these tools off and remove their blocks |
 | `--undo` | sync: remove every block this command wrote and turn the tools off |
@@ -431,3 +437,28 @@ The opt-in state lives in the Node's state directory
 (`memory-sync.json`, mode 0600). It holds the tools that are on, the paths that
 were written and whether the first diff was confirmed: paths and choices, never
 the memory text.
+
+## The portable file
+
+```sh
+openvibe-node memory export [--out FILE] [--scope SCOPE] [--force]
+openvibe-node memory import --file FILE [--dry-run] [--yes]
+```
+
+`memory export` writes the store's one portable file, `openvibe.memory-export@1`
+(see `OpenVibe.AI/docs/memory-m5.md` and the `ai.memory-export@1` contract): a
+JSON document with every note's text, kind, scope, source, status, confidence
+and source reference, and deliberately no account id, note id, merge link or
+conflict pair. The file is written mode 0600, and an existing file is not
+replaced unless `--force` is given; `--out -` writes it to stdout.
+
+`memory import` reads the same file back into the store. It refuses another
+format before calling the store, shows how many notes the file holds, and asks
+unless `--yes` is given (`--dry-run` shows the count and sends nothing). The
+store redacts every item again, skips an item that is only a secret, imports a
+`conflict` item as a suggestion (its pair did not travel), and merges a note
+that says the same thing as one already there by its text MAC.
+
+The token is the same `OPENVIBE_TOKEN` the upload uses; it is never printed and
+never written to the file. The file itself is the person's plaintext memory:
+treat it like a password export.

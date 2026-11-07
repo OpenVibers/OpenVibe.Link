@@ -16,6 +16,8 @@ const memoryUsage = "openvibe-node memory scan [--tools a,b] [--project DIR] [--
 	"openvibe-node memory upload [--tools a,b] [--project DIR …] [--dry-run] [--yes]\n" +
 	"openvibe-node memory status [--show]\n" +
 	"openvibe-node memory sync [--tools a,b] [--project DIR …] [--dry-run] [--yes] | --disable a,b | --undo\n" +
+	"openvibe-node memory export [--out FILE] [--scope SCOPE] [--force]\n" +
+	"openvibe-node memory import --file FILE [--dry-run] [--yes]\n" +
 	"\n" +
 	"  scan    reads the memory files of the coding tools on this machine and\n" +
 	"          prints what it found. It is read-only and local: nothing is written\n" +
@@ -28,15 +30,20 @@ const memoryUsage = "openvibe-node memory scan [--tools a,b] [--project DIR] [--
 	"          CLAUDE.md, GEMINI.md, Cursor rules and Copilot instructions,\n" +
 	"          inside one marked block per file, after showing the diff. Each\n" +
 	"          tool is off until you turn it on with --tools.\n" +
+	"  export  writes your one portable memory file (JSON) from the store.\n" +
+	"  import  reads that same file back into your store, merging repeats.\n" +
 	"\n" +
 	"  --tools a,b      only these adapters (claude-code, agents, gemini, cursor,\n" +
 	"                   copilot, windsurf, cline, roo, kiro, continue, aider,\n" +
 	"                   command-code, opencode)\n" +
 	"  --project DIR    read this project as well; may be given more than once\n" +
 	"  --json           print the items as JSON (scan)\n" +
-	"  --dry-run        print the summary and send nothing (upload)\n" +
-	"  --yes            do not ask before sending (upload)\n" +
+	"  --dry-run        print the summary and send nothing (upload, import)\n" +
+	"  --yes            do not ask before sending (upload, import)\n" +
 	"  --show           print the items themselves (status)\n" +
+	"  --out FILE       where to write the portable file (export; - for stdout)\n" +
+	"  --scope SCOPE    only one scope (export)\n" +
+	"  --file FILE      the portable file to import (- for stdin)\n" +
 	"  --user-home DIR  read this directory as the person's home (default: yours)\n"
 
 // stringList is a flag that may be given more than once.
@@ -67,6 +74,10 @@ func cmdMemory(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdMemoryStatus(args[1:], stdout, stderr)
 	case "sync":
 		return cmdMemorySync(args[1:], stdin, stdout, stderr)
+	case "export":
+		return cmdMemoryExport(args[1:], stdout, stderr)
+	case "import":
+		return cmdMemoryImport(args[1:], stdin, stdout, stderr)
 	case "scan":
 	default:
 		fmt.Fprint(stderr, memoryUsage)
