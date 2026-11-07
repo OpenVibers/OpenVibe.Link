@@ -103,9 +103,15 @@ object LinkController {
         }
     }
 
-    private fun eventState(event: String): String =
-        Regex("\"state\"\\s*:\\s*\"([a-z]+)\"").find(event)?.groupValues?.get(1) ?: "offline"
+    private fun eventState(event: String): String = try {
+        org.json.JSONObject(event).optString("state", "offline")
+    } catch (e: Exception) {
+        "offline"
+    }
 
-    private fun eventDetail(event: String): String? =
-        Regex("\"detail\"\\s*:\\s*\"(.*?)\"").find(event)?.groupValues?.get(1)?.replace("\\\"", "\"")
+    private fun eventDetail(event: String): String? = try {
+        org.json.JSONObject(event).optString("detail").takeIf { it.isNotEmpty() }
+    } catch (e: Exception) {
+        null
+    }
 }
