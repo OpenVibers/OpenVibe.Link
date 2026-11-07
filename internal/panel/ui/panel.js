@@ -21,6 +21,55 @@
             .then(function () { load(); });
     }
 
+    // Codes on this computer: each agent CLI's state in words, and the tasks with Open and (while working) Stop.
+    var AGENT_STATE = { ready: 'ready', signin: 'sign in', missing: 'not installed' };
+    var TASK_STATE = { running: 'Working', waiting: 'Waiting for you', done: 'Done', failed: 'Didn\u2019t finish', stopped: 'Stopped' };
+    function drawCodes(c, machine) {
+        var sec = root.querySelector('[data-lk-sec="codes"]');
+        sec.hidden = !c;
+        if (!c) return;
+        var agents = c.agents || [], tasks = c.tasks || [];
+        $('[data-lk-agents]').replaceChildren.apply($('[data-lk-agents]'), agents.map(function (a) {
+            var li = el('li', 'lk-agent'); li.setAttribute('data-state', a.state || 'missing');
+            li.append(document.createTextNode(a.name || a.id), el('small', '', AGENT_STATE[a.state] || a.state || ''));
+            if (a.state === 'signin' && a.hint) {
+                var code = el('code', '', a.hint); var copy = el('button', '', 'Copy'); copy.type = 'button';
+                copy.setAttribute('aria-label', 'Copy ' + a.hint);
+                copy.addEventListener('click', function () { if (navigator.clipboard) navigator.clipboard.writeText(a.hint).then(function () { copy.textContent = 'Copied'; }); });
+                li.append(code, copy);
+            }
+            return li;
+        }));
+        $('[data-lk-agents]').hidden = agents.length === 0;
+        var open = tasks.filter(function (t) { return t.state === 'running' || t.state === 'waiting'; }).length;
+        $('[data-lk-codes-n]').textContent = open ? '(' + open + ' working)' : '';
+        $('[data-lk-tasks]').replaceChildren.apply($('[data-lk-tasks]'), tasks.map(function (t) {
+            var li = el('li'); var main = el('span');
+            var meta = el('small');
+            var st = el('span', 'lk-state', TASK_STATE[t.state] || t.state || ''); st.setAttribute('data-state', t.state || '');
+            meta.append(st);
+            if (t.agent) meta.append(el('span', '', t.agent));
+            if (t.started_at) meta.append(el('span', '', ago(t.started_at)));
+            main.append(el('b', '', t.title || 'A coding task'));
+            if (t.folder) main.append(el('code', '', t.folder));
+            main.append(meta);
+            var acts = el('span', 'lk-task-acts');
+            if (t.url && /^https:\/\/openvibe\.codes\//.test(t.url)) {
+                var a = el('a', 'lk-btn', t.state === 'waiting' ? 'Answer' : 'Open'); a.href = t.url; a.target = '_blank'; a.rel = 'noopener';
+                if (t.state === 'waiting') a.className = 'lk-btn is-primary';
+                acts.append(a);
+            }
+            if (t.state === 'running') {
+                var stop = el('button', 'lk-btn is-stop', 'Stop'); stop.type = 'button'; stop.setAttribute('aria-label', 'Stop ' + (t.title || 'this task'));
+                stop.addEventListener('click', function () { stop.disabled = true; send('codes/tasks/' + encodeURIComponent(t.id) + '/stop').catch(function () { stop.disabled = false; }); });
+                acts.append(stop);
+            }
+            li.append(main, acts); return li;
+        }));
+        $('[data-lk-tasks-none]').hidden = tasks.length > 0;
+        var nw = $('[data-lk-codes-new]');
+        if (machine && machine.id) nw.href = 'https://openvibe.codes/?machine=' + encodeURIComponent(machine.id);
+    }
     function draw(s) {
         var m = s.machine || {};
         var running = Array.isArray(s.running) ? s.running : [];
@@ -31,6 +80,7 @@
         $('[data-lk-down]').hidden = true;
         $('[data-lk-first]').hidden = !s.first_run;
         $('[data-lk-name]').textContent = m.name || 'This computer';
+        drawCodes(s.codes, m);
         $('[data-lk-status]').textContent = m.paused ? 'Paused: nothing runs until you resume'
             : m.needs_you ? (m.needs_you === 1 ? 'Online · something needs you' : 'Online · ' + m.needs_you + ' things need you')
                 : running.length ? 'Online · ' + running.length + ' running' : 'Online · ready';

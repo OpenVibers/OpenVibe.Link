@@ -1,28 +1,158 @@
 {
   "first_run": true,
-  "machine": { "name": "Workshop desktop", "os": "linux", "online": true, "paused": false, "needs_you": 1 },
+  "machine": {
+    "name": "Workshop desktop",
+    "os": "linux",
+    "online": true,
+    "paused": false,
+    "needs_you": 1
+  },
   "running": [
-    { "id": "r_1", "kind": "agent", "title": "Vibe is comparing three hosting plans", "detail": "Browser", "started_at": "2026-11-07T10:02:00Z" },
-    { "id": "r_2", "kind": "desk", "title": "A desk for Codes: drive redesign", "detail": "Codes", "started_at": "2026-11-07T09:40:00Z" },
-    { "id": "r_3", "kind": "share", "title": "Port 3000 shared", "detail": "Only you", "started_at": "2026-11-07T09:10:00Z" }
+    {
+      "id": "r_1",
+      "kind": "agent",
+      "title": "Vibe is comparing three hosting plans",
+      "detail": "Browser",
+      "started_at": "2026-11-07T10:02:00Z"
+    },
+    {
+      "id": "r_2",
+      "kind": "desk",
+      "title": "A desk for Codes: drive redesign",
+      "detail": "Codes",
+      "started_at": "2026-11-07T09:40:00Z"
+    },
+    {
+      "id": "r_3",
+      "kind": "share",
+      "title": "Port 3000 shared",
+      "detail": "Only you",
+      "started_at": "2026-11-07T09:10:00Z"
+    }
   ],
   "capabilities": [
-    { "id": "browser", "name": "A browser for your agents", "who": "Your agents, after you approve each task", "on": true },
-    { "id": "files", "name": "Files between your devices", "who": "Only you", "on": true },
-    { "id": "models", "name": "Run AI models here", "who": "Only you, from your other devices", "on": false },
-    { "id": "earn", "name": "Earn with spare power", "who": "OpenVibe Exchange, when this computer is idle", "on": false }
+    {
+      "id": "browser",
+      "name": "A browser for your agents",
+      "who": "Your agents, after you approve each task",
+      "on": true
+    },
+    {
+      "id": "files",
+      "name": "Files between your devices",
+      "who": "Only you",
+      "on": true
+    },
+    {
+      "id": "models",
+      "name": "Run AI models here",
+      "who": "Only you, from your other devices",
+      "on": false
+    },
+    {
+      "id": "earn",
+      "name": "Earn with spare power",
+      "who": "OpenVibe Exchange, when this computer is idle",
+      "on": false
+    }
   ],
-  "shares": [ { "port": 3000, "url": "https://dev--alex.openvibe.website", "expires_at": "2026-11-07T22:00:00Z" } ],
+  "shares": [
+    {
+      "port": 3000,
+      "url": "https://dev--alex.openvibe.website",
+      "expires_at": "2026-11-07T22:00:00Z"
+    }
+  ],
   "devices": [
-    { "name": "Workshop desktop", "kind": "desktop", "online": true, "here": true },
-    { "name": "Laptop", "kind": "laptop", "online": true, "here": false },
-    { "name": "Pixel 8", "kind": "phone", "online": false, "here": false }
+    {
+      "name": "Workshop desktop",
+      "kind": "desktop",
+      "online": true,
+      "here": true
+    },
+    {
+      "name": "Laptop",
+      "kind": "laptop",
+      "online": true,
+      "here": false
+    },
+    {
+      "name": "Pixel 8",
+      "kind": "phone",
+      "online": false,
+      "here": false
+    }
   ],
   "gpu": null,
   "earnings_today": null,
   "activity": [
-    { "at": "2026-11-07T10:02:00Z", "text": "Vibe opened a browser to compare hosting plans" },
-    { "at": "2026-11-07T09:40:00Z", "text": "Codes started a desk for the drive redesign" },
-    { "at": "2026-11-07T09:10:00Z", "text": "You shared port 3000" }
-  ]
+    {
+      "at": "2026-11-07T10:02:00Z",
+      "text": "Vibe opened a browser to compare hosting plans"
+    },
+    {
+      "at": "2026-11-07T09:40:00Z",
+      "text": "Codes started a desk for the drive redesign"
+    },
+    {
+      "at": "2026-11-07T09:10:00Z",
+      "text": "You shared port 3000"
+    }
+  ],
+  "codes": {
+    "agents": [
+      {
+        "id": "claude-code",
+        "name": "Claude Code",
+        "state": "ready",
+        "version": "2.1.3"
+      },
+      {
+        "id": "codex",
+        "name": "Codex",
+        "state": "signin",
+        "hint": "codex login"
+      },
+      {
+        "id": "opencode",
+        "name": "OpenCode",
+        "state": "ready",
+        "version": "0.9.2"
+      },
+      {
+        "id": "gemini",
+        "name": "Gemini CLI",
+        "state": "missing"
+      }
+    ],
+    "tasks": [
+      {
+        "id": "tsk_01M6Q1",
+        "title": "Make every page work at 320 px",
+        "folder": "~/code/openvibe-site",
+        "agent": "Claude Code",
+        "state": "running",
+        "started_at": "2026-11-07T09:52:00Z",
+        "url": "https://openvibe.codes/tasks/tsk_01M6Q1"
+      },
+      {
+        "id": "tsk_01M6P8",
+        "title": "Fix the flaky upload test",
+        "folder": "~/code/drive",
+        "agent": "Codex",
+        "state": "waiting",
+        "started_at": "2026-11-07T09:31:00Z",
+        "url": "https://openvibe.codes/tasks/tsk_01M6P8"
+      },
+      {
+        "id": "tsk_01M6N2",
+        "title": "Add a dark mode that follows the system",
+        "folder": "~/code/notes-app",
+        "agent": "OpenCode",
+        "state": "done",
+        "started_at": "2026-11-07T08:05:00Z",
+        "url": "https://openvibe.codes/tasks/tsk_01M6N2"
+      }
+    ]
+  }
 }
