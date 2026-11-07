@@ -79,7 +79,12 @@ llama.cpp's server on the machine, and the installer says which one answers. `--
 
 **A machine that runs your jobs, not a robot:** openvibe.bot/machines prints the Network form with `--worker` (and no
 `--driver`). It turns the job worker on with a dedicated `openvibe-job` user and the OpenVibe.Codes job runner, so a
-coding task you start on openvibe.codes/run runs on this machine. [worker.md](worker.md#a-machine-that-runs-your-coding-tasks---worker)
+coding task you start on openvibe.codes/run runs on this machine. Add `--plan-logins` (Linux) to use the plans you
+already signed in for: the installer names the coding tools' own login files that are ready (Claude Code, Codex,
+OpenCode and Command Code) as the worker's plan logins, sets the Node service's HOME to your home, and prints the login
+command for each tool whose login is missing or not signed in (a login whose CLI is not on the runner's PATH is named
+with a line to install it system-wide). It never reads, copies or prints a login file's content.
+[worker.md](worker.md#a-machine-that-runs-your-coding-tasks---worker)
 has the details.
 
 **Two pairing paths.** Which one the command uses is up to openvibe.bot; the installer takes both.

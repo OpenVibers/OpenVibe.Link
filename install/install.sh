@@ -5,6 +5,7 @@
 #   curl -fsSL https://node.openvibe.network/install | sh -s -- --robot <rob_…> --code <CODE> [--driver adeept|adeept-mecanum|cozmo|looi|ros2|ros2-holonomic|none]
 #   curl -fsSL https://node.openvibe.network/install | sh -s -- --network <URL> --pairing <pair_…> --code <CODE> [--driver …]
 #   curl -fsSL https://node.openvibe.network/install | sh -s -- --network <URL> --pairing <pair_…> --code <CODE> --worker
+#   curl -fsSL https://node.openvibe.network/install | sh -s -- --network <URL> --pairing <pair_…> --code <CODE> --plan-logins
 #   curl -fsSL https://node.openvibe.network/install | sh -s -- --setup <osk_…>
 #
 # (the same script is also at https://openvibe.bot/install, which keeps working)
@@ -38,6 +39,12 @@
 #                    as the unprivileged user openvibe-job in the worker's sandbox with public egress (the service
 #                    runs as root, which run_as and the egress need), and the OpenVibe.Codes job runner is added when
 #                    Node.js 20+ is installed system-wide. Linux only. docs/worker.md has the details.
+#   --plan-logins    with --worker (implied): name the coding tools' own login files that are already signed in on this
+#                    computer (Claude Code, Codex, OpenCode, Command Code) as the worker's plan logins, so a Codes job
+#                    uses the plan you signed in for. A tool that is not installed or not signed in is skipped with a
+#                    line saying how to sign it in. The installer never reads, copies or prints a login's content, and
+#                    sets the Node service's HOME to your home (the logins must sit under it). Linux only.
+#                    docs/worker.md has the details.
 #   --desk-host      this machine hosts desks for its owner's agents (docs/computer.md "Desk hosts"; the Desks plan's
 #                    step D5): an old laptop, a mini PC or a spare workstation, no screen or login needed. The
 #                    service runs as its own account (openvibe-desk), the installer adds what desks need (Xvfb, a
@@ -78,6 +85,9 @@
 # OPENVIBE_INSTALL_AI_CONFIG_ONLY=<config.json> adds the --ai plugin entry to that file and exits.
 # OPENVIBE_INSTALL_WORKER_CONFIG_ONLY=<config.json> writes the --worker section into that file (OPENVIBE_JOB_UID,
 #   OPENVIBE_JOB_GID, OPENVIBE_NODEJS and OPENVIBE_CODES_DIR stand in for the job user and the runner) and exits.
+# OPENVIBE_INSTALL_PLAN_LOGINS_DRY_RUN=1 with --plan-logins prints the steps it would take and what it found, and exits.
+# OPENVIBE_INSTALL_PLAN_LOGINS_CONFIG_ONLY=<config.json> with --plan-logins writes the found login files into that
+#   config's worker.plan_logins and exits (no root, no service).
 set -eu
 
 REPO_URL="https://github.com/OpenVibers/OpenVibe.Node"
@@ -91,6 +101,7 @@ SERVICE=1
 LOCAL=""
 TAG="latest"
 WORKER=0
+PLAN_LOGINS=0
 COMPUTER=""
 DESK_HOST=0
 SHARED=0
@@ -111,13 +122,14 @@ CODES_DIR=/opt/openvibe-codes
 
 usage() {
 	echo "usage: install.sh [--robot rob_… | --network URL --pairing pair_…] [--code CODE | CODE] [--name NAME]"
-	echo "                  [--driver adeept|adeept-mecanum|cozmo|looi|ros2|ros2-holonomic|none] [--worker]"
+	echo "                  [--driver adeept|adeept-mecanum|cozmo|looi|ros2|ros2-holonomic|none] [--worker [--plan-logins]]"
 	echo "                  [--computer observe|ask|trusted|full] [--desk-host [--shared]] [--ai] [--ai-endpoint URL]"
 	echo "                  [--no-service] [--no-claim] [--setup osk_…]"
 	echo "                  [--local DIR] [--version TAG]"
 	echo "  curl -fsSL https://node.openvibe.network/install | sh      (finds the kit, then shows a code to approve on openvibe.bot/link)"
 	echo "  curl -fsSL https://node.openvibe.network/install | sh -s -- --robot rob_… --code ABCD-1234 --driver adeept"
 	echo "  curl -fsSL https://node.openvibe.network/install | sh -s -- --network https://openvibe.network --pairing pair_… --code ABCD-1234"
+	echo "  curl -fsSL https://node.openvibe.network/install | sh -s -- --network https://openvibe.network --pairing pair_… --code ABCD-1234 --plan-logins"
 }
 say() { printf '%s\n' "openvibe-node: $*"; }
 die() { printf '%s\n' "openvibe-node: error: $*" >&2; exit 1; }
@@ -144,6 +156,7 @@ while [ $# -gt 0 ]; do
 	--pairing) PAIRING="${2:-}"; shift 2 ;;
 	--pairing=*) PAIRING="${1#*=}"; shift ;;
 	--worker) WORKER=1; shift ;;
+	--plan-logins) PLAN_LOGINS=1; WORKER=1; shift ;;
 	--desk-host) DESK_HOST=1; shift ;;
 	--shared) SHARED=1; shift ;;
 	--ai) AI=1; shift ;;
@@ -181,7 +194,7 @@ case "$NETWORK" in ""|https://*|http://localhost*|http://127.0.0.1*) ;; *) die "
 if [ -n "$SETUP" ]; then
 	printf '%s' "$SETUP" | grep -Eq '^osk_[A-Za-z0-9_-]{43}$' || die "--setup takes the osk_… key from your card files (openvibe.bot/setup/sd-card)"
 	[ -z "$CODE$ROBOT_ID$NETWORK$PAIRING" ] || die "--setup is used on its own (no --robot, --code, --network or --pairing)"
-	if [ "$CLAIM_OK" = 0 ] || [ "$WORKER" = 1 ] || [ -n "$COMPUTER" ] || [ "$DESK_HOST" != 0 ] || [ "$AI" = 1 ]; then die "--setup cannot be used with --no-claim, --worker, --computer, --desk-host or --ai"; fi
+	if [ "$CLAIM_OK" = 0 ] || [ "$WORKER" = 1 ] || [ -n "$COMPUTER" ] || [ "$DESK_HOST" != 0 ] || [ "$AI" = 1 ]; then die "--setup cannot be used with --no-claim, --worker/--plan-logins, --computer, --desk-host or --ai"; fi
 fi
 # No robot, no code, no Network pairing, not a worker, a computer or a model machine: the one command (openvibe.bot/link,
 # see the top).
@@ -200,6 +213,133 @@ pair_with() {
 	[ -z "$NAME" ] || set -- "$@" --name "$NAME"
 	"$@"
 }
+
+# plan_logins_home: set PLAN_HOME to the home whose coding-tool login files --plan-logins names. That is the person's
+# own home, never root's: run the installer as yourself (it asks for sudo itself), or with sudo from that account.
+# The login files must sit under the Node user's home; --plan-logins sets the service's HOME to this one.
+plan_logins_home() {
+	if [ "$(id -u)" -eq 0 ]; then
+		_user="${SUDO_USER:-}"
+		case "$_user" in ""|root) die "--plan-logins must be run as the person whose logins they are: run it as yourself (it asks for sudo itself), or with sudo from that account" ;; esac
+		_home=""
+		if command -v getent >/dev/null 2>&1; then _home="$(getent passwd "$_user" | cut -d: -f6)"; fi
+		[ -n "$_home" ] || _home="$(awk -F: -v u="$_user" '$1 == u { print $6 }' /etc/passwd 2>/dev/null)"
+	else
+		_home="${HOME:-}"
+		if [ -z "$_home" ] && command -v getent >/dev/null 2>&1; then _home="$(getent passwd "$(id -un)" | cut -d: -f6)"; fi
+	fi
+	case "$_home" in */) _home="${_home%/}" ;; esac
+	if [ -z "$_home" ] || [ ! -d "$_home" ] || [ "$_home" = / ]; then
+		die "no home folder to look for the coding tools' logins (--plan-logins)"
+	fi
+	case "$_home" in /*) ;; *) die "the home folder must be an absolute path (--plan-logins)" ;; esac
+	PLAN_HOME="$_home"
+}
+
+# plan_logins_scan <home> <paths-file>: look at each coding tool's own login file (its presence and kind only, never its
+# content), say what a job would get, and write each file that is ready to <paths-file>. A tool that is not signed in,
+# and a symlink or empty file, are skipped with a line saying how to sign in with the tool itself; a login file whose
+# CLI is not on this PATH is still named, with a line to install the CLI system-wide.
+plan_logins_scan() {
+	_home="$1" _paths="$2"
+	: > "$_paths"
+	while IFS='|' read -r _id _bin _rel _hint; do
+		_file="$_home/$_rel"
+		_installed=0
+		command -v "$_bin" >/dev/null 2>&1 && _installed=1
+		if [ ! -f "$_file" ] || [ -L "$_file" ] || [ ! -s "$_file" ]; then
+			if [ "$_installed" = 0 ]; then
+				say "  $_id: not installed: skipped (install it and sign in with \`$_hint\`, then run this installer again with --plan-logins)"
+			else
+				say "  $_id: installed but not signed in: skipped (run \`$_hint\`, then run this installer again with --plan-logins)"
+			fi
+		elif [ "$_installed" = 0 ]; then
+			printf '%s\n' "$_file" >> "$_paths"
+			say "  $_id: signed in (~/${_rel}) but $_bin is not on the job runner's PATH: named; install it system-wide so a job can run it"
+		else
+			printf '%s\n' "$_file" >> "$_paths"
+			say "  $_id: signed in (~/${_rel}): named for your jobs"
+		fi
+	done <<'EOF'
+claude-code|claude|.claude/.credentials.json|claude
+codex|codex|.codex/auth.json|codex login
+opencode|opencode|.local/share/opencode/auth.json|opencode auth login
+command-code|cmd|.commandcode/auth.json|cmd login
+EOF
+}
+
+# plan_logins_steps <home> <paths-file>: the dry run. Lists every step --plan-logins takes and what it finds, without
+# writing a config, touching the service or reading a login's content.
+plan_logins_steps() {
+	_home="$1" _paths="$2"
+	say "plan logins (dry run): what --plan-logins will do"
+	say "  1. pair this computer for its owner's OpenVibe.Codes jobs (the code from openvibe.codes → Machines)"
+	say "  2. set the openvibe-node service's HOME to $_home (the login files must sit under the Node user's home)"
+	say "  3. name the coding tools' own login files for the job runner (their content is never read, copied or printed):"
+	plan_logins_scan "$_home" "$_paths"
+	say "  4. write the names into config.json's worker.plan_logins and restart openvibe-node"
+}
+
+# write_plan_logins <config.json> <paths-file>: add the ready login files to worker.plan_logins, keeping the ones the
+# owner named before (a tool that is signed out today is skipped at job time, not dropped from the config).
+write_plan_logins() {
+	${SUDO:-} python3 - "$@" <<'PY'
+import json, os, sys
+path, names_file = sys.argv[1], sys.argv[2]
+try:
+    with open(path) as f:
+        conf = json.load(f)
+except FileNotFoundError:
+    conf = {}
+worker = conf.get('worker') or {}
+named = set(worker.get('plan_logins') or [])
+with open(names_file) as f:
+    named.update(line.rstrip('\n') for line in f if line.strip())
+worker['plan_logins'] = sorted(named)
+conf['worker'] = worker
+old = os.umask(0o077)
+with open(path + '.tmp', 'w') as f:
+    json.dump(conf, f, indent=2)
+    f.write('\n')
+os.umask(old)
+os.replace(path + '.tmp', path)
+PY
+}
+
+# plan_logins_service_home <home>: make the Node service start with the owner's HOME. The worker runs as root, and the
+# plan logins must sit under the Node user's home; without this the service's home is root's and the config is refused.
+plan_logins_service_home() {
+	_home="$1"
+	if [ "$SERVICE" = 0 ]; then
+		say "plan logins: no service to set HOME on; run the Node with HOME=$_home so it finds the login files"
+		return 0
+	fi
+	if ! command -v systemctl >/dev/null 2>&1; then
+		say "warning: systemctl is not here: start openvibe-node with HOME=$_home so it finds the plan logins"
+		return 0
+	fi
+	$SUDO mkdir -p /etc/systemd/system/openvibe-node.service.d
+	$SUDO sh -c "cat > /etc/systemd/system/openvibe-node.service.d/home.conf" <<EOF
+# Plan logins are files under the Node user's home (install.sh --plan-logins).
+[Service]
+Environment="HOME=$_home"
+EOF
+	$SUDO systemctl daemon-reload || say "warning: could not reload systemd; the service keeps root's HOME until it restarts"
+}
+
+if [ "$PLAN_LOGINS" = 1 ]; then
+	[ "$(uname -s)" = Linux ] || die "--plan-logins is for Linux (the worker's sandbox is Linux only)"
+	plan_logins_home
+fi
+
+# Test hook: list what --plan-logins would do, without writing a config, touching the service or reading a login file.
+if [ "${OPENVIBE_INSTALL_PLAN_LOGINS_DRY_RUN:-0}" = 1 ]; then
+	[ "$PLAN_LOGINS" = 1 ] || die "OPENVIBE_INSTALL_PLAN_LOGINS_DRY_RUN needs --plan-logins"
+	_tmp="$(mktemp -d)"
+	trap 'rm -rf "$_tmp"' EXIT
+	plan_logins_steps "$PLAN_HOME" "$_tmp/paths"
+	exit 0
+fi
 
 if [ "${OPENVIBE_INSTALL_PAIR_ARGS_ONLY:-0}" = 1 ]; then
 	pair_with printf '%s\n'
@@ -489,6 +629,16 @@ if [ -n "${OPENVIBE_INSTALL_COMPUTER_CONFIG_ONLY:-}" ]; then
 	case "$COMPUTER" in observe|ask|trusted|full) ;; *) die "--computer is observe, ask, trusted or full" ;; esac
 	write_computer_config "$OPENVIBE_INSTALL_COMPUTER_CONFIG_ONLY" "$COMPUTER" "${OPENVIBE_COMPUTER_HOME:?}" "$DESK_HOST"
 	[ "$DESK_HOST" != shared ] || write_worker_config "$OPENVIBE_INSTALL_COMPUTER_CONFIG_ONLY" "${OPENVIBE_JOB_UID:-999}" "${OPENVIBE_JOB_GID:-999}"
+	exit 0
+fi
+# OPENVIBE_INSTALL_PLAN_LOGINS_CONFIG_ONLY=<config.json> with --plan-logins writes the login files it finds into that
+# config's worker.plan_logins and exits (no root, no service; scripts/test-install-plan-logins.sh).
+if [ -n "${OPENVIBE_INSTALL_PLAN_LOGINS_CONFIG_ONLY:-}" ]; then
+	[ "$PLAN_LOGINS" = 1 ] || die "OPENVIBE_INSTALL_PLAN_LOGINS_CONFIG_ONLY needs --plan-logins"
+	_tmp="$(mktemp -d)"
+	trap 'rm -rf "$_tmp"' EXIT
+	plan_logins_scan "$PLAN_HOME" "$_tmp/paths"
+	write_plan_logins "$OPENVIBE_INSTALL_PLAN_LOGINS_CONFIG_ONLY" "$_tmp/paths"
 	exit 0
 fi
 
@@ -973,6 +1123,12 @@ fi
 
 # ---- the job worker (--worker): the job user, the egress tools, the Codes job runner, the worker config ----
 if [ "$WORKER" = 1 ]; then
+	PLAN_PATHS_FILE=""
+	if [ "$PLAN_LOGINS" = 1 ]; then
+		PLAN_PATHS_FILE="$TMP/plan-logins"
+		say "plan logins: the coding tools' own login files (their content is never read, copied or printed):"
+		plan_logins_scan "$PLAN_HOME" "$PLAN_PATHS_FILE"
+	fi
 	if ! id openvibe-job >/dev/null 2>&1; then
 		$SUDO useradd --system --no-create-home --shell /usr/sbin/nologin --user-group openvibe-job 2>/dev/null ||
 			$SUDO adduser --system --no-create-home --shell /usr/sbin/nologin --group openvibe-job
@@ -1010,6 +1166,20 @@ if [ "$WORKER" = 1 ]; then
 		say "job runner is not. Install Node.js 22 (https://nodejs.org) and run this installer again with --worker."
 		$SUDO touch "$CONF/config.json"
 		write_worker_config "$CONF/config.json" "$JOB_UID" "$JOB_GID"
+	fi
+	if [ "$PLAN_LOGINS" = 1 ]; then
+		write_plan_logins "$CONF/config.json" "$PLAN_PATHS_FILE"
+		plan_logins_service_home "$PLAN_HOME"
+		_named="$(wc -l < "$PLAN_PATHS_FILE" | tr -d ' ')"
+		if [ "$_named" -gt 0 ]; then
+			say "plan logins: $_named named for your jobs; each job sees them read-only, only while it runs"
+		else
+			say "plan logins: none named yet: sign in to the coding tools you use with their own login, then run this installer"
+			say "  again with --plan-logins (Claude Code: claude; Codex: codex login; OpenCode: opencode auth login; Command Code: cmd login)"
+		fi
+		if [ "$_named" -lt 4 ]; then
+			say "  the line above each skipped tool has its own login command; run it, then run this installer again with --plan-logins"
+		fi
 	fi
 	say "the job worker is on: jobs run as openvibe-job in the worker's sandbox, with public egress"
 	say "add your agent keys (DEEPSEEK_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, and GITHUB_TOKEN to push branches) to"
