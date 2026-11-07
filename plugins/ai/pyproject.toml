@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openvibe-ai"
-version = "0.3.0"
+version = "0.4.0"
 description = "OpenVibe Node ai plugin: your own models (Ollama, llama.cpp, LM Studio) for your own OpenVibe work, relayed from OpenVibe with no open port; its owner may offer it to the network"
 requires-python = ">=3.9"
 license = { text = "AGPL-3.0-or-later" }

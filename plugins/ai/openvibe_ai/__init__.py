@@ -40,6 +40,15 @@ Tools (contracts 0.277.0, plugin 0.2.0): the functions the model may ask for, pa
 The plugin never runs one: it hands back the calls the model asked for, and the caller (an agent on OpenVibe) runs
 them and sends the next command with the assistant's message (its ``tool_calls``) and one ``tool`` message per call.
 ``describe`` says ``tools: true`` so a caller knows this machine can.
+
+Machine pools (plugin 0.4.0, Linux; the pooled machines design, 2026-11-06): with ``pool_directory`` set, this machine
+serves one model together with other machines of the same owner on the same local network, through llama.cpp RPC
+(``rpc-server`` on the members, ``llama-server --rpc`` on the head). The pool is proposed on openvibe.network/machines
+and approved on each machine with ``python -m openvibe_ai.pool_cli approve``; until then the plugin announces the
+machine every minute (``pool_credential_file``, ``pool_address``, ``pool_port``). ``pool_engine`` names the engine:
+``{rpc_binary, llama_binary, model_path, model: {model, parameters_b, memory_mb}, context?}``. The RPC engine is
+reachable only through the pool's private, mutually authenticated link and only from the head; idle-only and the kill
+switch on any machine pause the whole pool; leaving the pool drops the link and the key (docs/ai.md, "Machine pools").
 """
 
 import datetime
@@ -56,7 +65,7 @@ import urllib.request
 
 from openvibe_plugin import Deferred, Fault, Plugin
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 DEFAULT_ENDPOINTS = ("http://127.0.0.1:11434", "http://127.0.0.1:1234", "http://127.0.0.1:8080")
 MAX_REPLY_CHARS = 200 * 1024     # well inside the core's answer limit (512 KB)
 MAX_MESSAGES = 200
@@ -224,6 +233,39 @@ def _offer_config(cfg, served):
     }
 
 
+def _pool_engine(raw):
+    """The pool's engine (pool_engine in config): llama.cpp's rpc-server and llama-server built with GGML_RPC, the
+    model file, its name, size and the memory it needs (weights and context), and the context length."""
+    if not isinstance(raw, dict):
+        raise Fault("bad_value", "pool_engine is {rpc_binary, llama_binary, model_path, model: {model, parameters_b, memory_mb}, context?}")
+    for key in ("rpc_binary", "llama_binary", "model_path"):
+        if not isinstance(raw.get(key), str) or not raw[key] or len(raw[key]) > 1024 or not os.path.isabs(raw[key]):
+            raise Fault("bad_value", "pool_engine.%s is an absolute path on this machine" % key)
+    model = raw.get("model")
+    if not isinstance(model, dict) or not isinstance(model.get("model"), str) or not 0 < len(model["model"]) <= 200:
+        raise Fault("bad_value", "pool_engine.model.model is the model's name")
+    size = model.get("parameters_b")
+    if isinstance(size, bool) or not isinstance(size, (int, float)) or not 0 < size <= 4000:
+        raise Fault("bad_value", "pool_engine.model.parameters_b is the model's size in billions of parameters")
+    memory = _int(model.get("memory_mb"), "pool_engine.model.memory_mb", 1, 16 * 1024 * 1024, None)
+    if memory is None:
+        raise Fault("bad_value", "pool_engine.model.memory_mb is the memory the model needs, weights and context")
+    return {"rpc_binary": raw["rpc_binary"], "llama_binary": raw["llama_binary"], "model_path": raw["model_path"],
+            "context": _int(raw.get("context"), "pool_engine.context", 256, 131072, 2048),
+            "model": {"model": model["model"], "parameters_b": float(size), "memory_mb": memory}}
+
+
+def _gpu_compute_pids():
+    """The processes on the NVIDIA GPUs (nvidia-smi), or None when they cannot be listed."""
+    if not shutil.which("nvidia-smi"):
+        return None
+    out = _run(["nvidia-smi", "--query-compute-apps=pid", "--format=csv,noheader,nounits"])
+    try:
+        return {int(x) for x in out.split()}
+    except ValueError:
+        return None
+
+
 def _minutes(hhmm):
     return int(hhmm[:2]) * 60 + int(hhmm[3:])
 
@@ -295,6 +337,7 @@ class Ai(Plugin):
 
     def __init__(self, opener=None, clock=time.monotonic, now=None, busy_probe=None):
         self.opener = opener or urllib.request.urlopen
+        self.default_opener = self.opener
         self.clock = clock
         self.now = now or (lambda: datetime.datetime.now(datetime.timezone.utc))
         # Injected in tests: returns (busy, reason). In production this reads GPU use, heavy processes and input idle.
@@ -320,6 +363,15 @@ class Ai(Plugin):
         # What this machine served to the network, as sensors and for the /sell view: tokens counted by the local
         # server's usage, never the prompt or the answer.
         self.community = {"requests": 0, "tokens_in": 0, "tokens_out": 0}
+        # A machine pool (pool_directory in config): its runtime once every machine approved, the thread that waits
+        # for that, the kill switch latch, and the last problem, shown in describe.
+        self.pool_runtime = None
+        self.pool_thread = None
+        self.pool_stopped = threading.Event()
+        self.pool_killed = threading.Event()
+        self.pool_allow_start = False
+        self.pool_cfg = None
+        self.pool_error = None
 
     # ---- the model server -----------------------------------------------------------------------------------------
     def _get(self, url, timeout):
@@ -343,6 +395,9 @@ class Ai(Plugin):
         self.cfg = cfg
         self.max_tokens = _int(cfg.get("max_tokens"), "max_tokens", 1, 32768, 2048)
         self.timeout_s = _int(cfg.get("timeout_s"), "timeout_s", 5, 900, 180)
+        if cfg.get("pool_directory"):
+            self._configure_pool(cfg)
+            return
         endpoint = cfg.get("endpoint")
         if endpoint is not None and (not isinstance(endpoint, str) or not endpoint.startswith(("http://", "https://"))):
             raise Fault("bad_value", "endpoint is the model server's http(s) base, for example http://127.0.0.1:11434")
@@ -376,7 +431,7 @@ class Ai(Plugin):
         if self.busy_probe is not None:
             busy, reason = self.busy_probe()
         else:
-            if _gpu_busy(self.offer["busy_gpu_percent"]):
+            if _gpu_busy(self.offer["busy_gpu_percent"]) and not self._gpu_is_ours():
                 busy, reason = True, "gpu"
             elif _process_busy(self.offer["busy_processes"]):
                 busy, reason = True, "process"
@@ -429,7 +484,7 @@ class Ai(Plugin):
         """The offer as Bot, Network and AI see it (status.capabilities.ai.offer)."""
         open_now = self._within_hours()
         paused = self._paused() if self.offer["enabled"] else False
-        return {
+        view = {
             "enabled": self.offer["enabled"],
             "models": list(self.offer["models"]),
             "hours": dict(self.offer["hours"]),
@@ -445,24 +500,176 @@ class Ai(Plugin):
             "privacy": "A community machine sees the prompt. Only requests that allow community capacity are sent here, and every answer is labelled Community.",
             "ready": bool(self.offer["enabled"] and self.reachable and self.offer["models"] and open_now and not paused),
         }
+        if self.cfg.get("pool_directory"):
+            # A pool's offer is the head's, ready only while the whole pool runs (Network adds the pool from its own
+            # record; this is what the machine itself sees). A member never offers on its own while it is in a pool.
+            runtime = self.pool_runtime
+            if runtime:
+                view["pool"] = {"machines": sorted(m["id"] for m in runtime.doc["machines"]), "head": runtime.doc["head"]}
+            view["ready"] = bool(view["ready"] and self._pool_serving())
+        return view
+
+    # ---- a machine pool (pool.py, pool_runtime.py, pool_registry.py) ---------------------------------------------
+    def _configure_pool(self, cfg):
+        """Pool mode (``pool_directory`` set): this machine serves one model together with the other machines of its
+        pool. The model server is the pool's own ``llama-server`` on the head, reached through a private Unix socket;
+        the offer's settings apply to the whole pool. Nothing starts before setup, and nothing runs until every machine
+        has approved the pool on itself."""
+        from pathlib import Path
+        if sys.platform != "linux":
+            raise Fault("unsupported", "machine pools run on Linux only: the RPC engine must be isolated in its own network namespace")
+        engine = _pool_engine(cfg.get("pool_engine"))
+        directory = Path(cfg["pool_directory"])
+        if not directory.is_absolute():
+            raise Fault("bad_value", "pool_directory is an absolute path on this machine")
+        address = cfg.get("pool_address")
+        if address is not None and not isinstance(address, str):
+            raise Fault("bad_value", "pool_address is this machine's private address and prefix, such as 192.168.1.2/24")
+        self.pool_cfg = {"directory": directory, "engine": engine, "address": address,
+                         "port": _int(cfg.get("pool_port"), "pool_port", 1024, 65535, 50053)}
+        self.models = [engine["model"]["model"]]
+        self.offer = _offer_config(cfg, self.models)
+        self.endpoint = "http://localhost"   # the head's llama-server, through the pool's private Unix socket
+        self.reachable = self._pool_serving()
+        if not self.pool_allow_start or self.pool_thread or self.pool_stopped.is_set():
+            return
+        self.pool_thread = threading.Thread(target=self._pool_loop, name="ai-pool", daemon=True)
+        self.pool_thread.start()
+
+    def _pool_serving(self):
+        """This machine is the head of a running, unpaused pool."""
+        runtime = self.pool_runtime
+        return bool(runtime and runtime.machine == runtime.doc["head"] and not runtime.paused and not runtime.stopped.is_set())
+
+    def _pool_ready(self):
+        """What this machine renews on Network: its part of the pool is running and not paused."""
+        runtime = self.pool_runtime
+        return bool(runtime and not runtime.paused and runtime.status()["ready"])
+
+    def _pool_busy(self):
+        """Idle-only and the kill switch for a pool member: the kill switch latched, the offer off or outside its hours,
+        or the machine in use. Any member busy pauses the whole pool (the head asks every member every half second)."""
+        if self.pool_killed.is_set():
+            return True
+        if not self.offer["enabled"] or not self._within_hours():
+            return True
+        return self._paused()
+
+    def _gpu_is_ours(self):
+        """While this machine runs its pool's engine, the GPU's use is the pool's own, unless another program is on it
+        (NVIDIA lists the processes; elsewhere the listed busy processes and the keyboard still count)."""
+        runtime = self.pool_runtime
+        ours = runtime.engine_pids() if runtime else set()
+        if not ours:
+            return False
+        others = _gpu_compute_pids()
+        return others is None or not (others - ours)
+
+    def _pool_loop(self):
+        """Announce this machine until a pool is approved here, then run it. A pool this machine left (revoked,
+        removed, signed out, another owner) ends here: its key is gone and the machine announces itself again."""
+        from .pool_registry import Membership, Registry, local_address
+        from .pool_runtime import PoolRuntime
+        cfg = self.pool_cfg
+        directory, approval_file = cfg["directory"], cfg["directory"] / "approval.json"
+        announced = 0.0
+        while not self.pool_stopped.is_set():
+            try:
+                if not approval_file.exists():
+                    # Not approved here: stay on the owner's "Pool these machines" list (Network forgets after 5 min).
+                    if self.cfg.get("pool_credential_file") and time.monotonic() - announced > 60:
+                        from .pool_cli import memory
+                        registry = Registry(self.cfg["pool_credential_file"])
+                        registry.announce(local_address(cfg["address"]), cfg["port"], memory())
+                        announced = time.monotonic()
+                    self.pool_stopped.wait(5)
+                    continue
+                approval = json.loads(approval_file.read_text())
+                key = directory / "identity" / "key.pem"
+                registry = Registry(approval["credential_file"])
+                membership = Membership(registry, approval["pool_id"], key, ready=self._pool_ready)
+                doc = membership()
+                if doc is None or doc["owner"] != approval["owner"] or doc["head"] != approval["head"] or \
+                        sorted(m["id"] for m in doc["machines"]) != approval["machines"]:
+                    # Left, revoked or changed: drop the key and the approval at once; a new pool needs a new approval.
+                    shutil.rmtree(str(directory / "identity"), ignore_errors=True)
+                    approval_file.unlink(missing_ok=True)
+                    self.pool_error = "this machine is no longer in pool %s" % approval["pool_id"]
+                    continue
+                machine = registry.credentials()["device_id"]
+                # Raises ValueError until every machine has approved on itself.
+                runtime = PoolRuntime(doc, machine, directory, cfg["engine"], self._pool_busy, membership)
+                if self.pool_stopped.is_set():
+                    return
+                self.pool_runtime = runtime
+                self.opener = runtime.opener
+                runtime.start()
+                self.pool_error = None
+                while not runtime.stopped.wait(1):
+                    self.pool_error = runtime.last_error
+                if self.pool_stopped.is_set():
+                    return
+                # The runtime left the pool (its key is deleted): forget it and announce again.
+                self.pool_runtime = None
+                self.opener = self.default_opener
+                approval_file.unlink(missing_ok=True)
+            except (OSError, KeyError, ValueError, TypeError) as error:
+                self.pool_error = "%s: %s" % (type(error).__name__, str(error)[:200])
+                self.pool_stopped.wait(2)
+
+    def on_stop(self, info):
+        """The kill switch on this machine (an emergency stop) stops the whole pool now and holds it until the latch is
+        cleared; the Node stopping closes it and keeps the key. A turn's halt, a lost link or a command's timeout is not
+        about the pool. Without a pool, every stop is as before (nothing moves here)."""
+        if not self.cfg.get("pool_directory"):
+            return Plugin.on_stop(self, info)
+        if info.emergency:
+            self.pool_killed.set()
+            runtime = self.pool_runtime
+            if runtime:
+                runtime.halt()
+        elif info.cause == "shutdown":
+            self.close()
+
+    def on_resume(self, info):
+        """The stop latch was cleared by its owner: the pool may run again, after every member's own checks."""
+        self.pool_killed.clear()
+
+    def close(self):
+        """The plugin is ending: stop the pool's engines and its private link now; the key stays for the next start."""
+        self.pool_stopped.set()
+        runtime = self.pool_runtime
+        if runtime:
+            runtime.close()
 
     def describe(self, config):
         try:
             self._configure(config)
         except Fault:
             return {}
-        return {"ai": {"models": self.models, "ready": self.reachable and bool(self.models),
-                       "max_tokens": self.max_tokens, "tools": True,
-                       "speed": {m: round(r, 1) for m, r in self.speed.items()},
-                       "offer": self._offer_view()}}
+        out = {"ai": {"models": self.models, "ready": self.reachable and bool(self.models),
+                      "max_tokens": self.max_tokens, "tools": True,
+                      "speed": {m: round(r, 1) for m, r in self.speed.items()},
+                      "offer": self._offer_view()}}
+        if self.cfg.get("pool_directory"):
+            runtime = self.pool_runtime
+            out["ai"]["pool"] = {"id": runtime.doc["id"] if runtime else None,
+                                 "role": (("head" if runtime.machine == runtime.doc["head"] else "member") if runtime else None),
+                                 "state": ("stopped" if self.pool_killed.is_set() else "waiting" if not runtime
+                                           else "serving" if not runtime.paused else "paused"),
+                                 "problem": (self.pool_error or "")[:200] or None}
+        return out
 
     def setup(self, config):
+        self.pool_allow_start = True
         self._configure(config)
         if self.endpoint is None:
             self.log("no model server answers yet (Ollama, LM Studio or llama.cpp's server, or the endpoint in config)")
 
     # ---- one reply --------------------------------------------------------------------------------------------------
     def handle(self, cmd):
+        if self.cfg.get("pool_directory") and not self._pool_serving():
+            raise Fault("not_ready", "this machine's pool is paused, waiting for every machine to approve, or served by its head")
         if cmd.kind != "ai":
             raise Fault("unsupported", "the ai plugin takes ai commands only")
         v = cmd.value if isinstance(cmd.value, dict) else {}

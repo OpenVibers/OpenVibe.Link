@@ -1,0 +1,31 @@
+name: Pool security and real RPC
+on:
+  pull_request:
+    paths: ['plugins/ai/**', '.github/workflows/pool.yml']
+  push:
+    branches: [main]
+    paths: ['plugins/ai/**', '.github/workflows/pool.yml']
+permissions:
+  contents: read
+jobs:
+  pool:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the pinned CPU RPC engine
+        run: |
+          curl -fsSL https://codeload.github.com/ggml-org/llama.cpp/tar.gz/bcb0152876e8f0b684ba70d3defcab6cdf35adb5 -o /tmp/llama.tar.gz
+          tar -xzf /tmp/llama.tar.gz -C /tmp
+          cmake -S /tmp/llama.cpp-bcb0152876e8f0b684ba70d3defcab6cdf35adb5 -B /tmp/pool-build -DGGML_RPC=ON -DLLAMA_CURL=OFF -DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF
+          cmake --build /tmp/pool-build --target ggml-rpc-server llama-server -j2
+          curl -fsSL https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories15M-q4_0.gguf -o /tmp/pool-model.gguf
+          echo "66967fbece6dbe97886593fdbb73589584927e29119ec31f08090732d1861739  /tmp/pool-model.gguf" | sha256sum -c -
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+      - name: Security tests and two-member real inference
+        env:
+          PYTHONPATH: plugins/sdk:plugins/ai
+          POOL_RPC_BINARY: /tmp/pool-build/bin/ggml-rpc-server
+          POOL_LLAMA_BINARY: /tmp/pool-build/bin/llama-server
+          POOL_MODEL: /tmp/pool-model.gguf
+        run: python3 -m unittest discover -s plugins/ai/tests -p 'test_pool*.py' -v
