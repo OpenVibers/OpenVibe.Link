@@ -142,3 +142,98 @@ When the machine is off or its model server is down, the request fails and says 
   how fast the last model answered here (`ai_model`, `ai_tokens_per_s`): the reply's tokens over the whole answer's
   time, averaged with the earlier answers, the latest counting most. openvibe.bot/machines shows it beside the models.
 - It never acts on the machine, so it also runs while the machine's stop is latched.
+
+## Machine pools (Linux)
+
+Several of your machines on the same local network can serve one model together, as one offer: a gaming PC and a
+laptop, or a few servers in one rack (the pooled machines design, 2026-11-06). The engine is llama.cpp's RPC backend:
+`rpc-server` on every member and `llama-server --rpc` on the head, which sees the prompt and answers; the members
+lend their memory and only receive tensors. It runs on any GPU llama.cpp supports, and on the CPU. Pools across the
+internet, and pools of machines that are not all yours, are not possible.
+
+llama.cpp's RPC has no authentication of its own, so the plugin never exposes it:
+
+- **The engines run in their own network namespace** (an unprivileged Linux user and network namespace with only
+  loopback). `rpc-server` and `llama-server` cannot be reached from the local network or from the host's own
+  loopback; a private Unix socket (mode 0600) is their only way in or out. The worker refuses to start on the host's
+  network, and it dies with the plugin.
+- **The private link** is the only door to a member's `rpc-server`: TLS 1.3 on the member's private address (an RFC
+  1918 address configured on one of its interfaces; never 0.0.0.0, loopback or a public address), with mutual
+  certificate pinning. A member accepts only the pool head's certificate; the head accepts only each member's. Each
+  machine makes its own Ed25519 key when the person at it approves the pool; only the public certificate goes to
+  Network. The link carries tensors, status, run and pause, and the link probe, nothing else: no machine can run
+  anything on another.
+- **Leaving drops the link and the key at once**: `pool_cli leave`, the owner's Stop pool on openvibe.network,
+  removing a machine, signing it out or pairing it to someone else. Every machine renews its readiness with Network
+  every two seconds and sees the change there; the pool needs every machine to approve again.
+- **Idle-only and the kill switch hold for the whole pool.** The head asks every member every half second; any member
+  that is in use (a game, OBS, the person at the keyboard, another program on the GPU; the pool's own GPU use does not
+  count), outside its hours, offline or stopped by its kill switch pauses the whole pool, and a member the head stops
+  calling pauses itself after three seconds. The kill switch (an emergency stop of any machine) holds the pool until
+  its latch is cleared. Network marks the pool's offer not ready when any machine misses a renewal for ten seconds.
+
+### Setting one up
+
+You need Linux on every machine, `bubblewrap` (recommended) or `unshare` and `ip` (util-linux and iproute2), OpenSSL,
+and llama.cpp built with `GGML_RPC=ON` (the tested revision is `bcb0152876e8f0b684ba70d3defcab6cdf35adb5`; its RPC
+server is `ggml-rpc-server`, `rpc-server` in older releases). Each machine must be paired through OpenVibe.Network.
+The engine runs in a private network namespace: bubblewrap is tried first and works on a default Ubuntu 24.04 even
+though `kernel.apparmor_restrict_unprivileged_userns=1`; without bubblewrap, `unshare` needs unprivileged user
+namespaces allowed (`kernel.apparmor_restrict_unprivileged_userns=0` on Ubuntu 24.04). If neither can make a
+namespace, pooling refuses instead of using the host network and says: "Pooling needs an isolated network for the
+engine. Install bubblewrap (sudo apt install bubblewrap) and try again."
+
+1. On every machine, give the ai plugin a pool configuration:
+
+   ```json
+   {
+     "pool_directory": "/home/me/.local/share/openvibe-node/pool",
+     "pool_credential_file": "/home/me/.config/openvibe-node/credential.json",
+     "pool_address": "192.168.1.2/24",
+     "pool_engine": {
+       "rpc_binary": "/opt/llama.cpp/bin/ggml-rpc-server",
+       "llama_binary": "/opt/llama.cpp/bin/llama-server",
+       "model_path": "/models/llama-3.3-70b-instruct-q4_k_m.gguf",
+       "context": 4096,
+       "model": {"model": "llama-3.3-70b-instruct-q4_k_m", "parameters_b": 70, "memory_mb": 45000}
+     },
+     "offer": {"enabled": true, "price": {"in_per_million": 0.2, "out_per_million": 0.6}}
+   }
+   ```
+
+   `pool_address` defaults to the address of the default route; `pool_port` defaults to 50053. `memory_mb` is what the
+   model needs, weights and context. Every machine announces itself to Network every minute until it is in a pool
+   (or once by hand: `python -m openvibe_ai.pool_cli announce --credential-file … --directory …`).
+2. On openvibe.network/machines, "Pool these machines" lists your machines that checked in from the same local network
+   (one public address, one private subnet). Choose two to eight; the head defaults to the one with the most free
+   VRAM.
+3. On **each** machine, approve it:
+
+   ```sh
+   python -m openvibe_ai.pool_cli approve --credential-file /home/me/.config/openvibe-node/credential.json \
+       --directory /home/me/.local/share/openvibe-node/pool --pool pool_…
+   ```
+
+   It shows the owner, the head and the members, says what the head sees, and needs the word `approve`. The key stays
+   on the machine; its certificate is valid for 30 days, after which the pool is made again.
+4. When every machine has approved, the head measures each link (three round trips under 5 ms; at least 300 Mb/s, or
+   1 Gb/s for a model over 30B) and checks the pool's free memory against the model, then starts. The offer appears
+   as one offer, labelled "Community pool (N machines)", with one price for the pool. Before choosing a model,
+   `pool_cli fit --models models.json [--benchmarks measured.json]` on the head prints the links and what fits; a speed
+   is shown only from a dated, sourced measurement on the same hardware, never a guess.
+
+A pool is never edited: another head, member or key is a new pool, approved again on every machine. Leave from any
+machine, even offline: `python -m openvibe_ai.pool_cli leave --credential-file … --directory … --pool pool_…` deletes
+the key first, then tells Network, which stops the pool for every machine.
+
+### Tests
+
+`plugins/ai/tests/test_pool.py` checks the trust boundary with real TLS and real keys (only the head reaches
+`rpc-server`, another member or a stranger is refused, plain connections are refused, no wildcard, loopback or public
+listener, the probe refuses a machine off the network), the pool rules on two machines (the head starts only after
+every member runs; idle-only on a member or the head pauses everyone; the kill switch stops the pool at once; a
+silent head pauses its members; leaving or a revoked membership closes the link and deletes the key; closing keeps
+it) and the plugin's stops. `test_pool_linux.py` runs the engines in real namespaces: the worker refuses the host
+network, `rpc-server` is reachable only through its private socket, and two machines on a throwaway network pool and
+serve through the tunnel with stand-in engines. The pool workflow (`.github/workflows/pool.yml`) builds llama.cpp at
+the pinned revision and runs the same two-machine scenario with a real model.
