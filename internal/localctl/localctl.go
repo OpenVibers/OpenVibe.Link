@@ -32,6 +32,9 @@ const (
 	// device link: the installer starts the service before the guide runs, and a second device connection would
 	// replace it.
 	CmdFirstRun = "first_run"
+	// CmdPanel answers where OpenVibe Link's own window is: its loopback URL with the per-run token in the fragment.
+	// It goes to the tray (or `openvibe-node panel`), which runs as the Node's owner, never into a status line.
+	CmdPanel = "panel"
 )
 
 type Request struct {

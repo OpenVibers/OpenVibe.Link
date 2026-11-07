@@ -100,8 +100,15 @@ the ones this machine was installed for: the job worker starts if the local conf
 plainly which role it could not honour. The local configuration always wins: a role never installs anything and never
 turns on a feature you turned off here.
 
+**Link's own window:** the tray's **Open Link** (or `openvibe-node panel`) opens a small page on the machine itself
+at `127.0.0.1` that shows what runs here, what this computer allows, your shares and what happened, and lets you pause
+everything, stop one thing, turn a capability off, share a port, or send files (not in this version). It is served
+only on loopback, with a per-run token in the address fragment that every API call must send; see
+[docs/panel.md](docs/panel.md) for the security rules.
+
 Docs: [protocol](docs/protocol.md) (the wire format with OpenVibe.Bot), [plugins](docs/plugins.md) (the driver
 protocol, the bundled drivers, and where Actor's computer-control plugin attaches), [install](docs/install.md),
+[panel](docs/panel.md) (Link's own window and its security rules),
 [memory](docs/memory.md) (what the coding tools on a machine remember, how the Node reads it and how it is uploaded to
 your own memory store), [skills](docs/skills.md) (the skills hub: which folders each tool reads, the marked block, the
 dry run and the undo).

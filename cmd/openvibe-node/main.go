@@ -77,7 +77,8 @@ Usage:
   openvibe-node deny <ID>            refuse it
   openvibe-node tray [--autostart on|off]
                     the Node in your notification area (Linux, Windows): what waits with Approve and Deny, stop,
-                    resume; --autostart starts it when you sign in
+                    resume, Open Link; --autostart starts it when you sign in
+  openvibe-node panel                print Link's own window's address (loopback, this run's token)
   openvibe-node profile verify community.<name> [--server URL] [--key-id ID]
                     check a community robot profile against the signature Bot made when it was reviewed
   openvibe-node desk-sandbox [--memory-mb N] [--cpu-millis N] [--bind PATH]... [--egress public] -- PROGRAM [ARG]...
@@ -276,6 +277,8 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		err = cmdAnswer(g, cmd, positional[0], stdout)
 	case "tray":
 		err = cmdTray(g, *autoArg, stdout)
+	case "panel":
+		err = cmdPanel(g, stdout)
 	case "profile":
 		if len(positional) != 2 || positional[0] != "verify" {
 			fmt.Fprintln(stderr, "usage: openvibe-node profile verify community.<name> [--server URL] [--key-id ID]")
@@ -643,21 +646,12 @@ func cmdRun(g *globals, dryRun bool) error {
 		}
 		tokens = ts
 	}
-	n, err := node.New(node.Options{Config: cfg, Paths: g.paths, Creds: creds, Tokens: tokens, Log: g.log, Version: version, CanQuit: service.Interactive()})
+	n, err := node.New(node.Options{Config: cfg, Paths: g.paths, Creds: creds, Tokens: tokens, Log: g.log, Version: version, CanQuit: service.Interactive(), NoShares: dryRun})
 	if err != nil {
 		return err
 	}
 	g.log.Info("openvibe-node starting", "version", version, "config", g.paths.ConfigDir, "plugins", len(cfg.Plugins))
 	return service.Run(serviceOptions(g, ""), func(ctx context.Context) error {
-		if !dryRun {
-			// OpenVibe Connect: every saved share stays up while the Node runs (openvibe-node share add).
-			// A share bound to this computer (no key) signs in with the machine's own node token (CON-4).
-			co := connect.Options{Log: g.log, Version: version}
-			if creds.NetworkPaired() {
-				co.NodeToken = connectNodeToken(creds)
-			}
-			go connect.RunAll(ctx, g.paths.ConfigDir, co)
-		}
 		if err := n.Run(ctx); !errors.Is(err, node.ErrQuit) {
 			return err
 		}
