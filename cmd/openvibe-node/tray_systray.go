@@ -3,6 +3,8 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -16,6 +18,8 @@ import (
 	"time"
 
 	"fyne.io/systray"
+
+	"github.com/OpenVibers/OpenVibe.Node/internal/localctl"
 )
 
 // The notification area: a StatusNotifierItem over D-Bus on Linux (KDE, XFCE, Cinnamon, MATE, GNOME with the
@@ -24,7 +28,8 @@ import (
 type systrayUI struct {
 	mu                     sync.Mutex
 	header, level          *systray.MenuItem
-	stop, resume, panel    *systray.MenuItem
+	link, stop, resume     *systray.MenuItem
+	panel                  *systray.MenuItem
 	quit                   *systray.MenuItem
 	requests               *systray.MenuItem
 	slots                  []*systray.MenuItem
@@ -36,6 +41,8 @@ type systrayUI struct {
 }
 
 func (u *systrayUI) build() {
+	u.link = systray.AddMenuItem("Open Link", "Link's own window: what runs here, what you allow, your shares")
+	systray.AddSeparator()
 	u.header = systray.AddMenuItem("OpenVibe Node", "")
 	u.header.Disable()
 	u.level = systray.AddMenuItem("", "")
@@ -181,6 +188,12 @@ func runTray(g *globals) error {
 		systray.SetTitle("OpenVibe Node")
 		ui.build()
 		core.tick()
+		// The first time the tray runs, Link's window opens by itself: the person sees what the machine does.
+		if firstPanelOpen(g) {
+			if err := core.openPanel(); err != nil {
+				g.log.Info("Link's window did not open", "err", err)
+			}
+		}
 		go trayLoop(core, ui, stopSig, g)
 	}, core.quit)
 	return nil
@@ -208,6 +221,10 @@ func trayLoop(core *trayCore, ui *systrayUI, stopSig <-chan os.Signal, g *global
 				core.note.Info("OpenVibe Node", "Could not stop: "+err.Error())
 			}
 			core.tick()
+		case <-ui.link.ClickedCh:
+			if err := core.openPanel(); err != nil {
+				core.note.Info("OpenVibe Node", err.Error())
+			}
 		case <-ui.resume.ClickedCh:
 			if err := core.resume(); err != nil {
 				core.note.Info("OpenVibe Node", "Could not resume: "+err.Error())
@@ -225,6 +242,34 @@ func trayLoop(core *trayCore, ui *systrayUI, stopSig <-chan os.Signal, g *global
 			return
 		}
 	}
+}
+
+// openPanel opens Link's own window: the Node's loopback URL, with this run's token in the fragment.
+func (t *trayCore) openPanel() error {
+	resp, err := t.call(localctl.Request{Cmd: localctl.CmdPanel})
+	if err != nil {
+		return err
+	}
+	var v struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(resp.Data, &v); err != nil || v.URL == "" {
+		return errors.New("Link's window is not running")
+	}
+	openURL(v.URL)
+	return nil
+}
+
+// firstPanelOpen is true once: the first time this tray runs, Link's window opens by itself.
+func firstPanelOpen(g *globals) bool {
+	path := filepath.Join(g.paths.StateDir, "panel-opened")
+	if _, err := os.Stat(path); err == nil {
+		return false
+	}
+	if err := os.WriteFile(path, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600); err != nil {
+		return false
+	}
+	return true
 }
 
 // openURL opens the machines page in the default browser.

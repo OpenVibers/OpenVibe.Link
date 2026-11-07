@@ -33,6 +33,7 @@ import (
 	"github.com/OpenVibers/OpenVibe.Node/internal/link"
 	"github.com/OpenVibers/OpenVibe.Node/internal/localctl"
 	"github.com/OpenVibers/OpenVibe.Node/internal/mono"
+	"github.com/OpenVibers/OpenVibe.Node/internal/panel"
 	"github.com/OpenVibers/OpenVibe.Node/internal/plugins"
 	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
 	"github.com/OpenVibers/OpenVibe.Node/internal/safety"
@@ -55,6 +56,9 @@ type Options struct {
 	// CanQuit lets `openvibe-node quit` end the process: true when it runs from a terminal or a sign-in start, false
 	// under a service manager, which would only start it again.
 	CanQuit bool
+
+	// NoShares keeps saved Connect shares down (the guided dry run, which must not open a tunnel).
+	NoShares bool
 
 	// For tests.
 	ReauthInterval    time.Duration
@@ -132,6 +136,14 @@ type Node struct {
 	inputs     map[string]bool
 	inputEnded time.Time
 	trayToldAt time.Time // when the computer plugin was last told the tray shows its approvals
+
+	// panel is Link's own window (nil until Run started it). panelOff are the capability switches turned off in it,
+	// kept in state/panel.json; activity is what "What happened here" lists, newest first.
+	panel    *panel.Server
+	panelOff map[string]bool
+	activity []panel.Activity
+	// shares keeps OpenVibe Connect shares up and lets the window add or end one.
+	shares *shareSet
 }
 
 // ErrQuit is what Run returns after `openvibe-node quit`: every actuator stopped, nothing latched, the process may exit.
@@ -172,7 +184,8 @@ func New(opt Options) (*Node, error) {
 		opt.Log.Error("latch", "err", err)
 	}
 	n := &Node{opt: opt, log: opt.Log, latch: latch, dedup: safety.NewDedup(4096, 10*time.Minute),
-		jobs: newJobs(nil), telemetry: map[string]map[string]any{}, telemMS: 500, approvals: map[string]Approval{}, inputs: map[string]bool{}}
+		jobs: newJobs(nil), telemetry: map[string]map[string]any{}, telemMS: 500, approvals: map[string]Approval{}, inputs: map[string]bool{},
+		panelOff: loadPanelOff(opt.Paths.StateDir)}
 	n.limits = safety.Merge(protocol.Limits{}, opt.Config.Limits.MaxSpeed, opt.Config.Limits.MaxTurn, opt.Config.Limits.MaxCommandMS)
 
 	var specs []plugins.Spec
@@ -293,6 +306,13 @@ func (n *Node) Run(parent context.Context) error {
 		n.log.Warn("starting with the stop latched", "remote", st.Remote, "local", st.Local, "computer", st.Computer)
 	}
 	n.applyPluginLatch(n.latch.State(), false)
+
+	// Link's own window, and the Connect shares it can add or end, start with the Node.
+	n.shares = newShareSet(ctx, n.opt.Paths.ConfigDir, n.shareOptions())
+	if !n.opt.NoShares {
+		n.shares.StartAll()
+	}
+	n.startPanel(ctx)
 
 	n.mgr.Start(pctx)
 
@@ -662,6 +682,10 @@ func (n *Node) command(c protocol.Command, sentMS int64, seq uint64, received mo
 	}
 	if allowed != nil && !allowed[c.Kind] {
 		nack(protocol.FaultNotAllowed, c.Kind+" is not in this robot's allowed_commands")
+		return
+	}
+	if n.capabilityOff(c.Kind) {
+		nack(protocol.FaultNotAllowed, "turned off in Link: "+capabilityForKind[c.Kind]+" is off on this computer")
 		return
 	}
 	if protocol.ComputerKinds[c.Kind] {
@@ -1414,6 +1438,11 @@ func (n *Node) trackApproval(plugin, name string, data map[string]any, at time.T
 		a.ExpiresS = int64(e)
 	}
 	n.approvals[id] = a
+	what := strings.TrimSpace(safety.DisplayText(a.Summary))
+	if what == "" {
+		what = strings.TrimSpace(safety.DisplayText(a.Kind))
+	}
+	n.appendActivityLocked("Your agent is waiting for you: " + what)
 }
 
 // Approvals lists the computer commands waiting for an answer on the machine, oldest first.
@@ -1478,31 +1507,7 @@ func (n *Node) control(r localctl.Request) localctl.Response {
 		}
 		return localctl.Response{OK: true, Data: b}
 	case localctl.CmdApprove, localctl.CmdDeny:
-		n.mu.Lock()
-		var a Approval
-		ok := false
-		for _, candidate := range n.approvals {
-			if candidate.ID == r.ID {
-				a, ok = candidate, true
-				break
-			}
-		}
-		if ok && r.Cmd == localctl.CmdApprove && n.drivingLocked() {
-			n.mu.Unlock()
-			return localctl.Response{Error: "the agent is using the mouse or keyboard (or just did): answer again in a moment, so that its click cannot approve this"}
-		}
-		if ok {
-			delete(n.approvals, a.CommandID)
-		}
-		n.mu.Unlock()
-		if !ok {
-			return localctl.Response{Error: fmt.Sprintf("nothing with the id %q waits for approval", strings.TrimSpace(r.ID))}
-		}
-		p := n.mgr.Get(a.Plugin)
-		if p == nil {
-			return localctl.Response{Error: "the plugin that asked is gone"}
-		}
-		if err := p.Answer(a.binding, r.Cmd == localctl.CmdApprove); err != nil {
+		if err := n.answerApproval(r.ID, r.Cmd == localctl.CmdApprove); err != nil {
 			return localctl.Response{Error: err.Error()}
 		}
 		return localctl.Response{OK: true}
@@ -1536,8 +1541,7 @@ func (n *Node) control(r localctl.Request) localctl.Response {
 		}
 		return localctl.Response{OK: true}
 	case localctl.CmdStop:
-		n.mgr.EstopAll(plugins.EstopLocal, "openvibe-node stop") // at once, then persist
-		if _, err := n.latch.SetLocalWith("openvibe-node stop"); err != nil {
+		if err := n.stopEverything("openvibe-node stop"); err != nil {
 			return localctl.Response{Error: "stopped, but the latch could not be saved: " + err.Error()}
 		}
 		return localctl.Response{OK: true}
@@ -1554,10 +1558,20 @@ func (n *Node) control(r localctl.Request) localctl.Response {
 		go func() { time.Sleep(100 * time.Millisecond); n.quit() }() // after this answer is written
 		return localctl.Response{OK: true}
 	case localctl.CmdResume:
-		if _, err := n.latch.Resume(); err != nil {
+		if err := n.resumeEverything(); err != nil {
 			return localctl.Response{Error: err.Error()}
 		}
 		return localctl.Response{OK: true}
+	case localctl.CmdPanel:
+		u := n.PanelURL()
+		if u == "" {
+			return localctl.Response{Error: "Link's window is not running on this Node"}
+		}
+		b, err := json.Marshal(map[string]string{"url": u})
+		if err != nil {
+			return localctl.Response{Error: err.Error()}
+		}
+		return localctl.Response{OK: true, Data: b}
 	case localctl.CmdStatus, localctl.CmdPlugins:
 		b, err := json.Marshal(n.Status())
 		if err != nil {

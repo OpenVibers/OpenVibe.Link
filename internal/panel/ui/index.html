@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>OpenVibe Link</title>
+<link rel="stylesheet" href="panel.css">
+</head>
+<!-- OpenVibe Link's own window (domains plan §13.1, designed 2026-11-07). The daemon serves this folder on 127.0.0.1
+     and answers /panel/api/* (see README.md here for the JSON). Narrow, it is the tray's quick panel; wide, the full
+     window adds your devices and the activity log. Everything shown comes from the daemon: no sample data ships. -->
+<body>
+<main class="lk" data-state="loading" aria-busy="true">
+  <header class="lk-head">
+    <span class="lk-ring" aria-hidden="true"><svg viewBox="0 0 40 40"><circle class="lk-ring-bg" cx="20" cy="20" r="16"/><circle class="lk-ring-fill" cx="20" cy="20" r="16"/></svg><i class="lk-ring-dot"></i></span>
+    <div class="lk-who"><h1 data-lk-name>This computer</h1><p data-lk-status role="status">Connecting to Link…</p></div>
+    <button class="lk-pause" type="button" data-lk-pause aria-pressed="false"><span class="lk-pause-ic" aria-hidden="true"></span><span data-lk-pause-label>Pause everything</span></button>
+  </header>
+
+  <p class="lk-down" data-lk-down hidden>Link is not running on this computer. Start it from your apps, or run <code>openvibe-node</code>.</p>
+
+  <div class="lk-cols">
+    <div class="lk-col">
+      <section class="lk-sec" data-lk-sec="running" aria-labelledby="lk-run-h">
+        <h2 id="lk-run-h">Running now <span data-lk-run-n></span></h2>
+        <ul class="lk-run" data-lk-running></ul>
+        <p class="lk-none" data-lk-running-none>Nothing is running here. Your agents ask before they start.</p>
+      </section>
+
+      <section class="lk-sec" data-lk-sec="caps" aria-labelledby="lk-cap-h">
+        <h2 id="lk-cap-h">What this computer allows</h2>
+        <ul class="lk-caps" data-lk-caps></ul>
+      </section>
+
+      <section class="lk-sec" data-lk-sec="share" aria-labelledby="lk-share-h">
+        <h2 id="lk-share-h">Share a port</h2>
+        <form class="lk-share" data-lk-share-form>
+          <label for="lk-port" class="lk-sr">Port on this computer</label>
+          <input id="lk-port" name="port" inputmode="numeric" pattern="[0-9]{2,5}" placeholder="3000" required autocomplete="off">
+          <button type="submit" class="lk-btn is-primary">Share</button>
+        </form>
+        <ul class="lk-shares" data-lk-shares></ul>
+        <p class="lk-fine">A link behind your OpenVibe sign-in; only you, unless you add people.</p>
+      </section>
+
+      <section class="lk-sec" data-lk-sec="drop" aria-labelledby="lk-drop-h">
+        <h2 id="lk-drop-h" class="lk-sr">Send files</h2>
+        <label class="lk-drop" data-lk-drop for="lk-files"><span class="lk-drop-ic" aria-hidden="true"></span><b>Send files to your other devices</b><small>Drop them here, or choose</small></label>
+        <input id="lk-files" class="lk-sr" type="file" multiple data-lk-files>
+        <p class="lk-fine" data-lk-drop-say role="status"></p>
+      </section>
+    </div>
+
+    <div class="lk-col lk-col-wide">
+      <section class="lk-sec" data-lk-sec="gpu" aria-labelledby="lk-gpu-h" hidden>
+        <h2 id="lk-gpu-h">Models on this computer</h2>
+        <p class="lk-gpu-name" data-lk-gpu-name></p>
+        <ul class="lk-models" data-lk-models></ul>
+      </section>
+
+      <section class="lk-sec" data-lk-sec="devices" aria-labelledby="lk-dev-h">
+        <h2 id="lk-dev-h">Your devices</h2>
+        <ul class="lk-devices" data-lk-devices></ul>
+      </section>
+
+      <section class="lk-sec" data-lk-sec="activity" aria-labelledby="lk-act-h">
+        <h2 id="lk-act-h">What happened here</h2>
+        <ol class="lk-activity" data-lk-activity></ol>
+        <p class="lk-none" data-lk-activity-none>Nothing yet today.</p>
+      </section>
+    </div>
+  </div>
+
+  <footer class="lk-foot">
+    <span data-lk-earn hidden></span>
+    <a href="https://openvibe.network/my#machines" target="_blank" rel="noopener">All your machines</a>
+  </footer>
+</main>
+<script src="panel.js" defer></script>
+</body>
+</html>
