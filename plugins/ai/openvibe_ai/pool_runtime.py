@@ -83,11 +83,15 @@ def isolation_method():
 
 
 def _worker_environment():
-    """The worker imports openvibe_ai, so its package directory must be on PYTHONPATH whatever the plugin's cwd."""
+    """The worker imports openvibe_ai (and, from a source checkout, the SDK), whatever the plugin's cwd is."""
     environment = dict(os.environ)
-    package = str(Path(__file__).resolve().parent.parent)
+    package = Path(__file__).resolve().parent.parent
+    paths = [str(package)]
+    sdk = package.parent / 'sdk'
+    if sdk.is_dir():
+        paths.append(str(sdk))
     existing = environment.get('PYTHONPATH')
-    environment['PYTHONPATH'] = package + (os.pathsep + existing if existing else '')
+    environment['PYTHONPATH'] = os.pathsep.join(paths + ([existing] if existing else []))
     return environment
 
 
