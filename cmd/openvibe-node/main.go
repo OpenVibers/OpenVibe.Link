@@ -14,6 +14,8 @@
 //	openvibe-node plugins         list plugins and their capabilities
 //	openvibe-node memory scan [--tools a,b] [--project DIR …] [--json]
 //	                              read the memory files of the coding tools (read-only, local)
+//	openvibe-node skills sync [--tools a,b] [--project DIR …] [--dry-run]
+//	                              write the skills you chose in the hub into each tool's own folders
 //	openvibe-node version
 package main
 
@@ -84,6 +86,10 @@ Usage:
   openvibe-node memory scan [--tools a,b] [--project DIR …] [--json]
                     read the memory files of the coding tools on this machine
                     (read-only, local, secrets removed)
+  openvibe-node skills sync [--tools a,b] [--project DIR …] [--dry-run] [--yes]
+  openvibe-node skills sync --undo
+                    write the skills and rules you chose at openvibe.codes/skills
+                    into each tool's own folders, inside one marked block
   openvibe-node exchange serve --model <id> [--public-url URL]
                     serve a local model as an OpenVibe.Exchange seller offer
   openvibe-node stream --probe --whip-url URL [--seconds N] [--size WxH] [--json]
@@ -149,6 +155,10 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 	if cmd == "memory" {
 		// The memory scan has its own flags, so it parses its own arguments.
 		return cmdMemory(rest, stdin, stdout, stderr)
+	}
+	if cmd == "skills" {
+		// The sync has its own flags, so it parses its own arguments.
+		return cmdSkills(rest, stdin, stdout, stderr)
 	}
 	if cmd == "exchange" { // its own flags: serve, and the seller offer's
 		return cmdExchange(rest, stdout, stderr)

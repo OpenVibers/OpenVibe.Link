@@ -52,6 +52,7 @@ openvibe-node tray       # the same in your notification area, with Approve/Deny
 openvibe-node memory scan  # what your coding tools remember: read-only, local, secrets removed
 openvibe-node memory upload  # send what they remember to your own memory store, after you say yes
 openvibe-node memory sync  # write your profile and rules back into the tools, one marked block per file, opt-in per tool
+openvibe-node skills sync  # write the skills and rules you chose at openvibe.codes/skills into each tool, with a dry run and undo
 openvibe-node exchange serve --model qwen3:32b --public-url https://gpu.example.com/v1  # sell a local model
 ```
 
@@ -102,7 +103,8 @@ turns on a feature you turned off here.
 Docs: [protocol](docs/protocol.md) (the wire format with OpenVibe.Bot), [plugins](docs/plugins.md) (the driver
 protocol, the bundled drivers, and where Actor's computer-control plugin attaches), [install](docs/install.md),
 [memory](docs/memory.md) (what the coding tools on a machine remember, how the Node reads it and how it is uploaded to
-your own memory store).
+your own memory store), [skills](docs/skills.md) (the skills hub: which folders each tool reads, the marked block, the
+dry run and the undo).
 Decisions: [ADR-043](docs/ADR-043-bot-devices-and-control.md).
 
 ## Development
