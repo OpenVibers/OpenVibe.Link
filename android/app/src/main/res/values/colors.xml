@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Vibe's own tokens (openvibe-shared): deep blue night, electric-blue glow. -->
+    <color name="ov_bg_base">#FF0A0F1C</color>
+    <color name="ov_accent">#FF3B82F6</color>
+</resources>
