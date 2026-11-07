@@ -21,6 +21,7 @@ import (
 	"github.com/OpenVibers/OpenVibe.Node/internal/fakebot"
 	"github.com/OpenVibers/OpenVibe.Node/internal/link"
 	"github.com/OpenVibers/OpenVibe.Node/internal/localctl"
+	"github.com/OpenVibers/OpenVibe.Node/internal/panel"
 	"github.com/OpenVibers/OpenVibe.Node/internal/plugins"
 	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
 	"github.com/OpenVibers/OpenVibe.Node/internal/safety"
@@ -102,7 +103,8 @@ func startWith(t *testing.T, prep func(*fakebot.Server), ready bool) *env {
 
 	n, err := New(Options{Config: cfg, Paths: paths, Creds: creds, Version: "test", HeartbeatInterval: 100 * time.Millisecond,
 		LinkBackoffMin: 50 * time.Millisecond, VideoLoopback: true, LatchPoll: 50 * time.Millisecond,
-		Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
+		Log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		CodesAgents: func() []panel.CodesAgent { return nil }})
 	if err != nil {
 		t.Fatal(err)
 	}

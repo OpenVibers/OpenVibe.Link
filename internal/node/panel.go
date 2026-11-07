@@ -127,6 +127,7 @@ func (n *Node) startPanel(ctx context.Context) {
 		Share:         n.shareAdd,
 		Unshare:       n.shareRemove,
 		FirstRun:      n.applyFirstRun,
+		CodesStop:     n.panelStopCodesTask,
 		Log:           n.log,
 	})
 	if err != nil {
@@ -164,6 +165,7 @@ func (n *Node) panelState() panel.State {
 	host, _ := os.Hostname()
 	out := panel.State{
 		Machine: &panel.Machine{
+			ID:       machineID(st),
 			Name:     host,
 			OS:       runtime.GOOS,
 			Online:   st.Link.Connected,
@@ -173,12 +175,21 @@ func (n *Node) panelState() panel.State {
 		Running:      n.panelRunning(st),
 		Capabilities: n.panelCapabilities(st),
 		Shares:       n.panelShares(st),
+		Codes:        n.panelCodes(),
 	}
 	n.mu.Lock()
 	out.Activity = append([]panel.Activity(nil), n.activity...)
 	out.FirstRun = n.panelFirst == nil || !n.panelFirst.Answered
 	n.mu.Unlock()
 	return out
+}
+
+// machineID is the id Codes preselects this computer by: the paired Bot device, or the Network principal before that.
+func machineID(st Status) string {
+	if st.DeviceID != "" {
+		return st.DeviceID
+	}
+	return st.Principal
 }
 
 // panelRunning lists what the tray already shows as running or waiting: approvals, jobs, connected shares and desks.

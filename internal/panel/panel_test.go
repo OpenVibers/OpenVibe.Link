@@ -145,7 +145,7 @@ func TestStateShapeMatchesTheDesign(t *testing.T) {
 	}
 	now := time.Date(2026, 11, 7, 10, 2, 0, 0, time.UTC)
 	full := State{
-		Machine:       &Machine{Name: "Workshop desktop", OS: "linux", Online: true, Paused: false, NeedsYou: 1},
+		Machine:       &Machine{ID: "dev_1", Name: "Workshop desktop", OS: "linux", Online: true, Paused: false, NeedsYou: 1},
 		Running:       []Running{{ID: "r_1", Kind: "agent", Title: "t", Detail: "d", StartedAt: now}},
 		Capabilities:  []Capability{{ID: "files", Name: "n", Who: "w", On: true}},
 		Shares:        []Share{{Port: 3000, URL: "https://x", ExpiresAt: now}},
@@ -237,6 +237,45 @@ func TestStopCapabilityAndSharesReachTheDaemon(t *testing.T) {
 	}
 	if unshared != 3000 {
 		t.Fatalf("unshared %d", unshared)
+	}
+}
+
+func TestMachineCarriesItsOwnID(t *testing.T) {
+	srv := testServer(t, Options{State: func() State { return State{Machine: &Machine{ID: "dev_1", Name: "here"}} }})
+	w := do(t, srv, http.MethodGet, "/panel/api/state", testToken, "", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("state: %d %s", w.Code, w.Body)
+	}
+	var st State
+	if err := json.Unmarshal(w.Body.Bytes(), &st); err != nil || st.Machine == nil || st.Machine.ID != "dev_1" {
+		t.Fatalf("machine: %v %s", err, w.Body)
+	}
+}
+
+func TestCodesTaskStopNeedsTheTokenAndARunningTask(t *testing.T) {
+	var stopped string
+	srv := testServer(t, Options{CodesStop: func(id string) error {
+		if id != "tsk_running" {
+			return errors.New("that task is not running on this computer")
+		}
+		stopped = id
+		return nil
+	}})
+	path := "/panel/api/codes/tasks/tsk_running/stop"
+	if w := do(t, srv, http.MethodPost, path, "", "", ""); w.Code != http.StatusForbidden {
+		t.Fatalf("no token: %d", w.Code)
+	}
+	if w := do(t, srv, http.MethodPost, path, testToken, "https://evil.example", ""); w.Code != http.StatusForbidden {
+		t.Fatalf("wrong origin: %d", w.Code)
+	}
+	if w := do(t, srv, http.MethodPost, "/panel/api/codes/tasks/tsk_unknown/stop", testToken, srv.Origin(), ""); w.Code != http.StatusConflict {
+		t.Fatalf("unknown task: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, srv, http.MethodPost, path, testToken, srv.Origin(), ""); w.Code != http.StatusOK {
+		t.Fatalf("running task: %d %s", w.Code, w.Body)
+	}
+	if stopped != "tsk_running" {
+		t.Fatalf("stopped %q", stopped)
 	}
 }
 

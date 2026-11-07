@@ -66,6 +66,8 @@ type Options struct {
 	LinkBackoffMin    time.Duration
 	VideoLoopback     bool
 	LatchPoll         time.Duration
+	// CodesAgents replaces the probe of this machine's coding-agent CLIs (for tests).
+	CodesAgents func() []panel.CodesAgent
 }
 
 // Node is a running device agent.
@@ -144,6 +146,9 @@ type Node struct {
 	panelOff   map[string]bool
 	panelFirst *panelFirstRun
 	activity   []panel.Activity
+	// codes is what the Codes worker ran here today; codesAgents caches the coding-agent CLIs the window shows.
+	codes       *codesTaskState
+	codesAgents codesAgentsCache
 	// shares keeps OpenVibe Connect shares up and lets the window add or end one.
 	shares *shareSet
 }
@@ -189,6 +194,9 @@ func New(opt Options) (*Node, error) {
 	n := &Node{opt: opt, log: opt.Log, latch: latch, dedup: safety.NewDedup(4096, 10*time.Minute),
 		jobs: newJobs(nil), telemetry: map[string]map[string]any{}, telemMS: 500, approvals: map[string]Approval{}, inputs: map[string]bool{},
 		panelOff: panelOff, panelFirst: panelFirst}
+	home, _ := os.UserHomeDir()
+	n.codes = loadCodesTasks(opt.Paths.StateDir, home, opt.Log)
+	n.codesAgents.fn = opt.CodesAgents
 	n.limits = safety.Merge(protocol.Limits{}, opt.Config.Limits.MaxSpeed, opt.Config.Limits.MaxTurn, opt.Config.Limits.MaxCommandMS)
 
 	var specs []plugins.Spec
