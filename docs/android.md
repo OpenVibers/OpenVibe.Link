@@ -54,7 +54,7 @@ logged, and the app's data is excluded from Android backups.
 
 ### The screens
 
-Rendered from the Composables (Pixel 5, light theme; a dark phone uses Vibe's dark tokens):
+Taken on the CI emulator (light theme; a dark phone uses Vibe's dark tokens), one per screen:
 
 | Pair | Approvals |
 |---|---|
@@ -64,8 +64,8 @@ Rendered from the Composables (Pixel 5, light theme; a dark phone uses Vibe's da
 |---|---|
 | ![Activity](screenshots/activity.png) | ![This phone](screenshots/phone.png) |
 
-The CI's second job takes the same four on an emulator (non-blocking). The app also has a debug-only `PreviewActivity`
-that draws one screen with sample data without an account — what these pictures come from:
+These are the CI's own emulator job (`screenshots`), non-blocking beside the build. The app also has a debug-only
+`PreviewActivity` that draws one screen with sample data without an account:
 `adb shell am start -n network.openvibe.link/.PreviewActivity --es screen approvals`.
 
 ## Send to OpenVibe
