@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -92,7 +93,8 @@ func TestMemoryExportWritesThePortableFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	// Windows reports a fixed 0666 for an ordinary file; the 0600 promise is a Unix mode.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("the portable file is %o, not 0600", info.Mode().Perm())
 	}
 	method, path, query, auth, _ := ps.last()
