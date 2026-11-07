@@ -18,6 +18,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -583,12 +584,24 @@ func (c *Config) PythonPath(paths Paths) string {
 	return "python3"
 }
 
+// planLoginHome is the home worker.plan_logins must be under. Under sudo it is the sudo user's home: install.sh
+// --plan-logins sets the service's HOME to it, and a `sudo openvibe-node ...` must see the same folder, not root's.
+// The service itself has HOME set, so os.UserHomeDir is right there.
+func planLoginHome() (string, error) {
+	if u := os.Getenv("SUDO_USER"); u != "" && u != "root" {
+		if usr, err := user.Lookup(u); err == nil && usr.HomeDir != "" {
+			return usr.HomeDir, nil
+		}
+	}
+	return os.UserHomeDir()
+}
+
 // validateDNS checks worker.dns: at most three IPv4 resolvers (the most a resolv.conf is read for), only with a policy
 // that gives jobs a network, each public, and under openvibe-only inside egress_allow.
 // validatePlanLogins refuses a plan login that is not a plain path under the Node user's home: a job's copy is made
 // from it, so it must be a file the owner meant to share with their own jobs and nothing else.
 func (w WorkerConfig) validatePlanLogins() error {
-	home, err := os.UserHomeDir()
+	home, err := planLoginHome()
 	if err != nil {
 		if len(w.PlanLogins) > 0 {
 			return fmt.Errorf("config: worker.plan_logins: the Node user's home is unknown: %w", err)
