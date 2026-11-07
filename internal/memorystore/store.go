@@ -361,6 +361,70 @@ func (c *Client) List(ctx context.Context, scope, query string) (ListResult, err
 	return ListResult{Items: res.Items, Count: res.Count}, nil
 }
 
+// PortableResult is what the store answered about a portable import.
+type PortableResult struct {
+	// Imported is how many items the store took (new plus already there).
+	Imported int
+	// Created is how many were new.
+	Created int
+	// Deduplicated is how many were already there, by their text.
+	Deduplicated int
+	// Skipped is how many the file carried but the store would not take.
+	Skipped int
+}
+
+// Export gives the one portable memory file, exactly as the store wrote it.
+// The body is the person's own plaintext, so it is never logged.
+func (c *Client) Export(ctx context.Context, scope string) ([]byte, error) {
+	path := "/api/v1/memory/export"
+	if scope != "" {
+		path += "?scope=" + url.QueryEscape(scope)
+	}
+	raw, status, err := c.do(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	if status/100 != 2 {
+		return nil, c.apiError(status, raw)
+	}
+	var probe struct {
+		Format string `json:"format"`
+	}
+	if err := json.Unmarshal(raw, &probe); err != nil || probe.Format == "" {
+		return nil, errors.New("the memory store answered something that is not a portable memory file")
+	}
+	return raw, nil
+}
+
+// Import sends a portable memory file back to the store, under the person's
+// own token. The store validates the format, redacts every item again and
+// dedupes by its text MAC; a file it refuses is an APIError.
+func (c *Client) Import(ctx context.Context, document []byte) (PortableResult, error) {
+	if len(document) == 0 {
+		return PortableResult{}, errors.New("the file is empty")
+	}
+	if !json.Valid(document) {
+		return PortableResult{}, errors.New("the file is not JSON")
+	}
+	raw, status, err := c.do(ctx, http.MethodPost, "/api/v1/memory/import", document)
+	if err != nil {
+		return PortableResult{}, err
+	}
+	if status/100 != 2 {
+		return PortableResult{}, c.apiError(status, raw)
+	}
+	var res struct {
+		Imported int `json:"imported"`
+		Created  int `json:"created"`
+		Deduped  int `json:"deduped"`
+		Skipped  int `json:"skipped"`
+	}
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return PortableResult{}, errors.New("the memory store answered something that is not JSON")
+	}
+	return PortableResult{Imported: res.Imported, Created: res.Created, Deduplicated: res.Deduped, Skipped: res.Skipped}, nil
+}
+
 // do sends one request with the person's token and gives back the body and the
 // status. A network failure is an error that names the cause, never the token.
 func (c *Client) do(ctx context.Context, method, path string, body []byte) ([]byte, int, error) {
@@ -385,7 +449,8 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte) ([]by
 		return nil, 0, fmt.Errorf("the memory store could not be reached: %s", scrub(err.Error(), c.token))
 	}
 	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	// A portable file may be large (10,000 items); everything else is small.
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	if err != nil {
 		return nil, resp.StatusCode, fmt.Errorf("the memory store answered badly: %w", err)
 	}
