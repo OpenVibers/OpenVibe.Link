@@ -152,6 +152,7 @@ func TestStateShapeMatchesTheDesign(t *testing.T) {
 		GPU:           &GPU{Name: "RTX", VRAMGB: 24, Models: []Model{{Name: "m", TPS: 41, Loaded: true}}},
 		EarningsToday: &Earnings{Coins: 120},
 		Activity:      []Activity{{At: now, Text: "x"}},
+		FirstRun:      true,
 	}
 	b, err := json.Marshal(full)
 	if err != nil {

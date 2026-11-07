@@ -109,6 +109,8 @@ type State struct {
 	GPU           *GPU         `json:"gpu,omitempty"`
 	EarningsToday *Earnings    `json:"earnings_today,omitempty"`
 	Activity      []Activity   `json:"activity,omitempty"`
+	// FirstRun is true until the person has answered "What's this computer for?" or skipped it.
+	FirstRun bool `json:"first_run,omitempty"`
 }
 
 // Options are what the daemon gives the panel: its state, and the actions the window can ask for.
