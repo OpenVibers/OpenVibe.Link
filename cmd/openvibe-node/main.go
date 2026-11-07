@@ -90,6 +90,8 @@ Usage:
   openvibe-node skills sync --undo
                     write the skills and rules you chose at openvibe.codes/skills
                     into each tool's own folders, inside one marked block
+  openvibe-node exchange serve --model <id> [--public-url URL]
+                    serve a local model as an OpenVibe.Exchange seller offer
   openvibe-node stream --probe --whip-url URL [--seconds N] [--size WxH] [--json]
                     publish a QR of the millisecond clock for the headless latency viewer (the ticket comes from
                     OPENVIBE_STREAM_TICKET, never argv)
@@ -157,6 +159,9 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 	if cmd == "skills" {
 		// The sync has its own flags, so it parses its own arguments.
 		return cmdSkills(rest, stdin, stdout, stderr)
+	}
+	if cmd == "exchange" { // its own flags: serve, and the seller offer's
+		return cmdExchange(rest, stdout, stderr)
 	}
 	if cmd == "desk-sandbox" { // its own flags, up to "--": a browser's flags after it are never the Node's
 		return cmdDeskSandbox(rest, stderr)

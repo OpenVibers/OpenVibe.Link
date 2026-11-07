@@ -33,6 +33,14 @@ serves the share this computer was picked for at `https://<name>--<you>.openvibe
 `openvibe-node share --key ovc_… --port 8790` with a key), and `openvibe-node share add` keeps it up with the service;
 `openvibe-node status` lists each share ([docs/connect.md](docs/connect.md)).
 
+**Sell a local model** on [OpenVibe.Exchange](https://openvibe.exchange):
+`openvibe-node exchange serve --model qwen3:32b --public-url https://gpu.example.com/v1`. It serves the model from the
+local OpenAI-compatible server (Ollama by default at `127.0.0.1:11434`), registers the public https address through the
+Exchange's endpoint-seller flow with your `OPENVIBE_DEVELOPER_KEY`, and removes the offer when you stop it with Ctrl-C.
+The public URL must be reachable by the Exchange and is judged by its egress guard; keep it behind your own tunnel or
+reverse proxy. The local listener has no buyer authentication (the Exchange's endpoint flow sends no buyer identity), so
+bind it to loopback, which is the default.
+
 ```sh
 openvibe-node            # guided first run: pair, check the link, report this machine's first job
 openvibe-node status     # link, plugins, video, battery, shares, stop latch
@@ -45,6 +53,7 @@ openvibe-node memory scan  # what your coding tools remember: read-only, local, 
 openvibe-node memory upload  # send what they remember to your own memory store, after you say yes
 openvibe-node memory sync  # write your profile and rules back into the tools, one marked block per file, opt-in per tool
 openvibe-node skills sync  # write the skills and rules you chose at openvibe.codes/skills into each tool, with a dry run and undo
+openvibe-node exchange serve --model qwen3:32b --public-url https://gpu.example.com/v1  # sell a local model
 ```
 
 ## What is in here
