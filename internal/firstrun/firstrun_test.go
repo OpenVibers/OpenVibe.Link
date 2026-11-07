@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -75,6 +76,42 @@ func TestEventsCarryOnlyTheStepAndMachineCounts(t *testing.T) {
 		if secret != "" && strings.Contains(string(b), secret) {
 			t.Fatalf("%q in events: %s", secret, b)
 		}
+	}
+}
+
+func TestUsesEventCarriesOnlyTheAnswer(t *testing.T) {
+	e := UsesEvent([]string{"browser", "codes", "browser", "nope"}, "v9", "linux", "amd64")
+	if e.Name != EventName || e.Fields["step"] != UsesStep || e.Fields["version"] != "v9" || e.Fields["os"] != "linux" || e.Fields["arch"] != "amd64" {
+		t.Fatalf("event %+v", e)
+	}
+	// Known uses, once each, in the window's order.
+	if got := e.Fields["uses"]; !reflect.DeepEqual(got, []string{"codes", "browser"}) {
+		t.Fatalf("uses %v", got)
+	}
+	// Nothing a person owns goes into the event.
+	b, _ := json.Marshal(e)
+	host, _ := os.Hostname()
+	for _, secret := range []string{host, os.Getenv("USER"), os.Getenv("HOME"), "/home/", "/tmp/"} {
+		if secret != "" && strings.Contains(string(b), secret) {
+			t.Fatalf("%q in the answer event: %s", secret, b)
+		}
+	}
+}
+
+func TestValidAndCleanUses(t *testing.T) {
+	for _, use := range Uses {
+		if !ValidUse(use) {
+			t.Fatalf("%q is not accepted", use)
+		}
+	}
+	if ValidUse("nope") {
+		t.Fatal("an unknown use was accepted")
+	}
+	if got := CleanUses([]string{"vibe", "models"}); !reflect.DeepEqual(got, []string{"models", "vibe"}) {
+		t.Fatalf("clean %v", got)
+	}
+	if got := CleanUses([]string{"nope"}); len(got) != 0 {
+		t.Fatalf("clean of an unknown use: %v", got)
 	}
 }
 

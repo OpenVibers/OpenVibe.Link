@@ -137,11 +137,13 @@ type Node struct {
 	inputEnded time.Time
 	trayToldAt time.Time // when the computer plugin was last told the tray shows its approvals
 
-	// panel is Link's own window (nil until Run started it). panelOff are the capability switches turned off in it,
-	// kept in state/panel.json; activity is what "What happened here" lists, newest first.
-	panel    *panel.Server
-	panelOff map[string]bool
-	activity []panel.Activity
+	// panel is Link's own window (nil until Run started it). panelOff are the capability switches turned off in it and
+	// panelFirst is its first-run answer, both kept in state/panel.json; activity is what "What happened here" lists,
+	// newest first.
+	panel      *panel.Server
+	panelOff   map[string]bool
+	panelFirst *panelFirstRun
+	activity   []panel.Activity
 	// shares keeps OpenVibe Connect shares up and lets the window add or end one.
 	shares *shareSet
 }
@@ -183,9 +185,10 @@ func New(opt Options) (*Node, error) {
 	if err != nil {
 		opt.Log.Error("latch", "err", err)
 	}
+	panelOff, panelFirst := loadPanel(opt.Paths.StateDir, opt.Creds != nil)
 	n := &Node{opt: opt, log: opt.Log, latch: latch, dedup: safety.NewDedup(4096, 10*time.Minute),
 		jobs: newJobs(nil), telemetry: map[string]map[string]any{}, telemMS: 500, approvals: map[string]Approval{}, inputs: map[string]bool{},
-		panelOff: loadPanelOff(opt.Paths.StateDir)}
+		panelOff: panelOff, panelFirst: panelFirst}
 	n.limits = safety.Merge(protocol.Limits{}, opt.Config.Limits.MaxSpeed, opt.Config.Limits.MaxTurn, opt.Config.Limits.MaxCommandMS)
 
 	var specs []plugins.Spec

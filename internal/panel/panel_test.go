@@ -2,6 +2,7 @@ package panel
 
 import (
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"net"
 	"net/http"
@@ -235,6 +236,60 @@ func TestStopCapabilityAndSharesReachTheDaemon(t *testing.T) {
 	}
 	if unshared != 3000 {
 		t.Fatalf("unshared %d", unshared)
+	}
+}
+
+func TestFirstRunIsRecordedAfterTokenAndUseChecks(t *testing.T) {
+	var calls int
+	var gotUses []string
+	var gotSkip bool
+	srv := testServer(t, Options{FirstRun: func(uses []string, skip bool) error {
+		calls++
+		gotUses, gotSkip = uses, skip
+		return nil
+	}})
+
+	// Every write has the same rules: the token, and this server's own origin when one is sent.
+	if w := do(t, srv, http.MethodPost, "/panel/api/first-run", "", srv.Origin(), `{"uses":["browser"]}`); w.Code != http.StatusForbidden {
+		t.Fatalf("no token: %d", w.Code)
+	}
+	if w := do(t, srv, http.MethodPost, "/panel/api/first-run", testToken, "https://evil.example", `{"uses":["browser"]}`); w.Code != http.StatusForbidden {
+		t.Fatalf("wrong origin: %d", w.Code)
+	}
+	// An unknown use is a typo, not something to record.
+	if w := do(t, srv, http.MethodPost, "/panel/api/first-run", testToken, srv.Origin(), `{"uses":["nope"]}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("unknown use: %d %s", w.Code, w.Body)
+	}
+	if calls != 0 {
+		t.Fatalf("the daemon was called %d times before a valid answer", calls)
+	}
+
+	w := do(t, srv, http.MethodPost, "/panel/api/first-run", testToken, srv.Origin(), `{"uses":["codes","browser"]}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("answer: %d %s", w.Code, w.Body)
+	}
+	var body map[string]bool
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || body["first_run"] != false {
+		t.Fatalf("answer body: %s", w.Body)
+	}
+	if !reflect.DeepEqual(gotUses, []string{"codes", "browser"}) || gotSkip {
+		t.Fatalf("daemon got uses %v skip %v", gotUses, gotSkip)
+	}
+
+	if w := do(t, srv, http.MethodPost, "/panel/api/first-run", testToken, srv.Origin(), `{"uses":[],"skip":true}`); w.Code != http.StatusOK || !gotSkip {
+		t.Fatalf("skip: %d %s (skip %v)", w.Code, w.Body, gotSkip)
+	}
+}
+
+func TestFirstRunWithoutAWayToRecordItSaysSo(t *testing.T) {
+	bare := testServer(t, Options{})
+	if w := do(t, bare, http.MethodPost, "/panel/api/first-run", testToken, "", `{"uses":["vibe"]}`); w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("no callback: %d", w.Code)
+	}
+	refuse := testServer(t, Options{FirstRun: func([]string, bool) error { return errors.New("the answer could not be saved") }})
+	w := do(t, refuse, http.MethodPost, "/panel/api/first-run", testToken, "", `{"uses":["vibe"]}`)
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "could not be saved") {
+		t.Fatalf("refused: %d %s", w.Code, w.Body)
 	}
 }
 

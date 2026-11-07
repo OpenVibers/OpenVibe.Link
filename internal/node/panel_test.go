@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -132,6 +133,135 @@ func TestPanelStateComesFromTheNode(t *testing.T) {
 		if strings.Contains(string(b), absent) {
 			t.Fatalf("%s was invented: %s", absent, b)
 		}
+	}
+}
+
+func TestFirstRunIsShownThenCleared(t *testing.T) {
+	dir, err := os.MkdirTemp("", "ovp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	paths := config.HomePaths(dir)
+	n := panelTestNode(t, paths)
+	if !n.panelState().FirstRun {
+		t.Fatal("a new Node does not ask what the computer is for")
+	}
+	if err := n.applyFirstRun([]string{"vibe"}, false); err != nil {
+		t.Fatal(err)
+	}
+	if n.panelState().FirstRun {
+		t.Fatal("the question is still shown after the answer")
+	}
+	// The answer is kept, so a restart does not ask again.
+	if n2 := panelTestNode(t, paths); n2.panelState().FirstRun {
+		t.Fatal("the question is shown again after a restart")
+	}
+}
+
+func TestFirstRunTurnsOnOnlyWhatEachUseSays(t *testing.T) {
+	dir, err := os.MkdirTemp("", "ovp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	paths := config.HomePaths(dir)
+	n := panelTestNode(t, paths)
+	// The uses must turn browser and models on, and must never turn Terminal or Desktop on.
+	for _, id := range []string{"browser", "ai", "terminal", "desk"} {
+		if err := n.setCapability(id, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := n.applyFirstRun([]string{"codes", "browser", "models", "earn", "vibe"}, false); err != nil {
+		t.Fatal(err)
+	}
+	if n.capabilityOff(protocol.KindBrowser) {
+		t.Fatal("browser was not turned on")
+	}
+	if n.capabilityOff(protocol.KindAI) {
+		t.Fatal("models were not turned on")
+	}
+	// Codes and earn record the wish only; Terminal and Desktop stay exactly as the gate allows (off).
+	if !n.capabilityOff(protocol.KindExec) {
+		t.Fatal("the answer turned Terminal on")
+	}
+	if !n.capabilityOff(protocol.KindDesk) {
+		t.Fatal("the answer turned Desktop on")
+	}
+	n.mu.Lock()
+	uses := append([]string(nil), n.panelFirst.Uses...)
+	off := map[string]bool{}
+	for id, v := range n.panelOff {
+		off[id] = v
+	}
+	n.mu.Unlock()
+	if !reflect.DeepEqual(uses, []string{"codes", "browser", "models", "earn", "vibe"}) {
+		t.Fatalf("recorded uses %v", uses)
+	}
+	for _, id := range []string{"files", "screen", "input"} {
+		if off[id] {
+			t.Fatalf("the answer turned %s off", id)
+		}
+	}
+	// Everything above survives a restart.
+	n2 := panelTestNode(t, paths)
+	if n2.panelState().FirstRun {
+		t.Fatal("the question came back after a restart")
+	}
+	if !n2.capabilityOff(protocol.KindExec) || !n2.capabilityOff(protocol.KindDesk) {
+		t.Fatal("Terminal or Desktop was turned on after a restart")
+	}
+	if n2.capabilityOff(protocol.KindBrowser) || n2.capabilityOff(protocol.KindAI) {
+		t.Fatal("the browser or models setting was lost after a restart")
+	}
+}
+
+func TestFirstRunSkipOnlyStopsAsking(t *testing.T) {
+	dir, err := os.MkdirTemp("", "ovp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	n := panelTestNode(t, config.HomePaths(dir))
+	if err := n.setCapability("browser", false); err != nil {
+		t.Fatal(err)
+	}
+	// A skip wins over any uses in the same answer.
+	if err := n.applyFirstRun([]string{"browser"}, true); err != nil {
+		t.Fatal(err)
+	}
+	if n.panelState().FirstRun {
+		t.Fatal("a skip did not stop the question")
+	}
+	if !n.capabilityOff(protocol.KindBrowser) {
+		t.Fatal("a skip turned the browser on")
+	}
+	n.mu.Lock()
+	uses := n.panelFirst.Uses
+	n.mu.Unlock()
+	if len(uses) != 0 {
+		t.Fatalf("a skip recorded uses: %v", uses)
+	}
+}
+
+func TestFirstRunIsNotAskedOnAMachineSetUpBeforeIt(t *testing.T) {
+	dir := t.TempDir()
+	// A panel.json written before the question existed: the switches saved, no first_run. With a pairing, that is a
+	// machine already in use, so it is not asked.
+	if err := savePanel(dir, map[string]bool{"terminal": true}, nil); err != nil {
+		t.Fatal(err)
+	}
+	off, first := loadPanel(dir, true)
+	if first == nil || !first.Answered {
+		t.Fatal("a paired machine with its switches already saved is asked")
+	}
+	if !off["terminal"] {
+		t.Fatal("the saved switches were lost")
+	}
+	// Without a pairing it is a new machine: it is asked.
+	if _, first := loadPanel(dir, false); first != nil {
+		t.Fatal("an unpaired machine is not asked")
 	}
 }
 

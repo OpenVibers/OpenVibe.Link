@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OpenVibers/OpenVibe.Node/internal/firstrun"
 	"github.com/OpenVibers/OpenVibe.Node/internal/panel"
 	"github.com/OpenVibers/OpenVibe.Node/internal/plugins"
 	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
@@ -53,31 +54,49 @@ var capabilityForKind = map[string]string{
 	protocol.KindAI:           "ai",
 }
 
-// panelFile is where the switches the person turned off are kept, so a restart keeps them.
+// panelFile is where the switches the person turned off and the first-run answer are kept, so a restart keeps them.
 const panelFile = "panel.json"
+
+// panelFirstRun is the answer to "What's this computer for?": answered once the person answered or skipped it, and the
+// uses they picked. It is kept beside the capability switches so a restart does not ask again.
+type panelFirstRun struct {
+	Answered bool     `json:"answered"`
+	Uses     []string `json:"uses,omitempty"`
+}
 
 type panelSaved struct {
 	Off []string `json:"off"`
+	// FirstRun is absent in a file written before the question existed.
+	FirstRun *panelFirstRun `json:"first_run,omitempty"`
 }
 
-func loadPanelOff(dir string) map[string]bool {
+// loadPanel reads the switches turned off and the first-run answer. A file written before the question existed, on a
+// machine that is paired, is a Node that was set up before this change (paired, its capabilities already saved): it
+// is not asked. A machine that never answered and has no such file is asked once.
+func loadPanel(dir string, paired bool) (map[string]bool, *panelFirstRun) {
 	off := map[string]bool{}
 	b, err := os.ReadFile(filepath.Join(dir, panelFile))
 	if err != nil {
-		return off
+		return off, nil
 	}
 	var s panelSaved
 	if json.Unmarshal(b, &s) != nil {
-		return off
+		return off, nil
 	}
 	for _, id := range s.Off {
 		off[id] = true
 	}
-	return off
+	if s.FirstRun != nil {
+		return off, s.FirstRun
+	}
+	if paired {
+		return off, &panelFirstRun{Answered: true}
+	}
+	return off, nil
 }
 
-func savePanelOff(dir string, off map[string]bool) error {
-	s := panelSaved{Off: []string{}}
+func savePanel(dir string, off map[string]bool, first *panelFirstRun) error {
+	s := panelSaved{Off: []string{}, FirstRun: first}
 	for id := range off {
 		s.Off = append(s.Off, id)
 	}
@@ -107,6 +126,7 @@ func (n *Node) startPanel(ctx context.Context) {
 		SetCapability: n.setCapability,
 		Share:         n.shareAdd,
 		Unshare:       n.shareRemove,
+		FirstRun:      n.applyFirstRun,
 		Log:           n.log,
 	})
 	if err != nil {
@@ -156,6 +176,7 @@ func (n *Node) panelState() panel.State {
 	}
 	n.mu.Lock()
 	out.Activity = append([]panel.Activity(nil), n.activity...)
+	out.FirstRun = n.panelFirst == nil || !n.panelFirst.Answered
 	n.mu.Unlock()
 	return out
 }
@@ -260,7 +281,7 @@ func (n *Node) setCapability(id string, on bool) error {
 	} else {
 		next[id] = true
 	}
-	err := savePanelOff(n.opt.Paths.StateDir, next)
+	err := savePanel(n.opt.Paths.StateDir, next, n.panelFirst)
 	if err == nil {
 		n.panelOff = next
 	}
@@ -272,6 +293,67 @@ func (n *Node) setCapability(id string, on bool) error {
 		n.addActivity("Turned " + id + " back on")
 	} else {
 		n.addActivity("Turned " + id + " off")
+	}
+	return nil
+}
+
+// applyFirstRun records the answer to "What's this computer for?" and turns on what each use says: a browser for the
+// agents, or the AI plugin. Codes has no module switch on the Node yet and earn only records the wish (Exchange
+// confirms it); Terminal and Desktop are never turned on here, as they stay gated on the 11-05 review. A skip only
+// stops the question. One node.first_run event carries the answer.
+func (n *Node) applyFirstRun(uses []string, skip bool) error {
+	if skip {
+		uses = nil
+	} else {
+		uses = firstrun.CleanUses(uses)
+	}
+	for _, use := range uses {
+		switch use {
+		case "browser":
+			if err := n.setCapability("browser", true); err != nil {
+				n.log.Warn("first run: the browser stays off", "err", err)
+			}
+		case "models":
+			if err := n.setCapability("ai", true); err != nil {
+				n.log.Warn("first run: models stay off", "err", err)
+			}
+		case "codes":
+			// Recorded only: the Node has no Codes module to switch on, and Terminal stays as the gate allows.
+		case "earn":
+			// Recorded only: Exchange confirms it, and nothing on this machine turns on here.
+		}
+	}
+
+	n.mu.Lock()
+	first := &panelFirstRun{Answered: true, Uses: uses}
+	off := make(map[string]bool, len(n.panelOff))
+	for id, v := range n.panelOff {
+		off[id] = v
+	}
+	err := savePanel(n.opt.Paths.StateDir, off, first)
+	if err == nil {
+		n.panelFirst = first
+	}
+	n.mu.Unlock()
+	if err != nil {
+		return err
+	}
+
+	switch {
+	case skip:
+		n.addActivity("Skipped the first-run question")
+	case len(uses) > 0:
+		n.addActivity("Told Link what this computer is for: " + strings.Join(uses, ", "))
+	default:
+		n.addActivity("Answered the first-run question: nothing to turn on")
+	}
+
+	if !skip && n.reporting() {
+		e := firstrun.UsesEvent(uses, n.opt.Version, runtime.GOOS, runtime.GOARCH)
+		n.mu.Lock()
+		n.events = append(n.events, e)
+		n.mu.Unlock()
+		n.flushTelemetry(true)
 	}
 	return nil
 }

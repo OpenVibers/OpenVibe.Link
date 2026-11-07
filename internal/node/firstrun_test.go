@@ -4,6 +4,7 @@ package node
 
 import (
 	"encoding/json"
+	"runtime"
 	"testing"
 	"time"
 
@@ -31,6 +32,41 @@ func TestFirstRunEventsGoOnTheExistingLink(t *testing.T) {
 	}
 	if f.Msg.(protocol.Telemetry).Events[0].Fields["version"] != "test" {
 		t.Fatalf("%+v", f.Msg)
+	}
+}
+
+// The window's answer goes to Bot as one node.first_run event with the uses, on the link the Node already has.
+func TestFirstRunAnswerIsOneEventWithTheUses(t *testing.T) {
+	e := start(t)
+	if !e.node.panelState().FirstRun {
+		t.Fatal("a fresh machine is not asked what it is for")
+	}
+	if err := e.node.applyFirstRun([]string{"codes", "earn"}, false); err != nil {
+		t.Fatal(err)
+	}
+	var got protocol.Event
+	_, err := e.conn.Expect(protocol.TypeTelemetry, 3*time.Second, func(m protocol.Message) bool {
+		tel, ok := m.(protocol.Telemetry)
+		if !ok {
+			return false
+		}
+		for _, ev := range tel.Events {
+			if ev.Name == firstrun.EventName && ev.Fields["step"] == firstrun.UsesStep {
+				got = ev
+				return true
+			}
+		}
+		return false
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	uses, _ := json.Marshal(got.Fields["uses"])
+	if string(uses) != `["codes","earn"]` || got.Fields["version"] != "test" || got.Fields["os"] != runtime.GOOS {
+		t.Fatalf("answer event %+v", got)
+	}
+	if e.node.panelState().FirstRun {
+		t.Fatal("the question is still shown after the answer")
 	}
 }
 
