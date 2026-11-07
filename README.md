@@ -106,6 +106,12 @@ everything, stop one thing, turn a capability off, share a port, or send files (
 only on loopback, with a per-run token in the address fragment that every API call must send; see
 [docs/panel.md](docs/panel.md) for the security rules.
 
+**Link on your phone (Android, v0):** the same pairing and connection as the desktop Node, in an app: your agents'
+approvals in your pocket (money, passwords, deletions and a send to a new recipient ask for a fingerprint first), the
+Dock's activity read-only, and **Send to OpenVibe** from any app's share sheet to your Download drive. It pairs from
+openvibe.bot/link/phone and shows up as a device of kind `phone`. No phone automation at all in this version: no
+AccessibilityService, no screen capture. Build, install and the security notes: [docs/android.md](docs/android.md).
+
 Docs: [protocol](docs/protocol.md) (the wire format with OpenVibe.Bot), [plugins](docs/plugins.md) (the driver
 protocol, the bundled drivers, and where Actor's computer-control plugin attaches), [install](docs/install.md),
 [panel](docs/panel.md) (Link's own window and its security rules),

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Debug only: the screenshot job starts one screen with sample data. Never in a release APK. -->
+    <application>
+        <activity
+            android:name=".PreviewActivity"
+            android:exported="true"
+            android:theme="@style/Theme.OpenVibe" />
+    </application>
+</manifest>

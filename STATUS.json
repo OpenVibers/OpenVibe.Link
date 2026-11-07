@@ -24,7 +24,8 @@
     "one-command install on a Raspberry Pi or other Linux robot (I2C, SPI, camera tools, kit detection)",
     "system service on systemd, launchd and Windows (or a Windows sign-in start)",
     "ESP32 library (OpenVibeNode): pairing, control link, drive and actuator commands, telemetry, heartbeat, deadman and e-stop",
-    "`openvibe-node exchange serve --model <id>`: serve a local Ollama/llama.cpp/vLLM model through an OpenAI-compatible listener and register it on OpenVibe.Exchange's endpoint-seller API with the person's OPENVIBE_DEVELOPER_KEY, then remove the offer on Ctrl-C"
+    "`openvibe-node exchange serve --model <id>`: serve a local Ollama/llama.cpp/vLLM model through an OpenAI-compatible listener and register it on OpenVibe.Exchange's endpoint-seller API with the person's OPENVIBE_DEVELOPER_KEY, then remove the offer on Ctrl-C",
+    "Link for Android (v0, android/): the same Go pairing and connection bound with gomobile, a Kotlin + Jetpack Compose app (Pair, Approvals with a fingerprint for money, passwords, deletions and new recipients, Activity, This phone), Stay connected as an opt-in foreground service, and Send to OpenVibe on the share sheet; no phone automation"
   ],
   "notYet": [
     "code signing and notarization for Windows and macOS (the release has SHA256SUMS only)",

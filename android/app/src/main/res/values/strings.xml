@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OpenVibe Link</string>
+    <string name="share_label">Send to OpenVibe</string>
+    <string name="channel_stay_connected">Stay connected</string>
+    <string name="channel_downloads">Send to OpenVibe</string>
+</resources>
