@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -109,8 +110,12 @@ func TestStateRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(path)
-	if err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("state mode = %v err = %v", info.Mode().Perm(), err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		// Windows has no Unix permission bits; the file is created in the owner's config directory.
+		t.Fatalf("state mode = %v", info.Mode().Perm())
 	}
 	back, err := LoadState(path)
 	if err != nil {
