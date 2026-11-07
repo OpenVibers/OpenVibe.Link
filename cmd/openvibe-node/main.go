@@ -84,6 +84,8 @@ Usage:
   openvibe-node memory scan [--tools a,b] [--project DIR …] [--json]
                     read the memory files of the coding tools on this machine
                     (read-only, local, secrets removed)
+  openvibe-node exchange serve --model <id> [--public-url URL]
+                    serve a local model as an OpenVibe.Exchange seller offer
   openvibe-node stream --probe --whip-url URL [--seconds N] [--size WxH] [--json]
                     publish a QR of the millisecond clock for the headless latency viewer (the ticket comes from
                     OPENVIBE_STREAM_TICKET, never argv)
@@ -147,6 +149,9 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 	if cmd == "memory" {
 		// The memory scan has its own flags, so it parses its own arguments.
 		return cmdMemory(rest, stdin, stdout, stderr)
+	}
+	if cmd == "exchange" { // its own flags: serve, and the seller offer's
+		return cmdExchange(rest, stdout, stderr)
 	}
 	if cmd == "desk-sandbox" { // its own flags, up to "--": a browser's flags after it are never the Node's
 		return cmdDeskSandbox(rest, stderr)
