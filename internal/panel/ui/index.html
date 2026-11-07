@@ -18,6 +18,20 @@
     <button class="lk-pause" type="button" data-lk-pause aria-pressed="false"><span class="lk-pause-ic" aria-hidden="true"></span><span data-lk-pause-label>Pause everything</span></button>
   </header>
 
+  <!-- The first run (domains plan §13.1): one question, several answers, each turning on only what it says. -->
+  <section class="lk-first" data-lk-first hidden aria-labelledby="lk-first-h">
+    <h2 id="lk-first-h">What’s this computer for?</h2>
+    <p class="lk-first-lede">Pick any. Each turns on only what it says, everything stays private to you, and you can change it below at any time.</p>
+    <form class="lk-uses" data-lk-first-form>
+      <label class="lk-use"><input type="checkbox" name="use" value="codes"><span><b>Code with agents</b><small>Codes runs your Claude Code, Codex and the rest here, with your own logins.</small></span></label>
+      <label class="lk-use"><input type="checkbox" name="use" value="browser"><span><b>Let my AI use this computer</b><small>A browser your agents can drive, after you approve each task.</small></span></label>
+      <label class="lk-use"><input type="checkbox" name="use" value="models"><span><b>Run AI models for me</b><small>Models on this computer that you reach from your other devices.</small></span></label>
+      <label class="lk-use"><input type="checkbox" name="use" value="earn"><span><b>Earn with my spare power</b><small>OpenVibe Exchange uses it only while it is idle. Off until you confirm it there.</small></span></label>
+      <label class="lk-use"><input type="checkbox" name="use" value="vibe"><span><b>Just Vibe</b><small>Chat with your agents and answer their questions from here.</small></span></label>
+      <p class="lk-first-acts"><button type="submit" class="lk-btn is-primary">Done</button><button type="button" class="lk-btn" data-lk-first-skip>Not now</button></p>
+    </form>
+  </section>
+
   <p class="lk-down" data-lk-down hidden>Link is not running on this computer. Start it from your apps, or run <code>openvibe-node</code>.</p>
 
   <div class="lk-cols">

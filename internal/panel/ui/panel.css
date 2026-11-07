@@ -117,3 +117,20 @@ button, input { font: inherit; color: inherit; }
   .lk-cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); align-items: start; }
 }
 @media (prefers-reduced-motion: reduce) { .lk-ring-fill, .lk-switch i, .lk-switch i::after { transition: none; } }
+
+/* The first run: one question across the window, answers as cards you tick. */
+.lk-first { padding: 18px; border-radius: 20px; border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line)); background: radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 60%), var(--surface); }
+.lk-first h2 { margin: 0; font-size: 20px; font-weight: 850; letter-spacing: -.01em; text-transform: none; color: var(--text); }
+.lk-first-lede { margin: 4px 0 14px; color: var(--text-2); }
+.lk-uses { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 0; }
+@media (max-width: 900px) { .lk-uses { grid-template-columns: minmax(0, 1fr); } }
+.lk-use { position: relative; display: block; cursor: pointer; }
+.lk-use input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.lk-use span { display: grid; align-content: start; gap: 2px; height: 100%; padding: 12px 14px 12px 40px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface-2); transition: border-color .15s, background .15s; }
+.lk-use span::before { content: ""; position: absolute; left: 14px; top: 14px; width: 16px; height: 16px; border-radius: 5px; border: 2px solid var(--muted); box-sizing: border-box; }
+.lk-use b { font-size: 14.5px; }
+.lk-use small { color: var(--muted); font-size: 12.5px; line-height: 1.4; }
+.lk-use:has(input:checked) span { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface-2)); }
+.lk-use:has(input:checked) span::before { border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 2px var(--surface-2); }
+.lk-use:has(input:focus-visible) span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.lk-first-acts { grid-column: 1 / -1; display: flex; gap: 8px; margin: 6px 0 0; }

@@ -21,6 +21,7 @@ fragment: `/panel/#t=<token>`. The page sends that token as `X-Link-Panel` on ev
 | `POST /panel/api/shares` | `{ "port": 3000 }` | Shares a local port through Connect, behind the person's sign-in. |
 | `DELETE /panel/api/shares/:port` | — | Ends that share. |
 | `POST /panel/api/files` | multipart `file`… | Sends the files to the person's other devices. |
+| `POST /panel/api/first-run` | `{ "uses": ["codes", "browser"], "skip": false }` | The first-run answer. Uses are `codes`, `browser`, `models`, `earn` and `vibe`. The daemon turns on what each says (`earn` stays off until it is confirmed on Exchange) and stops asking; `skip: true` only stops asking. |
 
 ## `GET /panel/api/state`
 
@@ -41,6 +42,7 @@ Every key is optional. A section with nothing in it is left out; the window neve
 
 - `running[].kind` is `agent`, `desk`, `share` or `model`.
 - `machine.needs_you` counts what waits for the person: it puts a dot on the ring.
+- `first_run: true` shows the "What's this computer for?" question at the top, until it is answered or skipped.
 - The ring shows:
   - green when online;
   - blue and filling while things run;

@@ -1,4 +1,5 @@
 {
+  "first_run": true,
   "machine": { "name": "Workshop desktop", "os": "linux", "online": true, "paused": false, "needs_you": 1 },
   "running": [
     { "id": "r_1", "kind": "agent", "title": "Vibe is comparing three hosting plans", "detail": "Browser", "started_at": "2026-11-07T10:02:00Z" },
