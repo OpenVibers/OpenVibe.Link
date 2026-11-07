@@ -37,6 +37,8 @@ var ErrNotImplemented = errors.New("not implemented in this version of Link")
 
 // Machine is what the window's header shows.
 type Machine struct {
+	// ID is the machine's own id (known after pairing), so "New task on this computer" can preselect it.
+	ID       string `json:"id,omitempty"`
 	Name     string `json:"name"`
 	OS       string `json:"os,omitempty"`
 	Online   bool   `json:"online"`
@@ -168,7 +170,10 @@ type Options struct {
 	// FirstRun records the answer to "What's this computer for?" and turns on what each use says. A skip only stops
 	// the question.
 	FirstRun func(uses []string, skip bool) error
-	Log      *slog.Logger
+	// CodesStop stops the local Codes task with this id the way Codes' own stop does. It returns an error when the
+	// task is not running on this computer.
+	CodesStop func(id string) error
+	Log       *slog.Logger
 }
 
 // Server is one running panel server.
@@ -307,6 +312,21 @@ func (s *Server) api() http.Handler {
 				return
 			}
 			if err := s.opt.Stop(id); err != nil {
+				writeJSON(w, http.StatusConflict, errBody(err.Error()))
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]string{"stopped": id})
+		case strings.HasPrefix(path, "codes/tasks/") && strings.HasSuffix(path, "/stop") && r.Method == http.MethodPost:
+			id := strings.TrimSuffix(strings.TrimPrefix(path, "codes/tasks/"), "/stop")
+			if id == "" || strings.Contains(id, "/") {
+				http.NotFound(w, r)
+				return
+			}
+			if s.opt.CodesStop == nil {
+				writeJSON(w, http.StatusServiceUnavailable, errBody("the panel cannot stop this task"))
+				return
+			}
+			if err := s.opt.CodesStop(id); err != nil {
 				writeJSON(w, http.StatusConflict, errBody(err.Error()))
 				return
 			}

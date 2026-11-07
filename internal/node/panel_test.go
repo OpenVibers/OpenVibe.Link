@@ -15,12 +15,14 @@ import (
 	"github.com/OpenVibers/OpenVibe.Node/internal/config"
 	"github.com/OpenVibers/OpenVibe.Node/internal/connect"
 	"github.com/OpenVibers/OpenVibe.Node/internal/localctl"
+	"github.com/OpenVibers/OpenVibe.Node/internal/panel"
 	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
 )
 
 func panelTestNode(t *testing.T, paths config.Paths) *Node {
 	t.Helper()
-	n, err := New(Options{Config: &config.Config{}, Paths: paths, Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	n, err := New(Options{Config: &config.Config{}, Paths: paths, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		CodesAgents: func() []panel.CodesAgent { return nil }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,6 +109,15 @@ func TestCapabilitySwitchIsARealRestriction(t *testing.T) {
 	}
 }
 
+func TestMachineIDIsThePairedDevice(t *testing.T) {
+	if got := machineID(Status{DeviceID: "dev_1", Principal: "nod_1"}); got != "dev_1" {
+		t.Fatalf("device id: %q", got)
+	}
+	if got := machineID(Status{Principal: "nod_1"}); got != "nod_1" {
+		t.Fatalf("principal: %q", got)
+	}
+}
+
 func TestPanelStateComesFromTheNode(t *testing.T) {
 	dir, err := os.MkdirTemp("", "ovp")
 	if err != nil {
@@ -114,12 +125,18 @@ func TestPanelStateComesFromTheNode(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 	n := panelTestNode(t, config.HomePaths(dir))
+	n.codesAgents.fn = func() []panel.CodesAgent {
+		return []panel.CodesAgent{{ID: "codex", Name: "Codex", State: "signin", Hint: "codex login"}}
+	}
 	if err := n.panelPause(true); err != nil {
 		t.Fatal(err)
 	}
 	st := n.panelState()
 	if st.Machine == nil || st.Machine.Name == "" || !st.Machine.Paused {
 		t.Fatalf("machine: %+v", st.Machine)
+	}
+	if st.Codes == nil || len(st.Codes.Agents) != 1 || st.Codes.Agents[0].Hint != "codex login" {
+		t.Fatalf("codes: %+v", st.Codes)
 	}
 	if len(st.Activity) == 0 || !strings.Contains(st.Activity[0].Text, "stopped") {
 		t.Fatalf("activity: %+v", st.Activity)

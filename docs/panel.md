@@ -31,9 +31,10 @@ A restart makes a new port and a new token: an old link stops working.
 
 | Call | What it does | Today |
 |---|---|---|
-| `GET /panel/api/state` | Everything the page shows | Machine, running (waiting approvals, jobs, connected shares, desks), capabilities, shares, activity |
+| `GET /panel/api/state` | Everything the page shows | Machine (with its paired id), running (waiting approvals, jobs, connected shares, desks), capabilities, shares, Codes (the agent CLIs here and the worker's tasks today), activity |
 | `POST /panel/api/pause` `{ "paused": true }` | The local kill switch, the same latch as `openvibe-node stop` / the tray | Real |
 | `POST /panel/api/running/:id/stop` | Stops one running thing | Waiting approvals (deny), jobs (cancel), shares (end) |
+| `POST /panel/api/codes/tasks/:id/stop` | Stops a local Codes task | Real: cancels the Run job in the worker, the same way Codes' own stop does; `409` when it is not running here |
 | `POST /panel/api/capabilities/:id` `{ "on": false }` | Turns a capability off here | Real; persisted in `<state>/panel.json` |
 | `POST /panel/api/shares` `{ "port": 3000 }` | Shares a port through Connect | Real for a share Connect already picked for this computer |
 | `DELETE /panel/api/shares/:port` | Ends that share | Real |
@@ -43,6 +44,12 @@ A restart makes a new port and a new token: an old link stops working.
 `state` omits what the Node cannot fill truthfully: `devices` (the paired account's machine list is not read here),
 `gpu` (no GPU detection), and `earnings_today`. `activity` is the Node's own record of what it saw (an approval
 waiting or answered, a pause, a share, a capability), newest first, at most 30.
+
+`codes` is the desktop's Codes module: `agents` are the coding CLIs on this machine, read the way OpenVibe.Codes reads
+them (installed on PATH, signed in by the CLI's own login file, the version the binary reports); `tasks` are the jobs
+the Codes worker ran here today, kept in `<state>/codes-tasks.json` so an ended task still shows after a restart. A
+folder under the home directory is written as `~/…`, and a task's link is only ever
+`https://openvibe.codes/tasks/<id>`.
 
 ## Capabilities
 

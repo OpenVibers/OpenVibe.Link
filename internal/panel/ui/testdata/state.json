@@ -1,6 +1,7 @@
 {
   "first_run": true,
   "machine": {
+    "id": "dev_01M6Q1Z8V4T7R2N5K3B9C6D0EF",
     "name": "Workshop desktop",
     "os": "linux",
     "online": true,
@@ -123,6 +124,12 @@
         "id": "gemini",
         "name": "Gemini CLI",
         "state": "missing"
+      },
+      {
+        "id": "dsh",
+        "name": "DeepSeek Harness",
+        "state": "ready",
+        "version": "0.2.1"
       }
     ],
     "tasks": [

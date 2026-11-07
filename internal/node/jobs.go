@@ -94,8 +94,13 @@ func (n *Node) job(r protocol.JobRequest) {
 		n.log.Info("job accepted", "id", r.Job.ID, "class", r.Job.Class)
 	}
 	n.send(answer)
-	if accepted && n.worker != nil {
-		n.worker.Launch(r.Job.ID)
+	if accepted {
+		if n.codes != nil {
+			n.codes.accepted(r.Job)
+		}
+		if n.worker != nil {
+			n.worker.Launch(r.Job.ID)
+		}
 	}
 }
 
@@ -103,6 +108,12 @@ func (n *Node) job(r protocol.JobRequest) {
 func (n *Node) sendJobFrame(m protocol.Message) {
 	if e, ok := m.(protocol.JobExit); ok {
 		n.jobs.ended(e)
+		if n.codes != nil {
+			n.codes.ended(e)
+		}
+	}
+	if s, ok := m.(protocol.JobStarted); ok && n.codes != nil {
+		n.codes.started(s.ID, s.StartedMS)
 	}
 	n.send(m)
 }
