@@ -29,8 +29,9 @@ a key the Android Keystore holds, and nothing on the phone is backed up.
 
 ## The four screens
 
-- **Pair**: the code field and the scanner. A QR encodes `openvibe-link://pair?code=…&network=…`, which opens the app
-  with the code filled in even from the phone's camera app.
+- **Pair**: the code field and the scanner. A QR encodes `openvibe-link://pair?code=…&pairing=…`, which opens the app
+  with the code filled in even from the phone's camera app. The app talks only to **https://openvibe.network** (a build
+  constant, never a field): a QR or link that names another server is refused and says which.
 - **Approvals**: Actor's pending approvals for you. Approve or decline. **Money, passwords, deletions and a send to a
   new recipient ask for a fingerprint, a face or the device credential first** (BIOMETRIC_STRONG, with the device
   credential behind it on Android 11+), and the answer is only sent after it succeeds.
@@ -39,7 +40,17 @@ a key the Android Keystore holds, and nothing on the phone is backed up.
   always see and stop), sign-in, and **Unpair**.
 
 Approvals and Activity need your OpenVibe account as well as the pairing: tap **Sign in to OpenVibe**. That is a public
-OAuth client (`link`) with PKCE S256 and no secret in the APK; the tokens are encrypted with the same Keystore key.
+OAuth client (`link`) with PKCE S256 and no secret in the APK. The sign-in returns to
+`https://openvibe.network/link/auth`, an **Android App Link** claimed for this package (Network publishes
+`/.well-known/assetlinks.json` with the release certificate's SHA-256), so no other app can answer the redirect; the
+chooser always shows what the app does, and its token is your own session with your non-staff role.
+
+Until the owner's release key exists (`LINK_ANDROID_CERT_SHA256` on Network), Android verifies no app for that link and
+the client gets Network's read-only Dock token instead of a session: the app still pairs, and signing in is what waits
+for the key. A debug build returns on `openvibe-link://auth` and always gets the Dock token.
+
+The tokens and the pairing are AES-GCM-sealed with a key the Android Keystore makes and never exports, nothing is
+logged, and the app's data is excluded from Android backups.
 
 ### The screens
 
@@ -59,7 +70,8 @@ that draws one screen with sample data without an account — what these picture
 
 ## Send to OpenVibe
 
-Share a file or a photo from any app and pick **Send to OpenVibe**. It goes to your **Download** drive
+Share a file or a photo from any app and pick **Send to OpenVibe**. The sheet asks first — **Send** starts the upload,
+**Cancel** sends nothing. It goes to your **Download** drive
 (openvibe.download) through the drive's own upload (the same three steps the web page makes: start, parts, complete),
 with progress in a notification. Nothing is re-encoded. A shared text becomes a small `.txt` named after its first
 line.
@@ -67,7 +79,9 @@ line.
 ## Build it
 
 The app is in `android/`; it shares the Node's Go core through `gomobile bind`, so pairing, token refresh and
-reconnects are the same code the desktop Node runs.
+reconnects are the same code the desktop Node runs. A debug build may be pointed at another server with
+`./gradlew :app:assembleDebug -Pnetwork.url=https://staging.example`; that build shows a **Debug server** banner on every
+screen, and a release build always carries the official one.
 
 ```sh
 # 1. Generate the design system from the pinned openvibe-shared release (never hand-edit these files).

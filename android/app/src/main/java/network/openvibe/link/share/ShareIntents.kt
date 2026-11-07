@@ -13,6 +13,13 @@ data class ShareRequest(
 ) {
     val isMultiple: Boolean get() = uris.size > 1
     val hasFiles: Boolean get() = uris.isNotEmpty()
+
+    /** The question the sheet asks before anything leaves the phone. */
+    val question: String get() = when {
+        isMultiple -> "Send these ${uris.size} files to your Download?"
+        hasFiles -> "Send this to your Download?"
+        else -> "Send this text to your Download?"
+    }
 }
 
 object ShareIntents {

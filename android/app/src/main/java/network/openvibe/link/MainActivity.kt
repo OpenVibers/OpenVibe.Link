@@ -3,12 +3,14 @@ package network.openvibe.link
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
+import network.openvibe.link.data.Api
 import network.openvibe.link.data.LinkController
 import network.openvibe.link.data.PairLinks
 import network.openvibe.link.data.Store
@@ -18,7 +20,8 @@ import network.openvibe.link.ui.LinkTheme
 
 /**
  * The app's one activity. It answers the pairing link (`openvibe-link://pair?code=…`) and the sign-in's return
- * (`openvibe-link://auth?code=…`); both arrive as intents, and the Compose tree reads them through [Incoming].
+ * (`https://openvibe.network/link/auth?code=…`, the claimed App Link); both arrive as intents, and the Compose tree
+ * reads them through [Incoming]. A pair link naming another server is refused here, before anything pairs.
  */
 class MainActivity : FragmentActivity() {
     private val askNotifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -50,12 +53,13 @@ class MainActivity : FragmentActivity() {
 
     private fun read(intent: Intent?) {
         val data = intent?.data ?: return
-        when (data.host) {
-            PairLinks.PAIR_HOST -> {
-                val link = PairLinks.parse(data.toString())
-                Incoming.pairCode = link?.code ?: data.getQueryParameter("code")
-            }
-            PairLinks.AUTH_HOST -> Incoming.authUri = data.toString()
+        if (data.host == PairLinks.PAIR_HOST) {
+            val link = PairLinks.parse(data.toString())
+            Incoming.pairRefused = link?.refusedServer
+            Incoming.pairCode = if (link?.refusedServer != null) null else link?.code ?: data.getQueryParameter("code")
+            return
         }
+        val ours = data.scheme == "https" && data.host == Uri.parse(Api.NETWORK).host && data.path == PairLinks.AUTH_PATH
+        if (ours) Incoming.authUri = data.toString()
     }
 }

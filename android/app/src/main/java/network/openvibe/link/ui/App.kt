@@ -2,9 +2,11 @@ package network.openvibe.link.ui
 
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -21,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import network.openvibe.link.data.Servers
 import network.openvibe.link.data.Session
 import network.openvibe.link.data.Store
 
@@ -48,10 +51,26 @@ fun LinkApp() {
         Messages.text = null
     }
 
-    if (Store.paired == null) {
-        PairScreen(initialCode = Incoming.pairCode)
-    } else {
-        MainScreen()
+    Column(Modifier.fillMaxSize()) {
+        // A debug build pointed at another server says so on every screen: nothing here is production.
+        if (Servers.isDebugOverride) {
+            Text(
+                "Debug server · ${Servers.host}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.tertiaryContainer)
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+            )
+        }
+        Box(Modifier.weight(1f)) {
+            if (Store.paired == null) {
+                PairScreen(initialCode = Incoming.pairCode)
+            } else {
+                MainScreen()
+            }
+        }
     }
 }
 

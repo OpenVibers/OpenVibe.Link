@@ -4,47 +4,62 @@ import java.net.URLDecoder
 import java.net.URLEncoder
 
 /**
- * The two links the app answers: `openvibe-link://pair?code=…` (the QR on openvibe.bot/link/phone) and
- * `openvibe-link://auth?code=…&state=…` (the sign-in's return). Parsed here, away from Android, so the shapes have
- * tests.
+ * The two links the app answers: `openvibe-link://pair?code=…` (the QR on openvibe.bot/link/phone) and the sign-in's
+ * return, an https App Link for `https://openvibe.network/link/auth` (MainActivity). Parsed here, away from Android,
+ * so the shapes have tests.
+ *
+ * The pair link names no server, and if it names one it must be this build's (Servers.network): a link that points
+ * elsewhere is refused, never followed, because the phone would otherwise send its pairing to whoever wrote the link.
  */
-data class PairLink(val code: String?, val network: String?, val pairing: String? = null)
+data class PairLink(
+    val code: String?,
+    val network: String?,
+    val pairing: String? = null,
+    /** The server a refused link named (its host when it parses, the raw value otherwise); null when the link is ours. */
+    val refusedServer: String? = null,
+)
 
 object PairLinks {
     const val PAIR_SCHEME = "openvibe-link"
     const val PAIR_HOST = "pair"
-    const val AUTH_HOST = "auth"
-    const val DEFAULT_NETWORK = "https://openvibe.network"
+    const val AUTH_PATH = "/link/auth"
 
-    fun parse(uri: String?): PairLink? {
+    fun parse(uri: String?, accepted: String = Servers.network): PairLink? {
         if (uri.isNullOrBlank()) return null
         val trimmed = uri.trim()
         val prefix = "$PAIR_SCHEME://$PAIR_HOST"
         if (!trimmed.startsWith(prefix, ignoreCase = true)) return null
-        val query = trimmed.substringAfter('?', missingDelimiterValue = "")
-        val params = queryParams(query)
+        val params = queryParams(trimmed.substringAfter('?', missingDelimiterValue = ""))
+        return link(params, accepted)
+    }
+
+    /** A scanned QR: our link, the code itself, or a page whose `code` query carries it. */
+    fun codeFromScan(contents: String?, accepted: String = Servers.network): PairLink? {
+        val text = contents?.trim().orEmpty()
+        if (text.isEmpty()) return null
+        parse(text, accepted)?.let { if (it.code != null || it.refusedServer != null) return it }
+        val params = queryParams(text.substringAfter('?', missingDelimiterValue = ""))
+        if (params["code"]?.isNotBlank() == true) return link(params, accepted)
+        val bare = text.replace("-", "").replace(" ", "")
+        return if (bare.length == 8 && bare.all { it.isLetterOrDigit() }) PairLink(text, accepted) else null
+    }
+
+    /** The link's code, pairing id and server — refused whole when the server is someone else's. */
+    private fun link(params: Map<String, String>, accepted: String): PairLink {
+        val named = params["network"]?.takeIf { it.isNotBlank() }
+        if (named != null && !Servers.same(named, accepted)) {
+            return PairLink(code = null, network = accepted, refusedServer = Servers.normalize(named)?.let { hostOf(it) } ?: named)
+        }
         return PairLink(
             code = params["code"]?.takeIf { it.isNotBlank() },
-            network = params["network"]?.takeIf { it.startsWith("https://") } ?: DEFAULT_NETWORK,
+            network = accepted,
             pairing = params["pairing"]?.takeIf { it.startsWith("pair_") },
         )
     }
 
-    /** A scanned QR: our link, or the code itself, or a page whose `code` query carries it. */
-    fun codeFromScan(contents: String?): PairLink? {
-        val text = contents?.trim().orEmpty()
-        if (text.isEmpty()) return null
-        parse(text)?.let { if (it.code != null) return it }
-        val params = queryParams(text.substringAfter('?', missingDelimiterValue = ""))
-        params["code"]?.takeIf { it.isNotBlank() }?.let { code ->
-            return PairLink(
-                code,
-                params["network"]?.takeIf { it.startsWith("https://") } ?: DEFAULT_NETWORK,
-                params["pairing"]?.takeIf { it.startsWith("pair_") },
-            )
-        }
-        val bare = text.replace("-", "").replace(" ", "")
-        return if (bare.length == 8 && bare.all { it.isLetterOrDigit() }) PairLink(text, DEFAULT_NETWORK) else null
+    private fun hostOf(url: String): String {
+        val rest = url.substringAfter("://", missingDelimiterValue = "")
+        return rest.substringBefore('/').substringBefore(':').ifBlank { url }
     }
 
     private fun queryParams(query: String): Map<String, String> {

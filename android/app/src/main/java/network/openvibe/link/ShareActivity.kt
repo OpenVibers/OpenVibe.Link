@@ -5,16 +5,20 @@ import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import network.openvibe.link.data.Session
 import network.openvibe.link.data.Store
 import network.openvibe.link.service.ShareUploadService
+import network.openvibe.link.share.ConfirmShare
 import network.openvibe.link.share.ShareIntents
+import network.openvibe.link.share.ShareRequest
 import network.openvibe.link.share.ShareUploader
+import network.openvibe.link.ui.LinkTheme
 
 /**
- * "Send to OpenVibe" from any app's share sheet. Files go to the person's Download drive through the drive's own
- * upload (the same one the web page uses), with progress in a notification; the screen closes at once, so the source
- * app comes back and the upload carries on in the background.
+ * "Send to OpenVibe" from any app's share sheet. Nothing is sent on the intent alone: the sheet asks first, and only
+ * "Send" starts the upload (the drive's own, the same one the web page uses) in a foreground service, with progress
+ * in a notification. Cancel closes the sheet and the source app comes back with the file untouched.
  */
 class ShareActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,6 +58,18 @@ class ShareActivity : ComponentActivity() {
             return
         }
 
+        setContent {
+            LinkTheme {
+                ConfirmShare(
+                    request = request,
+                    onSend = { send(request); finish() },
+                    onCancel = { finish() },
+                )
+            }
+        }
+    }
+
+    private fun send(request: ShareRequest) {
         val files = request.uris.toMutableList()
         val names = mutableListOf<String>()
         if (files.isEmpty() && request.text != null) {
@@ -63,6 +79,5 @@ class ShareActivity : ComponentActivity() {
         }
         ShareUploadService.start(this, files, names, request.mimeType)
         Toast.makeText(this, if (files.size > 1) "Sending ${files.size} files…" else "Sending to OpenVibe…", Toast.LENGTH_SHORT).show()
-        finish()
     }
 }

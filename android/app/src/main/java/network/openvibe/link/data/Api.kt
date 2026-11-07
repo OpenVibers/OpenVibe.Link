@@ -50,7 +50,8 @@ class ApiException(message: String) : Exception(message)
  * subject comes from the token, so this app can never read or answer another person's work.
  */
 object Api {
-    const val NETWORK = "https://openvibe.network"
+    /** The server this build signs in and pairs with (Servers): a deep link never chooses it. */
+    val NETWORK: String get() = Servers.network
     const val BOT = "https://openvibe.bot"
     const val DOWNLOAD = "https://openvibe.download"
 

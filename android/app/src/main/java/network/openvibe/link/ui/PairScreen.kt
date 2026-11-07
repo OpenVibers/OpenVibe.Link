@@ -44,7 +44,6 @@ fun PairScreen(initialCode: String?) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var code by rememberSaveable { mutableStateOf(initialCode.orEmpty()) }
-    var network by rememberSaveable { mutableStateOf(PairLinks.DEFAULT_NETWORK) }
     var pairing by rememberSaveable { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -52,13 +51,22 @@ fun PairScreen(initialCode: String?) {
     LaunchedEffect(initialCode) {
         if (!initialCode.isNullOrBlank()) code = initialCode
     }
+    // A link that named another server was refused before it got here (MainActivity, PairLinks): say which, plainly.
+    LaunchedEffect(Incoming.pairRefused) {
+        val refused = Incoming.pairRefused ?: return@LaunchedEffect
+        error = "That link points at $refused, not OpenVibe Network. Only a code from openvibe.bot/link/phone pairs this phone."
+        Incoming.pairRefused = null
+    }
 
     val scanner = rememberLauncherForActivityResult(ScanContract()) { result ->
         val link = PairLinks.codeFromScan(result.contents)
         when {
+            link?.refusedServer != null -> {
+                error = "That QR points at ${link.refusedServer}, not OpenVibe Network."
+                Messages.show("That QR points at ${link.refusedServer}, not OpenVibe Network.")
+            }
             link?.code != null -> {
                 code = link.code
-                link.network?.let { network = it }
                 pairing = link.pairing
             }
             result.contents != null -> Messages.show("That QR is not an OpenVibe pairing link.")
@@ -86,14 +94,6 @@ fun PairScreen(initialCode: String?) {
             modifier = Modifier.fillMaxWidth(),
         )
 
-        OutlinedTextField(
-            value = network,
-            onValueChange = { network = it },
-            label = { Text("OpenVibe.Network") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-        )
-
         error?.let {
             Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 12.dp))
         }
@@ -107,7 +107,7 @@ fun PairScreen(initialCode: String?) {
                     try {
                         val name = "Link · ${Build.MODEL ?: "phone"}"
                         val creds = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                            mobile.Mobile.pair(network.trim(), Api.BOT, code, name, pairing ?: "")
+                            mobile.Mobile.pair(Api.NETWORK, Api.BOT, code, name, pairing ?: "")
                         }
                         Store.savePairing(creds, name)
                         Messages.show("This phone is linked.")

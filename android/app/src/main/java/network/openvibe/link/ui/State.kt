@@ -12,6 +12,8 @@ import network.openvibe.link.data.Store
 /** Intents the activity received, for the Compose tree to read (a deep link can arrive while it is already drawn). */
 object Incoming {
     var pairCode: String? by mutableStateOf(null)
+    /** The server a refused pair link named, so the pair screen can say it instead of pairing with it. */
+    var pairRefused: String? by mutableStateOf(null)
     var authUri: String? by mutableStateOf(null)
 }
 

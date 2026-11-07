@@ -37,12 +37,16 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="openvibe-link" android:host="pair" />
             </intent-filter>
-            <!-- The sign-in returns here; the code is exchanged over PKCE and never carries a secret. -->
-            <intent-filter>
+            <!-- The sign-in returns here: an https App Link, claimed for this package by
+                 https://openvibe.network/.well-known/assetlinks.json (server/auth/app-links.js in OpenVibe.Network),
+                 so no other app can answer the redirect. A custom scheme could be registered by any app, so there is
+                 none for sign-in: openvibe-link:// carries pair codes only. The code is exchanged over PKCE and
+                 never carries a secret. -->
+            <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="openvibe-link" android:host="auth" />
+                <data android:scheme="https" android:host="openvibe.network" android:pathPrefix="/link/auth" />
             </intent-filter>
         </activity>
 

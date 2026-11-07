@@ -18,6 +18,12 @@ if (!coreAar.asFile.exists()) {
 val signingProps = rootProject.file("keystore.properties").takeIf { it.exists() }
     ?.let { Properties().apply { it.inputStream().use(::load) } }
 
+// The server a build talks to. A release build always carries https://openvibe.network; a debug build may be pointed
+// elsewhere (`-Pnetwork.url=https://staging.example`) and then says so in a banner on every screen. A QR or a link that
+// names another server is refused, never followed (data/Servers.kt, data/PairLinks.kt).
+val officialServer = "https://openvibe.network"
+val networkUrl = (project.findProperty("network.url") as String?)?.trimEnd('/') ?: officialServer
+
 android {
     namespace = "network.openvibe.link"
     compileSdk = 35
@@ -43,7 +49,13 @@ android {
     }
 
     buildTypes {
+        debug {
+            buildConfigField("String", "NETWORK_URL", "\"$networkUrl\"")
+            buildConfigField("boolean", "DEBUG_SERVER", "${networkUrl != officialServer}")
+        }
         release {
+            buildConfigField("String", "NETWORK_URL", "\"$officialServer\"")
+            buildConfigField("boolean", "DEBUG_SERVER", "false")
             isMinifyEnabled = false
             if (signingProps != null) signingConfig = signingConfigs.getByName("release")
         }
@@ -59,6 +71,7 @@ android {
     }
 
     buildFeatures {
+        buildConfig = true
         compose = true
     }
 

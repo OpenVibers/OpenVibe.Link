@@ -17,14 +17,15 @@ import java.util.concurrent.TimeUnit
  * Download drive. It is a public OAuth client (`link`): authorization code + PKCE S256, no secret in the APK, and the
  * tokens are encrypted with the Android Keystore (Store).
  *
- * The code comes back on `openvibe-link://auth`, which only this app answers. The verifier never leaves the phone
- * except in the exchange it belongs to, and no token is ever logged.
+ * The code comes back on `https://openvibe.network/link/auth`, an Android App Link claimed for this package by
+ * Network's /.well-known/assetlinks.json: a custom scheme could be answered by any app, this one only by us. The
+ * verifier never leaves the phone except in the exchange it belongs to, and no token is ever logged.
  */
 object Session {
     private const val CLIENT_ID = "link"
-    const val REDIRECT_URI = "openvibe-link://auth"
-    private const val AUTHORIZE = "https://openvibe.network/oauth/authorize"
-    private const val TOKEN = "https://openvibe.network/oauth/token"
+    const val REDIRECT_URI = "https://openvibe.network/link/auth"
+    private val AUTHORIZE: String get() = "${Api.NETWORK}/oauth/authorize"
+    private val TOKEN: String get() = "${Api.NETWORK}/oauth/token"
     private const val SCOPE = "profile theme"
 
     private val client = OkHttpClient.Builder()
