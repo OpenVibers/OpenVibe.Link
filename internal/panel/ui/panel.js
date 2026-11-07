@@ -29,6 +29,7 @@
         root.setAttribute('data-needs', m.needs_you ? '1' : '0');
         root.style.setProperty('--fill', String(Math.max(10, 100 - Math.min(running.length, 4) * 22)));
         $('[data-lk-down]').hidden = true;
+        $('[data-lk-first]').hidden = !s.first_run;
         $('[data-lk-name]').textContent = m.name || 'This computer';
         $('[data-lk-status]').textContent = m.paused ? 'Paused: nothing runs until you resume'
             : m.needs_you ? (m.needs_you === 1 ? 'Online · something needs you' : 'Online · ' + m.needs_you + ' things need you')
@@ -105,6 +106,13 @@
         return fetch('/panel/api/state', { credentials: 'same-origin', headers: { 'X-Link-Panel': token } })
             .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); }).then(draw).catch(down);
     }
+    // The first run: the uses ticked, or Not now; the daemon then turns on what each says and stops asking.
+    $('[data-lk-first-form]').addEventListener('submit', function (e) {
+        e.preventDefault();
+        var uses = Array.prototype.map.call(this.querySelectorAll('input[name=use]:checked'), function (i) { return i.value; });
+        send('first-run', 'POST', { uses: uses });
+    });
+    $('[data-lk-first-skip]').addEventListener('click', function () { send('first-run', 'POST', { uses: [], skip: true }); });
     $('[data-lk-pause]').addEventListener('click', function () { var on = this.getAttribute('aria-pressed') !== 'true'; send('pause', 'POST', { paused: on }); });
     $('[data-lk-share-form]').addEventListener('submit', function (e) {
         e.preventDefault(); var port = Number(this.port.value);
