@@ -1,0 +1,119 @@
+/* OpenVibe Link's window. OpenVibe Design's tokens, written out (this page has no network to fetch them from):
+   dark by default, light when the system is light. Narrow it is the tray's quick panel; from 720 px, two columns. */
+:root {
+  --bg: #0b0f1a; --surface: #121a2b; --surface-2: #0f1626; --line: #22304a; --text: #e8edf6; --text-2: #a9b6cb; --muted: #7d8ba3;
+  --accent: #4f7dff; --accent-2: #8fb0ff; --on-accent: #fff; --ok: #22c55e; --warn: #f59e0b; --bad: #ef4444;
+  --r: 14px; --shadow: 0 14px 36px rgba(0, 0, 0, .35);
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root { --bg: #f5f7fb; --surface: #ffffff; --surface-2: #eef2f8; --line: #d9e0ec; --text: #0f172a; --text-2: #3c4a63; --muted: #66748c;
+    --accent: #2f5bea; --accent-2: #2f5bea; --shadow: 0 10px 28px rgba(15, 23, 42, .12); color-scheme: light; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+a { color: var(--accent-2); }
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.lk-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+[hidden] { display: none !important; }
+
+.lk { max-width: 1040px; margin: 0 auto; padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left)); display: grid; gap: 14px; }
+
+/* The head: the ring says the state at a glance; Pause everything always wins. */
+.lk-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 14px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line); }
+.lk-ring { position: relative; width: 44px; height: 44px; }
+.lk-ring svg { width: 44px; height: 44px; transform: rotate(-90deg); }
+.lk-ring circle { fill: none; stroke-width: 4; }
+.lk-ring-bg { stroke: var(--line); }
+.lk-ring-fill { stroke: var(--ok); stroke-linecap: round; stroke-dasharray: 100.5; stroke-dashoffset: 0; transition: stroke-dashoffset .4s ease, stroke .2s; }
+.lk-ring-dot { position: absolute; right: 0; top: 0; width: 12px; height: 12px; border-radius: 50%; background: var(--warn); border: 2px solid var(--surface); display: none; }
+.lk[data-state="loading"] .lk-ring-fill, .lk[data-state="down"] .lk-ring-fill { stroke: var(--muted); stroke-dashoffset: 75; }
+.lk[data-state="running"] .lk-ring-fill { stroke: var(--accent); stroke-dashoffset: var(--fill, 50); }
+.lk[data-state="paused"] .lk-ring-fill { stroke: var(--muted); }
+.lk[data-state="paused"] .lk-ring::after { content: ""; position: absolute; left: 50%; top: 8px; bottom: 8px; width: 3px; margin-left: -1.5px; border-radius: 2px; background: var(--muted); transform: rotate(45deg); }
+.lk[data-needs="1"] .lk-ring-dot { display: block; }
+.lk-who { min-width: 0; }
+.lk-who h1 { margin: 0; font-size: 16px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lk-who p { margin: 1px 0 0; color: var(--text-2); font-size: 13px; }
+.lk-pause { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-2); cursor: pointer; font-weight: 700; }
+.lk-pause:hover { border-color: color-mix(in srgb, var(--bad) 55%, var(--line)); }
+.lk-pause-ic { width: 12px; height: 12px; border-left: 3px solid currentColor; border-right: 3px solid currentColor; }
+.lk-pause[aria-pressed="true"] { background: color-mix(in srgb, var(--bad) 16%, var(--surface-2)); border-color: color-mix(in srgb, var(--bad) 55%, var(--line)); }
+.lk-pause[aria-pressed="true"] .lk-pause-ic { width: 0; height: 0; border-left: 10px solid currentColor; border-right: 0; border-top: 6px solid transparent; border-bottom: 6px solid transparent; }
+.lk-down { margin: 0; padding: 12px 14px; border-radius: var(--r); background: color-mix(in srgb, var(--warn) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--line)); }
+
+.lk-cols { display: grid; gap: 14px; }
+.lk-col { display: grid; gap: 14px; align-content: start; min-width: 0; }
+.lk-sec { padding: 14px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line); min-width: 0; }
+.lk-sec h2 { margin: 0 0 10px; font-size: 12px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+.lk-sec h2 span { margin-left: 4px; color: var(--text-2); }
+.lk-none, .lk-fine { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; }
+.lk ul, .lk ol { list-style: none; margin: 0; padding: 0; }
+
+.lk-run { display: grid; gap: 6px; }
+.lk-run li { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 8px 8px 10px; border-radius: 12px; background: var(--surface-2); }
+.lk-kind { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; font-size: 15px; background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent-2); }
+.lk-kind[data-kind="desk"] { background: color-mix(in srgb, #a855f7 16%, transparent); color: #c084fc; }
+.lk-kind[data-kind="share"] { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.lk-kind[data-kind="model"] { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+.lk-shares b, .lk-devices b, .lk-models b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lk-run b { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.lk-run small, .lk-shares small, .lk-devices small, .lk-models small { color: var(--muted); font-size: 12px; }
+.lk-btn { min-height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); background: transparent; cursor: pointer; font-weight: 700; font-size: 13px; }
+.lk-btn:hover { background: color-mix(in srgb, var(--text) 7%, transparent); }
+.lk-btn.is-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.lk-btn.is-stop { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
+
+/* Capabilities: a switch each, and who may use it in one line. */
+.lk-caps { display: grid; gap: 2px; }
+.lk-cap { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 9px 4px; }
+.lk-cap + .lk-cap { border-top: 1px solid var(--line); }
+.lk-cap b { display: block; font-size: 14px; }
+.lk-cap small { color: var(--muted); font-size: 12px; }
+.lk-switch { position: relative; width: 44px; height: 26px; flex: none; }
+.lk-switch input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.lk-switch i { position: absolute; inset: 0; border-radius: 999px; background: var(--line); transition: background .2s; pointer-events: none; }
+.lk-switch i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); transition: transform .2s; }
+.lk-switch input:checked + i { background: var(--ok); }
+.lk-switch input:checked + i::after { transform: translateX(18px); }
+.lk-switch input:focus-visible + i { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.lk-share { display: flex; gap: 8px; }
+.lk-share input { flex: 1; min-width: 0; height: 40px; padding: 0 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-2); }
+.lk-shares { display: grid; gap: 6px; margin-top: 8px; }
+.lk-shares li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; background: var(--surface-2); }
+
+.lk-drop { display: grid; justify-items: center; gap: 4px; padding: 18px 12px; border-radius: 16px; border: 2px dashed var(--line); text-align: center; cursor: pointer; transition: border-color .2s, background .2s; }
+.lk-drop:hover, .lk-drop.is-over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.lk-drop-ic { width: 28px; height: 28px; border-radius: 9px; background: color-mix(in srgb, var(--accent) 18%, transparent); position: relative; }
+.lk-drop-ic::after { content: "↑"; position: absolute; inset: 0; display: grid; place-items: center; color: var(--accent-2); font-weight: 900; }
+.lk-drop small { color: var(--muted); }
+
+.lk-gpu-name { margin: 0 0 8px; font-weight: 700; }
+.lk-models { display: grid; gap: 6px; }
+.lk-models li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; background: var(--surface-2); }
+.lk-tps { font-variant-numeric: tabular-nums; font-weight: 800; }
+
+.lk-devices { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.lk-devices li { position: relative; display: grid; gap: 2px; padding: 10px 28px 10px 12px; border-radius: 12px; background: var(--surface-2); border: 1px solid transparent; }
+.lk-devices li.is-here { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+.lk-devices li::before { content: ""; position: absolute; top: 12px; right: 12px; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.lk-devices li.is-on::before { background: var(--ok); }
+
+.lk-activity { display: grid; gap: 0; }
+.lk-activity li { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 10px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.lk-activity li:first-child { border-top: 0; }
+.lk-activity time { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.lk-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 13px; }
+
+/* The tray's narrow popover: Pause takes its own row under the name. */
+@media (max-width: 460px) {
+  .lk-head { grid-template-columns: auto minmax(0, 1fr); }
+  .lk-pause { grid-column: 1 / -1; justify-content: center; }
+}
+@media (min-width: 720px) {
+  .lk-cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); align-items: start; }
+}
+@media (prefers-reduced-motion: reduce) { .lk-ring-fill, .lk-switch i, .lk-switch i::after { transition: none; } }
