@@ -21,6 +21,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/OpenVibers/OpenVibe.Node/internal/firstrun"
 )
 
 //go:embed ui/index.html ui/panel.css ui/panel.js
@@ -113,6 +115,13 @@ type State struct {
 	FirstRun bool `json:"first_run,omitempty"`
 }
 
+// FirstRunAnswer is the body of POST /panel/api/first-run: the uses the person picked, or a skip that only stops the
+// question.
+type FirstRunAnswer struct {
+	Uses []string `json:"uses"`
+	Skip bool     `json:"skip"`
+}
+
 // Options are what the daemon gives the panel: its state, and the actions the window can ask for.
 type Options struct {
 	// Token is the per-run secret the page sends as X-Link-Panel. Required.
@@ -128,7 +137,10 @@ type Options struct {
 	// Share shares a local port through Connect; Unshare ends that share.
 	Share   func(port int) (Share, error)
 	Unshare func(port int) error
-	Log     *slog.Logger
+	// FirstRun records the answer to "What's this computer for?" and turns on what each use says. A skip only stops
+	// the question.
+	FirstRun func(uses []string, skip bool) error
+	Log      *slog.Logger
 }
 
 // Server is one running panel server.
@@ -326,6 +338,29 @@ func (s *Server) api() http.Handler {
 				return
 			}
 			w.WriteHeader(http.StatusNoContent)
+		case path == "first-run" && r.Method == http.MethodPost:
+			var body FirstRunAnswer
+			if !decode(w, r, &body) {
+				writeJSON(w, http.StatusBadRequest, errBody("uses is a list of codes, browser, models, earn or vibe, and skip is true or false"))
+				return
+			}
+			if !body.Skip {
+				for _, use := range body.Uses {
+					if !firstrun.ValidUse(use) {
+						writeJSON(w, http.StatusBadRequest, errBody("no use "+strconv.Quote(use)+": uses are codes, browser, models, earn and vibe"))
+						return
+					}
+				}
+			}
+			if s.opt.FirstRun == nil {
+				writeJSON(w, http.StatusServiceUnavailable, errBody("the panel cannot record this answer"))
+				return
+			}
+			if err := s.opt.FirstRun(body.Uses, body.Skip); err != nil {
+				writeJSON(w, http.StatusConflict, errBody(err.Error()))
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]bool{"first_run": false})
 		case path == "files" && r.Method == http.MethodPost:
 			// Sending files between devices is not in the daemon yet; the window already says it could not send them.
 			writeJSON(w, http.StatusNotImplemented, errBody("sending files between devices is not available in this version of Link"))

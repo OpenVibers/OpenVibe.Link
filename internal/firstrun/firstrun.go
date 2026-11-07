@@ -34,6 +34,50 @@ const (
 // Steps is the order the guide runs them in.
 var Steps = []string{StepInstalled, StepPaired, StepCheck, StepFirstJob}
 
+// UsesStep is the node.first_run event that carries the window's answer to "What's this computer for?". It is not in
+// Steps: the funnel counts the guide's four steps, and this one carries what the person said.
+const UsesStep = "uses"
+
+// Uses are the answers the window offers, in its order.
+var Uses = []string{"codes", "browser", "models", "earn", "vibe"}
+
+// ValidUse reports whether u is one of the answers the window offers.
+func ValidUse(u string) bool {
+	for _, use := range Uses {
+		if use == u {
+			return true
+		}
+	}
+	return false
+}
+
+// CleanUses keeps the known answers, without repeats, in the window's order, so an event has a fixed shape.
+func CleanUses(in []string) []string {
+	have := make(map[string]bool, len(in))
+	for _, u := range in {
+		if ValidUse(u) {
+			have[u] = true
+		}
+	}
+	out := make([]string, 0, len(have))
+	for _, u := range Uses {
+		if have[u] {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+// UsesEvent is the one node.first_run event that carries the person's answer: the step, the uses, and the version, OS
+// and architecture every event carries. It never carries a path, a username, an address or a secret.
+func UsesEvent(uses []string, version, goos, goarch string) protocol.Event {
+	f := map[string]any{"step": UsesStep, "uses": CleanUses(uses), "version": version, "os": goos}
+	if goarch != "" {
+		f["arch"] = goarch
+	}
+	return protocol.Event{Name: EventName, TS: time.Now().UnixMilli(), Fields: f}
+}
+
 // Step is one reached step: when, whether the self-check passed, and what the first job found.
 type Step struct {
 	Name   string         `json:"name"`

@@ -37,6 +37,7 @@ A restart makes a new port and a new token: an old link stops working.
 | `POST /panel/api/capabilities/:id` `{ "on": false }` | Turns a capability off here | Real; persisted in `<state>/panel.json` |
 | `POST /panel/api/shares` `{ "port": 3000 }` | Shares a port through Connect | Real for a share Connect already picked for this computer |
 | `DELETE /panel/api/shares/:port` | Ends that share | Real |
+| `POST /panel/api/first-run` `{ "uses": ["codes", "browser"] }` | The first-run answer: records it in `<state>/panel.json`, turns on a browser (`browser`) or the AI plugin (`models`), and stops asking. `codes` and `earn` are recorded only (Codes has no module switch yet, and Exchange confirms earning); `vibe` turns nothing on; `skip: true` only stops asking | Real; never turns on Terminal or Desktop |
 | `POST /panel/api/files` | Sends files to your other devices | `501` with a reason: not in the daemon yet |
 
 `state` omits what the Node cannot fill truthfully: `devices` (the paired account's machine list is not read here),
