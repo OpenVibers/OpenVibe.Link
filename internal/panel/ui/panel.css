@@ -63,6 +63,30 @@ button, input { font: inherit; color: inherit; }
 .lk-btn { min-height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); background: transparent; cursor: pointer; font-weight: 700; font-size: 13px; }
 .lk-btn:hover { background: color-mix(in srgb, var(--text) 7%, transparent); }
 .lk-btn.is-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+/* Codes on this computer (the desktop app's Codes module, §13.1): which agent CLIs are here and ready, and the tasks. */
+.lk-agents { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.lk-agent { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); font-size: 13px; font-weight: 650; }
+.lk-agent::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+.lk-agent[data-state="ready"]::before { background: var(--ok); }
+.lk-agent[data-state="signin"]::before { background: var(--warn); }
+.lk-agent[data-state="missing"] { color: var(--muted); border-style: dashed; }
+.lk-agent small { color: var(--muted); font-weight: 500; }
+.lk-agent code { font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 3px 6px; border-radius: 6px; background: var(--surface-2); color: var(--text); }
+.lk-agent button { min-height: 24px; padding: 0 8px; border-radius: 999px; border: 0; background: color-mix(in srgb, var(--text) 9%, transparent); cursor: pointer; font-size: 12px; font-weight: 700; }
+.lk-tasks { display: grid; gap: 6px; }
+.lk-tasks li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 8px 8px 12px; border-radius: 12px; background: var(--surface-2); }
+.lk-tasks b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lk-tasks small { display: flex; flex-wrap: wrap; gap: 2px 8px; color: var(--muted); font-size: 12px; min-width: 0; }
+.lk-tasks code { font: 12px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.lk-task-acts { display: flex; gap: 6px; }
+.lk-state { font-weight: 700; }
+.lk-state[data-state="running"] { color: var(--accent-2); }
+.lk-state[data-state="waiting"] { color: var(--warn); }
+.lk-state[data-state="done"] { color: var(--ok); }
+.lk-state[data-state="failed"], .lk-state[data-state="stopped"] { color: var(--bad); }
+.lk-codes-acts { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; }
+a.lk-btn { display: inline-flex; align-items: center; text-decoration: none; color: inherit; }
+a.lk-btn.is-primary { color: var(--on-accent); }
 .lk-btn.is-stop { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
 
 /* Capabilities: a switch each, and who may use it in one line. */

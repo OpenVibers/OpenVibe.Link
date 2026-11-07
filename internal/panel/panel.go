@@ -101,6 +101,32 @@ type Activity struct {
 	Text string    `json:"text"`
 }
 
+// CodesAgent is one coding-agent CLI on this computer: ready, needs signing in (Hint is the command), or missing.
+type CodesAgent struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	State   string `json:"state"`
+	Version string `json:"version,omitempty"`
+	Hint    string `json:"hint,omitempty"`
+}
+
+// CodesTask is one Codes task that runs, or ran, on this computer.
+type CodesTask struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Folder    string    `json:"folder,omitempty"`
+	Agent     string    `json:"agent,omitempty"`
+	State     string    `json:"state"`
+	StartedAt time.Time `json:"started_at,omitempty"`
+	URL       string    `json:"url,omitempty"`
+}
+
+// Codes is what the window's Codes section reads.
+type Codes struct {
+	Agents []CodesAgent `json:"agents,omitempty"`
+	Tasks  []CodesTask  `json:"tasks,omitempty"`
+}
+
 // State is GET /panel/api/state. Every key is optional: a section with nothing in it is left out.
 type State struct {
 	Machine       *Machine     `json:"machine,omitempty"`
@@ -111,6 +137,8 @@ type State struct {
 	GPU           *GPU         `json:"gpu,omitempty"`
 	EarningsToday *Earnings    `json:"earnings_today,omitempty"`
 	Activity      []Activity   `json:"activity,omitempty"`
+	// Codes is the desktop app's Codes module (§13.1): the agent CLIs on this computer and the Codes tasks here.
+	Codes *Codes `json:"codes,omitempty"`
 	// FirstRun is true until the person has answered "What's this computer for?" or skipped it.
 	FirstRun bool `json:"first_run,omitempty"`
 }

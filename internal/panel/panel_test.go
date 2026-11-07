@@ -154,6 +154,7 @@ func TestStateShapeMatchesTheDesign(t *testing.T) {
 		EarningsToday: &Earnings{Coins: 120},
 		Activity:      []Activity{{At: now, Text: "x"}},
 		FirstRun:      true,
+		Codes:         &Codes{Agents: []CodesAgent{{ID: "claude-code", Name: "Claude Code", State: "ready"}}, Tasks: []CodesTask{{ID: "t", Title: "t", State: "running", StartedAt: now}}},
 	}
 	b, err := json.Marshal(full)
 	if err != nil {
