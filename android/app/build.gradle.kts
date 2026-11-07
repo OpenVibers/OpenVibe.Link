@@ -5,6 +5,8 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
+    // Screenshots of every screen from the sample data (src/test/.../ScreensSnapshotTest.kt).
+    id("app.cash.paparazzi")
 }
 
 // The Go core, bound by gomobile (android/scripts/build-core.sh) into android/app/libs/core.aar. It is built, never

@@ -1,5 +1,16 @@
 package network.openvibe.link.ui
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -38,33 +49,52 @@ fun PhoneScreen(previewInfo: JSONObject? = null, preview: Boolean = false) {
     val info = previewInfo ?: remember(Store.paired) { LinkController.info()?.let { runCatching { JSONObject(it) }.getOrNull() } }
     var confirmUnpair by remember { mutableStateOf(false) }
 
-    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp)) {
-        Text("This phone", style = MaterialTheme.typography.headlineSmall)
+    var showIds by remember { mutableStateOf(false) }
+    Column(
+        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Text("This phone", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
         Text(
-            "Paired as a phone on your OpenVibe account. It holds no camera and no screen capture: the only thing it does in the background is keep one connection open.",
+            "One of your devices. It has no camera or screen access: in the background it only keeps one connection open.",
             style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(top = 4.dp, bottom = 16.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                labelled("Device", info?.optString("device_id")?.takeIf { it.isNotEmpty() } ?: "Binding…")
-                labelled("Kind", info?.optString("kind") ?: "phone")
-                labelled("Account", Store.deviceLabel.ifBlank { "this phone" })
-                info?.optString("network")?.takeIf { it.isNotEmpty() }?.let { labelled("Network", it) }
+        LinkCard {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Box(
+                    Modifier.size(48.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f), RoundedCornerShape(14.dp)),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Outlined.PhoneAndroid, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
+                Column(Modifier.weight(1f)) {
+                    Text(Store.deviceLabel.ifBlank { "This phone" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        StatusDot(if (LinkController.state == "connected") Tone.Ok else if (LinkController.state == "revoked") Tone.Bad else Tone.Neutral)
+                        Text(statusLine(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            TextButton(onClick = { showIds = !showIds }, contentPadding = PaddingValues(0.dp)) {
+                Text(if (showIds) "Hide the details" else "Details: device and node ids")
+            }
+            if (showIds) {
+                LabelledRow("Device", info?.optString("device_id")?.takeIf { it.isNotEmpty() } ?: "Binding…")
+                LabelledRow("Kind", info?.optString("kind") ?: "phone")
+                info?.optString("network")?.takeIf { it.isNotEmpty() }?.let { LabelledRow("Network", it) }
                 val node = info?.optString("principal").orEmpty()
-                if (node.isNotEmpty()) labelled("Node", node)
+                if (node.isNotEmpty()) LabelledRow("Node", node)
             }
         }
 
-        HorizontalDivider(Modifier.padding(vertical = 16.dp))
-
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        LinkCard {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f)) {
-                Text("Stay connected", style = MaterialTheme.typography.titleMedium)
+                Text("Stay connected", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                 Text(
-                    "Keep the connection open in the background, with a notification you can always see. Off, the phone connects only while the app is open.",
+                    "Approvals arrive even when the app is closed, with a notification you can always see. Off, the phone connects only while the app is open.",
                     style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Switch(
@@ -75,13 +105,7 @@ fun PhoneScreen(previewInfo: JSONObject? = null, preview: Boolean = false) {
                 },
             )
         }
-        Text(
-            statusLine(),
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(top = 8.dp),
-        )
-
-        HorizontalDivider(Modifier.padding(vertical = 16.dp))
+        }
 
         if (Store.signedIn) {
             Text("Signed in to your OpenVibe account.", style = MaterialTheme.typography.bodyMedium)
@@ -100,9 +124,12 @@ fun PhoneScreen(previewInfo: JSONObject? = null, preview: Boolean = false) {
             ) { Text("Sign in to OpenVibe") }
         }
 
-        HorizontalDivider(Modifier.padding(vertical = 16.dp))
-
-        OutlinedButton(onClick = { confirmUnpair = true }, modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = { confirmUnpair = true },
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
+        ) {
             Text("Unpair this phone")
         }
         Text(
@@ -135,13 +162,6 @@ fun PhoneScreen(previewInfo: JSONObject? = null, preview: Boolean = false) {
     }
 }
 
-@Composable
-private fun labelled(label: String, value: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(label, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(0.35f))
-        Text(value, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(0.65f))
-    }
-}
 
 private fun statusLine(): String = when (LinkController.state) {
     "connected" -> "Connected to OpenVibe."

@@ -54,7 +54,20 @@ logged, and the app's data is excluded from Android backups.
 
 ### The screens
 
-Taken on the CI emulator (light theme; a dark phone uses Vibe's dark tokens), one per screen:
+Rendered from the Composables by Paparazzi (Pixel 5, dark; every screen is also recorded in light). The pictures come
+from `app/src/test/java/network/openvibe/link/ScreensSnapshotTest.kt` and the PreviewActivity's sample data:
+`gradle :app:recordPaparazziDebug` writes them to `app/src/test/snapshots/images/`, and `verifyPaparazziDebug` fails
+when a screen changes without a new recording.
+
+The look (Opus, 11-07) is OpenVibe's: Vibe's tokens from openvibe-shared's native export, with Material 3's container
+roles mapped to Vibe surfaces (`ui/Theme.kt`; Shared 4.140.0 does the same in the export), and a small kit in
+`ui/Kit.kt`:
+- a page with its title and one line;
+- cards on the raised surface with a hairline;
+- chips whose tone says how much a thing matters: money amber, deleting red, passwords violet, a new recipient blue;
+- still status dots;
+- still skeletons while the first answer loads (nothing spins);
+- empty states that say what will appear.
 
 | Pair | Approvals |
 |---|---|
@@ -64,8 +77,8 @@ Taken on the CI emulator (light theme; a dark phone uses Vibe's dark tokens), on
 |---|---|
 | ![Activity](screenshots/activity.png) | ![This phone](screenshots/phone.png) |
 
-These are the CI's own emulator job (`screenshots`), non-blocking beside the build. The app also has a debug-only
-`PreviewActivity` that draws one screen with sample data without an account:
+The CI's emulator job (`screenshots`) also takes the four on a real emulator, non-blocking beside the build. The app
+has a debug-only `PreviewActivity` that draws one screen with the same sample data without an account:
 `adb shell am start -n network.openvibe.link/.PreviewActivity --es screen approvals`.
 
 ## Send to OpenVibe

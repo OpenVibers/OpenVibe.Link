@@ -1,5 +1,18 @@
 package network.openvibe.link.ui
 
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.QrCodeScanner
+import androidx.compose.material3.Icon
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.font.FontWeight
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -77,12 +90,35 @@ fun PairScreen(initialCode: String?) {
     }
 
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
-        Text("Link this phone", style = MaterialTheme.typography.headlineSmall)
+        Text("Link this phone", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
         Text(
-            "Open openvibe.bot/link/phone on a computer signed in as you, then type the code it shows or scan its QR. " +
-                "This phone becomes one of your devices: approvals in your pocket, and Send to OpenVibe from any app.",
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(top = 12.dp, bottom = 20.dp),
+            "Your agents' approvals in your pocket, and Send to OpenVibe from any app.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 8.dp, bottom = 20.dp),
+        )
+        LinkCard {
+            PairStep(1, "On your computer, open openvibe.bot/link/phone, signed in as you.")
+            PairStep(2, "Scan the QR it shows, or type its code below.")
+        }
+        Button(
+            onClick = {
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                    launchScanner(scanner)
+                } else {
+                    askCamera.launch(Manifest.permission.CAMERA)
+                }
+            },
+            modifier = Modifier.fillMaxWidth().padding(top = 16.dp).heightIn(min = 52.dp),
+        ) {
+            Icon(Icons.Outlined.QrCodeScanner, contentDescription = null, modifier = Modifier.padding(end = 10.dp))
+            Text("Scan the QR", fontWeight = FontWeight.Bold)
+        }
+        Text(
+            "Or type the code",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 24.dp, bottom = 8.dp),
         )
 
         OutlinedTextField(
@@ -98,9 +134,9 @@ fun PairScreen(initialCode: String?) {
             Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 12.dp))
         }
 
-        Button(
+        FilledTonalButton(
             onClick = {
-                if (busy) return@Button
+                if (busy) return@FilledTonalButton
                 busy = true
                 error = null
                 scope.launch {
@@ -119,27 +155,14 @@ fun PairScreen(initialCode: String?) {
                 }
             },
             enabled = !busy && code.isNotBlank(),
-            modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp).heightIn(min = 48.dp),
         ) {
-            if (busy) {
-                CircularProgressIndicator(Modifier.padding(end = 12.dp), strokeWidth = 2.dp)
-            }
             Text(if (busy) "Pairing…" else "Pair this phone")
         }
 
-        OutlinedButton(
-            onClick = {
-                if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                    launchScanner(scanner)
-                } else {
-                    askCamera.launch(Manifest.permission.CAMERA)
-                }
-            },
-            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-        ) { Text("Scan the QR instead") }
 
         Text(
-            "The code works once and lasts 15 minutes. Nothing on this phone is backed up: the pairing is encrypted with a key this phone's Keystore holds.",
+            "A code works once and lasts 15 minutes. Nothing on this phone is backed up: the pairing is encrypted with a key this phone's Keystore holds.",
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(top = 24.dp),
         )
@@ -154,4 +177,16 @@ private fun launchScanner(scanner: androidx.activity.result.ActivityResultLaunch
             .setBeepEnabled(false)
             .setOrientationLocked(false),
     )
+}
+
+/** One numbered step of pairing. */
+@Composable
+private fun PairStep(n: Int, text: String) {
+    Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Box(
+            Modifier.size(26.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) { Text("$n", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge) }
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(top = 3.dp))
+    }
 }

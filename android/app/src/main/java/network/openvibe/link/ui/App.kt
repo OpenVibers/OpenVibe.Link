@@ -8,7 +8,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Login
+import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -77,15 +83,15 @@ fun LinkApp() {
 @Composable
 private fun MainScreen() {
     var tab by rememberSaveable { mutableIntStateOf(0) }
-    val tabs = listOf("Approvals", "Activity", "This phone")
+    val tabs = listOf("Approvals" to Icons.Outlined.TaskAlt, "Activity" to Icons.Outlined.History, "This phone" to Icons.Outlined.PhoneAndroid)
     Scaffold(
         bottomBar = {
-            NavigationBar {
-                tabs.forEachIndexed { index, label ->
+            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                tabs.forEachIndexed { index, (label, icon) ->
                     NavigationBarItem(
                         selected = tab == index,
                         onClick = { tab = index },
-                        icon = { Text(if (tab == index) "●" else "○") },
+                        icon = { Icon(icon, contentDescription = null) },
                         label = { Text(label) },
                     )
                 }
@@ -102,19 +108,23 @@ private fun MainScreen() {
     }
 }
 
-/** A session and a paired phone are both needed for the two read screens. */
+/** A session and a paired phone are both needed for the two read screens: one card, one button. */
 @Composable
 fun SignInCard(title: String = "Your OpenVibe account") {
     val context = LocalContext.current
-    Column(Modifier.padding(20.dp)) {
-        Text(title, style = MaterialTheme.typography.titleMedium)
-        Text(
-            "Sign in to see your approvals and activity. The phone keeps a token from OpenVibe.Network, encrypted with this phone's Keystore.",
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(top = 8.dp, bottom = 12.dp),
-        )
-        Button(onClick = {
-            if (!Session.signIn(context)) Messages.show("No browser answered. Install one and try again.")
-        }) { Text("Sign in to OpenVibe") }
+    LinkPage(title = title, lead = null) {
+        item {
+            LinkCard {
+                EmptyState(
+                    Icons.Outlined.Login,
+                    "Sign in to see what your agents need",
+                    "The phone keeps a token from OpenVibe.Network, sealed with a key only this phone's Keystore holds.",
+                )
+                Button(
+                    onClick = { if (!Session.signIn(context)) Messages.show("No browser answered. Install one and try again.") },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Sign in to OpenVibe") }
+            }
+        }
     }
 }
