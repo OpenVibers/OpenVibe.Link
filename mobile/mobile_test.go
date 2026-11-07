@@ -15,11 +15,17 @@ func fakeNetwork(t *testing.T, principal, credential, ref string) (*httptest.Ser
 		switch r.URL.Path {
 		case "/api/v1/node-pairing":
 			var body struct {
-				Code string `json:"code"`
-				Name string `json:"name"`
+				Code    string `json:"code"`
+				Pairing string `json:"pairing"`
+				Name    string `json:"name"`
 			}
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			codes = append(codes, body.Code)
+			if body.Pairing != "" && body.Pairing != "pair_01JD2C3D4E5F6G7H8J9K0MNPQR" {
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				_, _ = w.Write([]byte(`{"code":"registry.invalid_pairing_request","detail":"bad pairing id"}`))
+				return
+			}
 			if body.Code != "ABCD2345" {
 				w.WriteHeader(http.StatusForbidden)
 				_, _ = w.Write([]byte(`{"code":"registry.pairing_code_invalid","detail":"that is not the pairing code"}`))
@@ -54,7 +60,7 @@ func fakeBot(t *testing.T) *httptest.Server {
 func TestPairBindsThePhone(t *testing.T) {
 	net, codes := fakeNetwork(t, "nod_01234567890123456789012345", "node-secret", "phone:usr_01")
 	bot := fakeBot(t)
-	creds, err := Pair(net.URL, bot.URL, "abcd-2345", "Phone")
+	creds, err := Pair(net.URL, bot.URL, "abcd-2345", "Phone", "")
 	if err != nil {
 		t.Fatalf("Pair: %v", err)
 	}
@@ -79,14 +85,14 @@ func TestPairBindsThePhone(t *testing.T) {
 func TestPairRefusesAWrongCode(t *testing.T) {
 	net, _ := fakeNetwork(t, "nod_01234567890123456789012345", "node-secret", "phone:usr_01")
 	bot := fakeBot(t)
-	_, err := Pair(net.URL, bot.URL, "ZZZZ-9999", "Phone")
+	_, err := Pair(net.URL, bot.URL, "ZZZZ-9999", "Phone", "")
 	if err == nil || !strings.Contains(err.Error(), "pairing code") {
 		t.Fatalf("a wrong code gave %v", err)
 	}
 }
 
 func TestPairRejectsAMalformedCode(t *testing.T) {
-	if _, err := Pair("https://openvibe.network", "https://openvibe.bot", "nope", "Phone"); err == nil {
+	if _, err := Pair("https://openvibe.network", "https://openvibe.bot", "nope", "Phone", ""); err == nil {
 		t.Fatal("a malformed code was accepted")
 	}
 }
@@ -127,5 +133,16 @@ func TestNewLinkUsesTheBotSocket(t *testing.T) {
 	l.Stop() // Stop before Start is harmless.
 	if got := l.Status(); !strings.Contains(got, "connected") {
 		t.Fatalf("status = %s", got)
+	}
+}
+
+func TestPairCarriesThePairingIDFromTheQR(t *testing.T) {
+	net, _ := fakeNetwork(t, "nod_01234567890123456789012345", "node-secret", "phone:usr_01")
+	bot := fakeBot(t)
+	if _, err := Pair(net.URL, bot.URL, "abcd-2345", "Phone", "pair_01JD2C3D4E5F6G7H8J9K0MNPQR"); err != nil {
+		t.Fatalf("Pair with a pairing id: %v", err)
+	}
+	if _, err := Pair(net.URL, bot.URL, "abcd-2345", "Phone", "not-a-pairing"); err == nil {
+		t.Fatal("a malformed pairing id was accepted")
 	}
 }

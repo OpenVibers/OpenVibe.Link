@@ -45,6 +45,7 @@ fun PairScreen(initialCode: String?) {
     val scope = rememberCoroutineScope()
     var code by rememberSaveable { mutableStateOf(initialCode.orEmpty()) }
     var network by rememberSaveable { mutableStateOf(PairLinks.DEFAULT_NETWORK) }
+    var pairing by rememberSaveable { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -58,6 +59,7 @@ fun PairScreen(initialCode: String?) {
             link?.code != null -> {
                 code = link.code
                 link.network?.let { network = it }
+                pairing = link.pairing
             }
             result.contents != null -> Messages.show("That QR is not an OpenVibe pairing link.")
         }
@@ -104,10 +106,10 @@ fun PairScreen(initialCode: String?) {
                 scope.launch {
                     try {
                         val name = "Link · ${Build.MODEL ?: "phone"}"
-                        val pairing = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                            mobile.Mobile.pair(network.trim(), Api.BOT, code, name)
+                        val creds = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            mobile.Mobile.pair(network.trim(), Api.BOT, code, name, pairing ?: "")
                         }
-                        Store.savePairing(pairing, name)
+                        Store.savePairing(creds, name)
                         Messages.show("This phone is linked.")
                     } catch (e: Exception) {
                         error = e.message ?: "Pairing failed."

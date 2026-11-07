@@ -18,6 +18,13 @@ class PairLinksTest {
     }
 
     @Test
+    fun `the QR link carries the pairing id from the page`() {
+        val link = PairLinks.parse("openvibe-link://pair?code=ABCD-1234&pairing=pair_01JD2C3D4E5F6G7H8J9K0MNPQR&network=https%3A%2F%2Fopenvibe.network")!!
+        assertEquals("pair_01JD2C3D4E5F6G7H8J9K0MNPQR", link.pairing)
+        assertNull(PairLinks.parse("openvibe-link://pair?code=ABCD-1234&pairing=nonsense")!!.pairing)
+    }
+
+    @Test
     fun `a link with no network uses ours`() {
         assertEquals(PairLinks.DEFAULT_NETWORK, PairLinks.parse("openvibe-link://pair?code=ABCD-1234")!!.network)
     }

@@ -57,14 +57,19 @@ func NormalizeCode(code string) (string, error) {
 
 // Pair redeems a pairing code on OpenVibe.Network and binds the phone as a device on OpenVibe.Bot. It returns the
 // credential bundle as JSON. A bind that fails is not fatal: Start binds again, exactly as the Node does.
-func Pair(networkURL, botURL, code, name string) (string, error) {
+func Pair(networkURL, botURL, code, name, pairingID string) (string, error) {
 	code, err := link.NormalizeCode(code)
 	if err != nil {
 		return "", err
 	}
+	// The QR on openvibe.bot/link/phone carries the pair_… id, so a wrong code is counted against that pairing's code,
+	// exactly as `openvibe-node pair --network … --pairing … --code …` does. A typed code may omit it.
+	if pairingID != "" && !link.PairingIDRe.MatchString(pairingID) {
+		return "", errors.New("the pairing id is not valid; scan the QR again for a fresh code")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	c, err := link.PairNetwork(ctx, nil, networkURL, protocol.NodePairingRequest{Code: code, Name: name}, userAgent)
+	c, err := link.PairNetwork(ctx, nil, networkURL, protocol.NodePairingRequest{Code: code, Pairing: pairingID, Name: name}, userAgent)
 	if err != nil {
 		return "", err
 	}

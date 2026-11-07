@@ -8,7 +8,7 @@ import java.net.URLEncoder
  * `openvibe-link://auth?code=…&state=…` (the sign-in's return). Parsed here, away from Android, so the shapes have
  * tests.
  */
-data class PairLink(val code: String?, val network: String?)
+data class PairLink(val code: String?, val network: String?, val pairing: String? = null)
 
 object PairLinks {
     const val PAIR_SCHEME = "openvibe-link"
@@ -26,6 +26,7 @@ object PairLinks {
         return PairLink(
             code = params["code"]?.takeIf { it.isNotBlank() },
             network = params["network"]?.takeIf { it.startsWith("https://") } ?: DEFAULT_NETWORK,
+            pairing = params["pairing"]?.takeIf { it.startsWith("pair_") },
         )
     }
 
@@ -36,7 +37,11 @@ object PairLinks {
         parse(text)?.let { if (it.code != null) return it }
         val params = queryParams(text.substringAfter('?', missingDelimiterValue = ""))
         params["code"]?.takeIf { it.isNotBlank() }?.let { code ->
-            return PairLink(code, params["network"]?.takeIf { it.startsWith("https://") } ?: DEFAULT_NETWORK)
+            return PairLink(
+                code,
+                params["network"]?.takeIf { it.startsWith("https://") } ?: DEFAULT_NETWORK,
+                params["pairing"]?.takeIf { it.startsWith("pair_") },
+            )
         }
         val bare = text.replace("-", "").replace(" ", "")
         return if (bare.length == 8 && bare.all { it.isLetterOrDigit() }) PairLink(text, DEFAULT_NETWORK) else null
