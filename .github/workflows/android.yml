@@ -94,12 +94,21 @@ jobs:
           if-no-files-found: error
 
       - name: Attach the APK to the release
-        if: startsWith(github.ref, 'refs/tags/') && env.LINK_SIGNED == '1'
+        if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "OpenVibe Link for Android."
-          gh release upload "$GITHUB_REF_NAME" "android/app/build/outputs/apk/release/app-release.apk#openvibe-link-$GITHUB_REF_NAME.apk" --clobber
+          # The Android job and the release job both attach to the tag, in either order.
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "OpenVibe Link $GITHUB_REF_NAME" --notes "OpenVibe Link for Android."
+          if [ "${LINK_SIGNED:-0}" = "1" ]; then
+            cp android/app/build/outputs/apk/release/app-release.apk "/tmp/openvibe-link-$GITHUB_REF_NAME.apk"
+          else
+            # No signing key in this repo: attach the installable debug build under a name that says so, rather than
+            # inventing a key or leaving the release with no APK. The signed build attaches once the secret is set.
+            cp android/app/build/outputs/apk/debug/app-debug.apk "/tmp/openvibe-link-$GITHUB_REF_NAME-debug.apk"
+            echo "::warning::ANDROID_KEYSTORE_BASE64 is not set: attached the debug APK as openvibe-link-$GITHUB_REF_NAME-debug.apk"
+          fi
+          gh release upload "$GITHUB_REF_NAME" /tmp/openvibe-link-"$GITHUB_REF_NAME"*.apk --clobber
 
   screens:
     name: emulator screenshots (not blocking)
