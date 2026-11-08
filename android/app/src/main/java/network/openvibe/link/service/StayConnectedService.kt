@@ -14,10 +14,18 @@ import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import network.openvibe.link.MainActivity
 import network.openvibe.link.R
 import network.openvibe.link.data.LinkController
+import network.openvibe.link.data.Api
 import network.openvibe.link.data.Store
+import org.json.JSONObject
 
 /**
  * "Stay connected": the phone's one outbound connection to OpenVibe.Bot, held by an opt-in foreground service with a
@@ -27,6 +35,9 @@ import network.openvibe.link.data.Store
 class StayConnectedService : Service() {
     private val main = Handler(Looper.getMainLooper())
     private var tick: Runnable? = null
+    private val pollScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var polling: Job? = null
+    private var lastPoll = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -52,6 +63,7 @@ class StayConnectedService : Service() {
     override fun onDestroy() {
         tick?.let { main.removeCallbacks(it) }
         tick = null
+        pollScope.cancel()
         if (!Store.stayConnected) LinkController.stop()
         super.onDestroy()
     }
@@ -67,11 +79,44 @@ class StayConnectedService : Service() {
                 }
                 val manager = getSystemService(NotificationManager::class.java)
                 manager?.notify(NOTIFICATION_ID, notification(text))
+                if (Store.stayConnected && Store.signedIn && System.currentTimeMillis() - lastPoll >= 20_000 && polling?.isActive != true) {
+                    lastPoll = System.currentTimeMillis()
+                    polling = pollScope.launch { pollNotices() }
+                }
                 if (LinkController.state != "revoked") main.postDelayed(this, 5_000)
             }
         }
         tick = runnable
         main.post(runnable)
+    }
+
+    private suspend fun pollNotices() {
+        try {
+            if (LinkController.connected) {
+                val id = LinkController.info()?.let { JSONObject(it).optString("device_id") }
+                if (!id.isNullOrBlank()) runCatching { Api.devicePresence(id) }
+            }
+            val actions = Api.actions()
+            val newest = actions.buckets.values.flatten().filter { it.isNotify && it.createdAt != null }
+                .sortedBy { it.createdAt }
+            val cursor = Store.noticeCursor()
+            val manager = getSystemService(NotificationManager::class.java) ?: return
+            for (item in newest.filter { it.createdAt!! > cursor }.takeLast(5)) {
+                val open = PendingIntent.getActivity(this, item.id.hashCode(), Intent(this, MainActivity::class.java),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+                val notice = NotificationCompat.Builder(this, AGENTS_CHANNEL)
+                    .setSmallIcon(R.drawable.ic_notify)
+                    .setContentTitle(listOfNotNull(item.agent, item.title).joinToString(" · "))
+                    .setContentText(item.summary?.removePrefix("notify · ").orEmpty())
+                    .setAutoCancel(true).setContentIntent(open)
+                    .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                    .setPriority(NotificationCompat.PRIORITY_DEFAULT).build()
+                try { manager.notify(item.id.hashCode(), notice) } catch (_: SecurityException) { /* notifications are off */ }
+            }
+            newest.lastOrNull()?.createdAt?.let(Store::advanceNoticeCursor)
+        } catch (_: Exception) {
+            // A transient Action Center or session failure is retried on the next poll.
+        }
     }
 
     private fun notification(text: String): Notification {
@@ -100,6 +145,7 @@ class StayConnectedService : Service() {
         const val ACTION_START = "network.openvibe.link.STAY_START"
         const val ACTION_STOP = "network.openvibe.link.STAY_STOP"
         const val CHANNEL = "stay_connected"
+        const val AGENTS_CHANNEL = "your_agents"
         private const val NOTIFICATION_ID = 1001
 
         fun ensureChannel(context: Context) {
@@ -111,6 +157,11 @@ class StayConnectedService : Service() {
                         setShowBadge(false)
                     },
                 )
+            }
+            if (manager.getNotificationChannel(AGENTS_CHANNEL) == null) {
+                manager.createNotificationChannel(NotificationChannel(AGENTS_CHANNEL, "Your agents", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                    description = "Notifications your agents asked to show on this phone"
+                })
             }
         }
 

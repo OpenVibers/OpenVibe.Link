@@ -34,6 +34,9 @@ class PreviewActivity : ComponentActivity() {
                 ) {
                     when (screen) {
                         "activity" -> ActivityScreen(preview = SAMPLE_ACTIVITY)
+                        "notify" -> ActivityScreen(preview = SAMPLE_NOTIFY)
+                        "camera" -> ApprovalsScreen(preview = SAMPLE_CAMERA)
+                        "location" -> ApprovalsScreen(preview = SAMPLE_LOCATION)
                         "phone" -> PhoneScreen(previewInfo = SAMPLE_DEVICE, preview = true)
                         "pair" -> PairScreen(initialCode = "ABCD-1234")
                         else -> ApprovalsScreen(preview = SAMPLE_APPROVALS)
@@ -73,6 +76,15 @@ class PreviewActivity : ComponentActivity() {
             item("tsk_4", "Deploy the staging build", "Finished in 4m 12s", bucket = "done", kind = "agent_task", at = "2026-11-06T18:04:00Z"),
             item("tsk_5", "Index the photo library", "Stopped: the drive was full", bucket = "failed", kind = "agent_task", at = "2026-11-06T12:10:00Z"),
         )
+
+        val SAMPLE_CAMERA = listOf(item("apr_camera", "Take one photo for your agent",
+            "device.camera · Read the damaged label so I can order the right part.", agent = "Scout"))
+
+        val SAMPLE_LOCATION = listOf(item("apr_location", "Share your location once with your agent",
+            "device.location.precise · Find a nearby open pharmacy.", agent = "Scout"))
+
+        val SAMPLE_NOTIFY = listOf(item("ntf_ready", "The report is ready",
+            "notify · Your weekly report is ready to read.", bucket = "done", kind = "agent_task", agent = "Scout"))
 
         val SAMPLE_DEVICE = JSONObject()
             .put("device_id", "dev_01J9Z8K4Q7X2M5N8P3R6T0V")

@@ -76,7 +76,7 @@ jobs:
 
   build:
     name: cross-compile
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -203,7 +203,7 @@ jobs:
 
   shell:
     name: shellcheck
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - run: shellcheck -s sh install/install.sh scripts/dist.sh scripts/test-install-stock-server.sh scripts/test-install-pair-args.sh scripts/test-install-worker-config.sh scripts/test-install-computer-config.sh scripts/test-install-plan-logins.sh scripts/test-install-claim.sh
@@ -216,14 +216,21 @@ jobs:
 
   esp32-conformance:
     name: esp32 protocol conformance (desktop)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: Cache pinned ArduinoJson header
+        run: |
+          mkdir -p esp32/test/.deps
+          curl -fL --retry 3 -H 'Accept: application/octet-stream' \
+            https://api.github.com/repos/bblanchon/ArduinoJson/releases/assets/265662161 \
+            -o esp32/test/.deps/ArduinoJson.h
+          echo 'a05ac98f4481d2398c103ca5ffcce8e2fcd7fa2fa1d8d9f38d5757454f448d97  esp32/test/.deps/ArduinoJson.h' | sha256sum -c -
       - run: sh esp32/test/run.sh
 
   esp32-compile:
     name: esp32 compile (arduino-cli)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: arduino/setup-arduino-cli@v2
@@ -232,6 +239,24 @@ jobs:
           arduino-cli config init
           arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
           arduino-cli core update-index
+          cache="$HOME/.arduino15/staging/packages"
+          mkdir -p "$cache"
+          stage_asset() {
+            file=$1 repo=$2 asset=$3 checksum=$4
+            curl -fLsS --retry 3 -H 'Accept: application/octet-stream' \
+              "https://api.github.com/repos/$repo/releases/assets/$asset" -o "$cache/$file"
+            printf '%s  %s\n' "$checksum" "$cache/$file" | sha256sum -c -
+          }
+          stage_asset esp32-arduino-libs-idf-release_v5.3-cfea4f7c-v1.zip espressif/esp32-arduino-lib-builder 218373742 1099291229a9be453c771c5867b8487a0266db9246b672417337b8f511d7f820
+          stage_asset xtensa-esp-elf-13.2.0_20240530-x86_64-linux-gnu.tar.gz espressif/crosstool-NG 171009396 bce77e8480701d5a90545369d1b5848f6048eb39c0022d2446d1e33a8e127490
+          stage_asset xtensa-esp-elf-gdb-14.2_20240403-x86_64-linux-gnu.tar.gz espressif/binutils-gdb 160240516 9d68472d4cba5cf8c2b79d94f86f92c828e76a632bd1e6be5e7706e5b304d36e
+          stage_asset riscv32-esp-elf-13.2.0_20240530-x86_64-linux-gnu.tar.gz espressif/crosstool-NG 171009184 e7fbfffbb19dcd3764a9848a141bf44e19ad0b48e0bd1515912345c26fe52fba
+          stage_asset riscv32-esp-elf-gdb-14.2_20240403-x86_64-linux-gnu.tar.gz espressif/binutils-gdb 160240334 ce004bc0bbd71b246800d2d13b239218b272a38bd528e316f21f1af2db8a4b13
+          stage_asset openocd-esp32-linux-amd64-0.12.0-esp32-20241016.tar.gz espressif/openocd-esp32 200012418 e82b0f036dc99244bead5f09a86e91bb2365cbcd1122ac68261e5647942485df
+          stage_asset esptool-v4.9.dev3-linux-amd64.tar.gz espressif/arduino-esp32 212736075 4ecaf51836cbf4ea3c19840018bfef3b0b8cd8fc3c95f6e1e043ca5bbeab9bf0
+          stage_asset mkspiffs-0.2.3-arduino-esp32-linux64.tar.gz igrr/mkspiffs 6442020 5e1a4ff41385e842f389f6b5254102a547e566a06b49babeffa93ef37115cb5d
+          stage_asset x86_64-linux-gnu.mklittlefs-c41e51a.200706.tar.gz earlephilhower/esp-quick-toolchain 22621400 66e84dda0aad747517da3785125e05738a540948aab2b7eaa02855167a1eea53
+          stage_asset esp32-3.1.1.zip espressif/arduino-esp32 218876848 e20982b2860eab4900ce16a0f2b7f9fc3ffb205e490dc933f625d53a5c9e8129
           arduino-cli core install esp32:esp32@3.1.1
           arduino-cli lib install "ArduinoJson@7.4.2"
           arduino-cli lib install "WebSockets@2.6.1"
