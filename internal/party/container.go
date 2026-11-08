@@ -36,6 +36,7 @@ type Plan struct {
 	MemberPassword string
 	AdminPassword  string
 	APIToken       string
+	ProxyAddress   string
 }
 
 // NewPlan generates independent credentials for this run. The caller obtains
@@ -88,7 +89,7 @@ func (p Plan) Name() string { return "openvibe-" + p.PartyID }
 // RunArgs contain no credential. The runtime receives values in its process
 // environment, while Docker/Podman receive only environment variable names.
 func (p Plan) RunArgs() []string {
-	return []string{"run", "-d", "--rm", "--name", p.Name(), "--network", "bridge",
+	return []string{"create", "--name", p.Name(), "--network", "bridge",
 		"--security-opt=no-new-privileges", "--pids-limit=512",
 		"--cpus=2", "--memory=3g", "--shm-size=2g",
 		"-p", fmt.Sprintf("127.0.0.1:%d:8080", p.Port), Image}
@@ -113,6 +114,7 @@ func (p Plan) EnvFile() (string, error) {
 
 type Runtime interface {
 	Run(ctx context.Context, stdin string, args ...string) error
+	Gateway(ctx context.Context) (string, error)
 }
 
 type CLIRuntime struct{ Binary string }
@@ -148,24 +150,98 @@ func (r CLIRuntime) Run(ctx context.Context, stdin string, args ...string) error
 	return nil
 }
 
+func (r CLIRuntime) Gateway(ctx context.Context) (string, error) {
+	name := "bridge"
+	if strings.Contains(r.Binary, "podman") {
+		name = "podman"
+	}
+	cmd := exec.CommandContext(ctx, r.Binary, "network", "inspect", name)
+	data, err := cmd.Output()
+	if err != nil {
+		return "", errors.New("cannot inspect the container bridge gateway")
+	}
+	var networks []struct {
+		IPAM struct {
+			Config []struct {
+				Gateway string `json:"Gateway"`
+			} `json:"Config"`
+		} `json:"IPAM"`
+		Subnets []struct {
+			Gateway string `json:"gateway"`
+		} `json:"subnets"`
+	}
+	if json.Unmarshal(data, &networks) != nil || len(networks) == 0 {
+		return "", errors.New("invalid container bridge network")
+	}
+	address := ""
+	if len(networks[0].IPAM.Config) > 0 {
+		address = networks[0].IPAM.Config[0].Gateway
+	}
+	if address == "" && len(networks[0].Subnets) > 0 {
+		address = networks[0].Subnets[0].Gateway
+	}
+	if net.ParseIP(address) == nil {
+		return "", errors.New("container bridge has no gateway")
+	}
+	return address, nil
+}
+
 // Start pulls exactly the pinned image, then starts the container. A failed run
 // cleans up by its validated name. Stop is idempotent and also runs on cancellation.
 func Start(ctx context.Context, r Runtime, p Plan) (func(context.Context) error, error) {
 	if !partyID.MatchString(p.PartyID) {
 		return nil, errors.New("invalid party id")
 	}
+	gateway, err := r.Gateway(ctx)
+	if err != nil {
+		return nil, err
+	}
+	listener, err := net.Listen("tcp", net.JoinHostPort(gateway, "0"))
+	if err != nil {
+		return nil, fmt.Errorf("cannot bind party egress proxy to the bridge: %w", err)
+	}
+	server := &http.Server{Handler: NewEgressProxy(gateway), ReadHeaderTimeout: 8 * time.Second}
+	go func() { _ = server.Serve(listener) }()
+	cleanupProxy := func() { _ = server.Close() }
 	if err := r.Run(ctx, "", "pull", Image); err != nil {
+		cleanupProxy()
 		return nil, err
 	}
 	env, err := p.EnvFile()
 	if err != nil {
+		cleanupProxy()
 		return nil, err
 	}
+	p.ProxyAddress = listener.Addr().String()
 	if err := r.Run(ctx, env, p.RunArgs()...); err != nil {
+		cleanupProxy()
 		_ = r.Run(context.Background(), "", "rm", "-f", p.Name())
 		return nil, err
 	}
-	return func(stopCtx context.Context) error { return r.Run(stopCtx, "", "stop", "--time", "10", p.Name()) }, nil
+	policy, err := policyFile(p.ProxyAddress)
+	if err == nil {
+		err = r.Run(ctx, "", "cp", policy, p.Name()+":/etc/opt/chrome/policies/managed/openvibe-party.json")
+	}
+	if policy != "" {
+		_ = os.Remove(policy)
+	}
+	if err == nil {
+		err = r.Run(ctx, "", "start", p.Name())
+	}
+	if err != nil {
+		cleanupProxy()
+		_ = r.Run(context.Background(), "", "rm", "-f", p.Name())
+		return nil, err
+	}
+	return func(stopCtx context.Context) error {
+		cleanupProxy()
+		stopErr := r.Run(stopCtx, "", "stop", "--time", "10", p.Name())
+		removeErr := r.Run(stopCtx, "", "rm", "-f", p.Name())
+		if stopErr != nil {
+			return stopErr
+		}
+		return removeErr
+	}, nil
 }
 
 // FreePort asks the kernel for an unused loopback port. Docker's bind is the
