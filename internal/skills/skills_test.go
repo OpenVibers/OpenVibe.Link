@@ -11,12 +11,16 @@ import (
 	"github.com/OpenVibers/OpenVibe.Node/internal/config"
 )
 
-func testNode() Node { return Node{Path: "/usr/bin/node", Version: "24.14.1"} }
+func testNode(t *testing.T) Node {
+	t.Helper()
+	return Node{Path: filepath.Join(t.TempDir(), "node"), Version: "24.14.1"}
+}
 
 func TestEnableOffStatus(t *testing.T) {
 	cfg := config.Default()
 	dir := t.TempDir()
-	entry, changed, err := Enable(cfg, dir, testNode())
+	node := testNode(t)
+	entry, changed, err := Enable(cfg, dir, node)
 	if err != nil || !changed {
 		t.Fatalf("Enable: %v (changed %v)", err, changed)
 	}
@@ -26,7 +30,7 @@ func TestEnableOffStatus(t *testing.T) {
 	if entry.ArtifactDir != dir {
 		t.Fatalf("artifact_dir %q, want %q", entry.ArtifactDir, dir)
 	}
-	want := []string{"/usr/bin/node", RunnerPath(dir), "job"}
+	want := []string{node.Path, RunnerPath(dir), "job"}
 	if strings.Join(entry.Command, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("command %q, want %q", entry.Command, want)
 	}
@@ -48,7 +52,7 @@ func TestEnableOffStatus(t *testing.T) {
 	if st.Artifact != dir || !st.ArtifactPresent {
 		t.Fatalf("status artifact %q present %v", st.Artifact, st.ArtifactPresent)
 	}
-	if len(st.Command) != 3 || st.Command[0] != "/usr/bin/node" {
+	if len(st.Command) != 3 || st.Command[0] != node.Path {
 		t.Fatalf("status command %q", st.Command)
 	}
 
@@ -64,14 +68,14 @@ func TestEnableOffStatus(t *testing.T) {
 }
 
 func TestEnableKeepsOtherFunctionsAndReplacesItself(t *testing.T) {
-	other := config.FunctionConfig{Name: "compute", Version: "2.0.0", Command: []string{"/usr/bin/true"}}
+	other := config.FunctionConfig{Name: "compute", Version: "2.0.0", Command: []string{filepath.Join(os.TempDir(), "true")}}
 	cfg := config.Default()
 	cfg.Worker.Functions = []config.FunctionConfig{other}
 	dir := t.TempDir()
-	if _, _, err := Enable(cfg, dir, testNode()); err != nil {
+	if _, _, err := Enable(cfg, dir, testNode(t)); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := Enable(cfg, dir, testNode()); err != nil {
+	if _, _, err := Enable(cfg, dir, testNode(t)); err != nil {
 		t.Fatal(err)
 	}
 	if len(cfg.Worker.Functions) != 2 {
@@ -90,7 +94,7 @@ func TestEnableKeepsOtherFunctionsAndReplacesItself(t *testing.T) {
 
 func TestEnableRefusesRoot(t *testing.T) {
 	cfg := config.Default()
-	if _, _, err := Enable(cfg, "/", testNode()); err == nil {
+	if _, _, err := Enable(cfg, "/", testNode(t)); err == nil {
 		t.Fatal("Enable wrote the runner at /")
 	}
 	if len(cfg.Worker.Functions) != 0 {

@@ -179,8 +179,8 @@ func Enable(cfg *config.Config, dir string, node Node) (config.FunctionConfig, b
 		return config.FunctionConfig{}, false, err
 	}
 	dir = filepath.Clean(dir)
-	if dir == "/" {
-		return config.FunctionConfig{}, false, errors.New("the skill runner directory must not be /")
+	if filepath.Dir(dir) == dir { // a filesystem root: no artifact_dir, and a job root must never be /
+		return config.FunctionConfig{}, false, errors.New("the skill runner directory must not be a filesystem root")
 	}
 	entry := Entry(node, dir)
 	functions := make([]config.FunctionConfig, 0, len(cfg.Worker.Functions)+1)
