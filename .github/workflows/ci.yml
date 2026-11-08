@@ -256,6 +256,7 @@ jobs:
           stage_asset esptool-v4.9.dev3-linux-amd64.tar.gz espressif/arduino-esp32 212736075 4ecaf51836cbf4ea3c19840018bfef3b0b8cd8fc3c95f6e1e043ca5bbeab9bf0
           stage_asset mkspiffs-0.2.3-arduino-esp32-linux64.tar.gz igrr/mkspiffs 6442020 5e1a4ff41385e842f389f6b5254102a547e566a06b49babeffa93ef37115cb5d
           stage_asset x86_64-linux-gnu.mklittlefs-c41e51a.200706.tar.gz earlephilhower/esp-quick-toolchain 22621400 66e84dda0aad747517da3785125e05738a540948aab2b7eaa02855167a1eea53
+          stage_asset esp32-3.1.1.zip espressif/arduino-esp32 218876848 e20982b2860eab4900ce16a0f2b7f9fc3ffb205e490dc933f625d53a5c9e8129
           arduino-cli core install esp32:esp32@3.1.1
           arduino-cli lib install "ArduinoJson@7.4.2"
           arduino-cli lib install "WebSockets@2.6.1"
