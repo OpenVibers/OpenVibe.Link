@@ -3,6 +3,7 @@ package send
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -46,6 +47,9 @@ func TestReceiveKeyRejectsMalformedSavedKey(t *testing.T) {
 }
 
 func TestReceiveKeyRejectsBroadPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows file modes do not expose POSIX group and other permissions")
+	}
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "link-send-key.json"), []byte(`{"kty":"EC","crv":"P-256","x":"x","y":"y","d":"d"}`), 0o644); err != nil {
 		t.Fatal(err)

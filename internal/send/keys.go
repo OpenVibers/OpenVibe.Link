@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 // JWK is the P-256 receive key shape used by openvibe-sdk/locker. The private fields stay in the Node's 0600 config
@@ -26,7 +27,7 @@ func LoadOrCreate(dir string) (JWK, error) {
 	path := filepath.Join(dir, "link-send-key.json")
 	if b, err := os.ReadFile(path); err == nil {
 		info, statErr := os.Lstat(path)
-		if statErr != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
+		if statErr != nil || !info.Mode().IsRegular() || (runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0) {
 			return JWK{}, errors.New("the saved Link receive key must be a regular file accessible only to this account")
 		}
 		var key JWK
