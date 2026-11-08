@@ -76,7 +76,7 @@ jobs:
 
   build:
     name: cross-compile
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -203,7 +203,7 @@ jobs:
 
   shell:
     name: shellcheck
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - run: shellcheck -s sh install/install.sh scripts/dist.sh scripts/test-install-stock-server.sh scripts/test-install-pair-args.sh scripts/test-install-worker-config.sh scripts/test-install-computer-config.sh scripts/test-install-plan-logins.sh scripts/test-install-claim.sh
@@ -216,14 +216,14 @@ jobs:
 
   esp32-conformance:
     name: esp32 protocol conformance (desktop)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - run: sh esp32/test/run.sh
 
   esp32-compile:
     name: esp32 compile (arduino-cli)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: arduino/setup-arduino-cli@v2
