@@ -36,7 +36,7 @@ class ScreensSnapshotTest {
 
     @Before fun useSnapshotTimeZone() {
         previousTimeZone = TimeZone.getDefault()
-        TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"))
+        TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
     }
 
     @After fun restoreTimeZone() {
