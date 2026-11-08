@@ -115,6 +115,11 @@ tasks this machine ran today, and what happened, and lets you pause everything, 
 share a port, or send files (not in this version). It is served only on loopback, with a per-run token in the address
 fragment that every API call must send; see [docs/panel.md](docs/panel.md) for the security rules.
 
+**Your machines:** [openvibe.link/machines](https://openvibe.link/machines) opens the signed-in machines hub: each
+paired machine, whether it is online, the roles it plays (Codes jobs, desks, your own models, a robot), and pairing a
+new one from [openvibe.link/pair](https://openvibe.link/pair). It is the same account page on openvibe.my, reached from
+Link's own name.
+
 **Link on your phone (Android, v0):** the same pairing and connection as desktop Link, in an app: your agents'
 approvals in your pocket (money, passwords, deletions and a send to a new recipient ask for a fingerprint first), the
 Dock's activity read-only, and **Send to OpenVibe** from any app's share sheet to your Download drive. It pairs from

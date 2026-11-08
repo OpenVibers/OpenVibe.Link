@@ -23,7 +23,8 @@ Links for every file are on [openvibe.link](https://openvibe.link/#install); the
    .\openvibe-link install
    ```
 
-   The code comes from [openvibe.bot/machines](https://openvibe.bot/machines) (**Add a machine**).
+   The code comes from [openvibe.link/pair](https://openvibe.link/pair), which signs you in and opens the machines hub
+   (**Pair a machine**); [openvibe.bot/machines](https://openvibe.bot/machines) shows the same code.
 4. `openvibe-link status` shows the link; the machine appears in your account's machines.
 
 `openvibe-node.exe` is the same program under its old name, so an existing shortcut or script keeps working.
@@ -76,7 +77,8 @@ plugin bundle and `install.sh`; unpack one and run `sudo ./install.sh --local .`
 ### Android (the existing APK)
 
 Download `openvibe-link-<tag>.apk` on the phone, allow installing from that source when Android asks, and open
-**OpenVibe Link**. Pair with a code from [openvibe.bot/link/phone](https://openvibe.bot/link/phone). This is the direct
+**OpenVibe Link**. Pair with a code from [openvibe.link/pair](https://openvibe.link/pair) or
+[openvibe.bot/link/phone](https://openvibe.bot/link/phone). This is the direct
 APK, not Google Play; it has approvals, Activity, pairing and **Send to OpenVibe**, and no phone automation. Details:
 [android.md](android.md).
 
@@ -140,6 +142,13 @@ with the card's setup key (`OPENVIBE_SETUP_KEY` works too). openvibe.bot approve
 made the files, with the name, model, who may drive and Live they chose there, so no code is shown and nobody needs to
 be at the robot. A key adds one robot and lasts 7 days; a retry before the robot has paired pairs the same robot again.
 Its output is in `journalctl -u openvibe-setup` on the Pi.
+
+## Pair from openvibe.link
+
+[openvibe.link/pair](https://openvibe.link/pair) signs you in and opens **Your machines** at openvibe.my: every machine
+you paired with whether it is online, what it is allowed to do, a one-time code and the command to pair another, and
+rename or revoke. The installer asks for that code, so the whole one-minute start is: install, get the code there,
+paste it. Nothing about pairing lives only on openvibe.bot any more; the old page still works.
 
 ## Quick start with a code from openvibe.bot (Linux, Raspberry Pi, macOS)
 
