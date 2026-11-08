@@ -154,6 +154,20 @@ type FirstRunAnswer struct {
 	Skip bool     `json:"skip"`
 }
 
+// SendMachine and IncomingSend are the Link Send payloads shown in the window. Envelope is ciphertext only.
+type SendMachine struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Online    bool   `json:"online"`
+	PublicKey any    `json:"public_key"`
+}
+type IncomingSend struct {
+	ID        string    `json:"id"`
+	Sender    string    `json:"sender_node,omitempty"`
+	Envelope  string    `json:"envelope"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // Options are what the daemon gives the panel: its state, and the actions the window can ask for.
 type Options struct {
 	// Token is the per-run secret the page sends as X-Link-Panel. Required.
@@ -174,8 +188,15 @@ type Options struct {
 	FirstRun func(uses []string, skip bool) error
 	// CodesStop stops the local Codes task with this id the way Codes' own stop does. It returns an error when the
 	// task is not running on this computer.
-	CodesStop func(id string) error
-	Log       *slog.Logger
+	CodesStop    func(id string) error
+	SendKey      func() any
+	SendTargets  func() ([]SendMachine, error)
+	SendFile     func(target, envelope string) error
+	SendInbox    func() ([]IncomingSend, error)
+	SendAccept   func(id string) (string, error)
+	SendDecline  func(id string) error
+	SendComplete func(id string) error
+	Log          *slog.Logger
 }
 
 // Server is one running panel server.
@@ -277,7 +298,7 @@ func (s *Server) api() http.Handler {
 			writeJSON(w, http.StatusForbidden, errBody("forbidden"))
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		r.Body = http.MaxBytesReader(w, r.Body, 40<<20)
 		path := strings.TrimPrefix(r.URL.Path, "/panel/api/")
 		switch {
 		case path == "state" && r.Method == http.MethodGet:
@@ -286,6 +307,34 @@ func (s *Server) api() http.Handler {
 				st = s.opt.State()
 			}
 			writeJSON(w, http.StatusOK, st)
+		case path == "send/key" && r.Method == http.MethodGet:
+			if s.opt.SendKey == nil {
+				writeJSON(w, http.StatusServiceUnavailable, errBody("receiving is not available on this machine"))
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"private_key": s.opt.SendKey()})
+		case path == "send/targets" && r.Method == http.MethodGet:
+			if s.opt.SendTargets == nil {
+				writeJSON(w, http.StatusServiceUnavailable, errBody("sending is not available on this machine"))
+				return
+			}
+			items, err := s.opt.SendTargets()
+			if err != nil {
+				writeJSON(w, http.StatusServiceUnavailable, errBody(err.Error()))
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"machines": items})
+		case path == "send/inbox" && r.Method == http.MethodGet:
+			if s.opt.SendInbox == nil {
+				writeJSON(w, http.StatusServiceUnavailable, errBody("receiving is not available on this machine"))
+				return
+			}
+			items, err := s.opt.SendInbox()
+			if err != nil {
+				writeJSON(w, http.StatusServiceUnavailable, errBody(err.Error()))
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"items": items})
 		case path == "pause" && r.Method == http.MethodPost:
 			var body struct {
 				Paused *bool `json:"paused"`
@@ -412,8 +461,57 @@ func (s *Server) api() http.Handler {
 			}
 			writeJSON(w, http.StatusOK, map[string]bool{"first_run": false})
 		case path == "files" && r.Method == http.MethodPost:
-			// Sending files between devices is not in the daemon yet; the window already says it could not send them.
-			writeJSON(w, http.StatusNotImplemented, errBody("sending files between devices is not available in this version of Link"))
+			var body struct {
+				Target   string `json:"target_node"`
+				Envelope string `json:"envelope"`
+			}
+			if !decode(w, r, &body) || body.Target == "" || body.Envelope == "" {
+				writeJSON(w, http.StatusBadRequest, errBody("choose a machine and provide an encrypted envelope"))
+				return
+			}
+			if s.opt.SendFile == nil {
+				writeJSON(w, http.StatusServiceUnavailable, errBody("sending is not available on this machine"))
+				return
+			}
+			if err := s.opt.SendFile(body.Target, body.Envelope); err != nil {
+				writeJSON(w, http.StatusConflict, errBody(err.Error()))
+				return
+			}
+			writeJSON(w, http.StatusCreated, map[string]bool{"sent": true})
+		case strings.HasPrefix(path, "files/") && strings.HasSuffix(path, "/accept") && r.Method == http.MethodPost:
+			id := strings.TrimSuffix(strings.TrimPrefix(path, "files/"), "/accept")
+			if s.opt.SendAccept == nil {
+				writeJSON(w, http.StatusServiceUnavailable, errBody("receiving is not available on this machine"))
+				return
+			}
+			envelope, err := s.opt.SendAccept(id)
+			if err != nil {
+				writeJSON(w, http.StatusConflict, errBody(err.Error()))
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]string{"envelope": envelope})
+		case strings.HasPrefix(path, "files/") && strings.HasSuffix(path, "/decline") && r.Method == http.MethodPost:
+			id := strings.TrimSuffix(strings.TrimPrefix(path, "files/"), "/decline")
+			if s.opt.SendDecline == nil {
+				writeJSON(w, http.StatusServiceUnavailable, errBody("receiving is not available on this machine"))
+				return
+			}
+			if err := s.opt.SendDecline(id); err != nil {
+				writeJSON(w, http.StatusConflict, errBody(err.Error()))
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasPrefix(path, "files/") && strings.HasSuffix(path, "/complete") && r.Method == http.MethodPost:
+			id := strings.TrimSuffix(strings.TrimPrefix(path, "files/"), "/complete")
+			if s.opt.SendComplete == nil {
+				writeJSON(w, http.StatusServiceUnavailable, errBody("receiving is not available on this machine"))
+				return
+			}
+			if err := s.opt.SendComplete(id); err != nil {
+				writeJSON(w, http.StatusConflict, errBody(err.Error()))
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
 		default:
 			http.NotFound(w, r)
 		}
@@ -433,7 +531,7 @@ func (s *Server) authorized(r *http.Request) bool {
 }
 
 func decode(w http.ResponseWriter, r *http.Request, out any) bool {
-	dec := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
+	dec := json.NewDecoder(io.LimitReader(r.Body, 40<<20))
 	dec.DisallowUnknownFields()
 	return dec.Decode(out) == nil
 }

@@ -173,18 +173,81 @@
         if (!(port >= 1 && port <= 65535)) return;
         var f = this; send('shares', 'POST', { port: port }).then(function () { f.reset(); });
     });
-    var drop = $('[data-lk-drop]'), say = $('[data-lk-drop-say]');
-    function sendFiles(files) {
-        if (!files || !files.length) return;
-        var fd = new FormData(); for (var i = 0; i < files.length; i++) fd.append('file', files[i]);
-        say.textContent = 'Sending ' + files.length + ' file' + (files.length === 1 ? '' : 's') + '…';
-        fetch('/panel/api/files', { method: 'POST', body: fd, headers: { 'X-Link-Panel': token }, credentials: 'same-origin' })
-            .then(function (r) { say.textContent = r.ok ? 'Sent to your other devices.' : 'Link could not send them (' + r.status + ').'; }, function () { say.textContent = 'Link is not answering.'; });
+    var drop = $('[data-lk-drop]'), say = $('[data-lk-drop-say]'), targetSelect = $('[data-lk-send-target]');
+    var sendKey = null, lockerModule = null;
+    function panelApi(path, method, body) {
+        return fetch('/panel/api/' + path, { method: method || 'GET', headers: Object.assign({ 'X-Link-Panel': token }, body ? { 'Content-Type': 'application/json' } : {}),
+            body: body ? JSON.stringify(body) : undefined, credentials: 'same-origin' }).then(function (r) {
+            if (!r.ok) return r.json().catch(function () { return {}; }).then(function (x) { throw new Error(x.error || 'Link said ' + r.status); });
+            return r.status === 204 ? null : r.json();
+        });
     }
+    function base64(bytes) { var s = ''; for (var i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); }
+    function unbase64(s) { var raw = atob(s), out = new Uint8Array(raw.length); for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i); return out; }
+    function packed(name, mime, data) {
+        var meta = new TextEncoder().encode(JSON.stringify({ name: name, mime: mime || 'application/octet-stream' }));
+        var out = new Uint8Array(4 + meta.length + data.length); new DataView(out.buffer).setUint32(0, meta.length); out.set(meta, 4); out.set(data, 4 + meta.length); return out;
+    }
+    function moduleLocker() { return lockerModule || (lockerModule = import('https://openvibe.link/locker.mjs').then(function (m) { return m.locker; })); }
+    function loadTargets() {
+        panelApi('send/targets').then(function (body) {
+            var old = targetSelect.value; targetSelect.replaceChildren(new Option('Choose one of your machines', ''));
+            (body.machines || []).forEach(function (m) { var opt = new Option(m.name + (m.online ? '' : ' (offline)'), m.id); opt.dataset.publicKey = JSON.stringify(m.public_key); targetSelect.add(opt); });
+            if (old) targetSelect.value = old;
+            if (targetSelect.options.length === 1) say('Open Link on another paired machine to turn on receiving.');
+        }).catch(function (e) { if (targetSelect.options.length === 1) { targetSelect.replaceChildren(new Option('No receiving machine is ready', '')); say(e.message); } });
+    }
+    function sendPayload(name, mime, data) {
+        var opt = targetSelect.options[targetSelect.selectedIndex];
+        if (!opt || !opt.value) { say('Choose one of your machines first.'); return Promise.resolve(); }
+        if (data.length > 20 * 1024 * 1024) { say('Choose a file smaller than 20 MB for now.'); return Promise.resolve(); }
+        say('Encrypting on this computer…');
+        return moduleLocker().then(function (locker) {
+            var publicKey = JSON.parse(opt.dataset.publicKey || '{}');
+            var content = packed(name, mime, data);
+            return locker.seal(content, { lock: 'people', keys: [{ subject: { type: 'node', id: opt.value }, publicKey: publicKey }] }).then(function (sealed) {
+                say('Sending encrypted data…');
+                return panelApi('files', 'POST', { target_node: opt.value, envelope: base64(sealed.bytes) });
+            });
+        }).then(function () { say('Sent. The receiving machine will ask before saving it.'); loadTargets(); })
+            .catch(function (e) { say(e.message || 'Link could not send this item.'); });
+    }
+    function sendFile(file) { return file.arrayBuffer().then(function (b) { return sendPayload(file.name, file.type, new Uint8Array(b)); }); }
+    function sendNote() { var text = $('[data-lk-send-note]').value; if (!text.trim()) { say('Write a note first.'); return; } sendPayload('note.txt', 'text/plain;charset=utf-8', new TextEncoder().encode(text)).then(function () { $('[data-lk-send-note]').value = ''; }); }
+    function downloadAccepted(item) {
+        return Promise.all([moduleLocker(), panelApi('send/key')]).then(function (parts) {
+            var locker = parts[0], envelope = unbase64(item.envelope), own = parts[1];
+            return locker.open(envelope, { privateKey: own.private_key.privateKey || own.private_key, subject: own.subject });
+        }).then(function (bytes) {
+            var view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes), n = new DataView(view.buffer, view.byteOffset, view.byteLength).getUint32(0);
+            if (n < 2 || n > view.length - 4) throw new Error('The encrypted item is incomplete.');
+            var info = JSON.parse(new TextDecoder().decode(view.subarray(4, 4 + n))), fileBytes = view.subarray(4 + n);
+            var safeName = String(info.name || 'received-file').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 180) || 'received-file';
+            var url = URL.createObjectURL(new Blob([fileBytes], { type: info.mime || 'application/octet-stream' }));
+            var a = document.createElement('a'); a.href = url; a.download = safeName; a.click(); setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
+            return panelApi('files/' + encodeURIComponent(item.id) + '/complete', 'POST', {}).then(function () { say('Accepted. Your browser saved ' + safeName + ' to Downloads.'); });
+        });
+    }
+    function loadInbox() {
+        panelApi('send/inbox').then(function (body) {
+            var list = $('[data-lk-send-inbox]');
+            list.replaceChildren.apply(list, (body.items || []).map(function (item) {
+                var li = el('li', 'lk-send-item'), label = el('span', '', 'Encrypted item · ' + ago(item.created_at));
+                var actions = el('div'), accept = el('button', '', 'Accept'), decline = el('button', '', 'Decline');
+                accept.type = decline.type = 'button';
+                accept.addEventListener('click', function () { accept.disabled = true; say('Opening the encrypted item…'); downloadAccepted(item).catch(function (e) { accept.disabled = false; say(e.message || 'The item could not be opened. It is still waiting.'); }); });
+                decline.addEventListener('click', function () { decline.disabled = true; panelApi('files/' + encodeURIComponent(item.id) + '/decline', 'POST', {}).then(loadInbox).catch(function (e) { decline.disabled = false; say(e.message); }); });
+                actions.append(accept, decline); li.append(label, actions); return li;
+            }));
+        }).catch(function () {});
+    }
+    var dropTarget = $('[data-lk-drop]');
     ['dragenter', 'dragover'].forEach(function (t) { drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.add('is-over'); }); });
     ['dragleave', 'drop'].forEach(function (t) { drop.addEventListener(t, function () { drop.classList.remove('is-over'); }); });
-    drop.addEventListener('drop', function (e) { e.preventDefault(); sendFiles(e.dataTransfer.files); });
-    $('[data-lk-files]').addEventListener('change', function () { sendFiles(this.files); this.value = ''; });
+    dropTarget.addEventListener('drop', function (e) { e.preventDefault(); if (e.dataTransfer.files[0]) sendFile(e.dataTransfer.files[0]); });
+    $('[data-lk-files]').addEventListener('change', function () { if (this.files[0]) sendFile(this.files[0]); this.value = ''; });
+    $('[data-lk-send-note-button]').addEventListener('click', sendNote);
+    loadTargets(); loadInbox(); setInterval(function () { if (document.visibilityState === 'visible') { loadTargets(); loadInbox(); } }, 3000);
     function tick() { if (document.visibilityState === 'visible') load(); }
     load();
     timer = setInterval(tick, 3000);

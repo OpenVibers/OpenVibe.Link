@@ -113,6 +113,12 @@ a.lk-btn.is-primary { color: var(--on-accent); }
 .lk-drop-ic { width: 28px; height: 28px; border-radius: 9px; background: color-mix(in srgb, var(--accent) 18%, transparent); position: relative; }
 .lk-drop-ic::after { content: "↑"; position: absolute; inset: 0; display: grid; place-items: center; color: var(--accent-2); font-weight: 900; }
 .lk-drop small { color: var(--muted); }
+.lk-sec[data-lk-sec="drop"] select,.lk-sec[data-lk-sec="drop"] textarea { width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--text);font:inherit }
+.lk-sec[data-lk-sec="drop"]>button,.lk-send-item button { padding:8px 11px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--text);font:inherit;font-weight:650;cursor:pointer }
+.lk-send-inbox { display:grid;gap:8px;list-style:none;margin:8px 0 0;padding:0 }
+.lk-send-item { display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px;border:1px solid var(--line);border-radius:12px }
+.lk-send-item span { color:var(--muted);font-size:12px }
+.lk-send-item div { display:flex;gap:6px }
 
 .lk-gpu-name { margin: 0 0 8px; font-weight: 700; }
 .lk-models { display: grid; gap: 6px; }

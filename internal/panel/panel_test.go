@@ -333,17 +333,36 @@ func TestFirstRunWithoutAWayToRecordItSaysSo(t *testing.T) {
 	}
 }
 
-func TestFilesAnswer501WithAReason(t *testing.T) {
-	srv := testServer(t, Options{})
-	w := do(t, srv, http.MethodPost, "/panel/api/files", testToken, "", "")
-	if w.Code != http.StatusNotImplemented {
-		t.Fatalf("files: %d", w.Code)
+func TestFilesSendEncryptedEnvelope(t *testing.T) {
+	var gotTarget, gotEnvelope string
+	srv := testServer(t, Options{SendFile: func(target, envelope string) error { gotTarget, gotEnvelope = target, envelope; return nil }})
+	w := do(t, srv, http.MethodPost, "/panel/api/files", testToken, "", `{"target_node":"nod_example","envelope":"Y2lwaGVydGV4dA=="}`)
+	if w.Code != http.StatusCreated || gotTarget != "nod_example" || gotEnvelope != "Y2lwaGVydGV4dA==" {
+		t.Fatalf("send: status %d target %q envelope %q body %s", w.Code, gotTarget, gotEnvelope, w.Body)
 	}
-	var body struct {
-		Error string `json:"error"`
+}
+
+func TestIncomingItemsNeedAnExplicitAcceptOrDecline(t *testing.T) {
+	accepted, declined, completed := false, false, false
+	srv := testServer(t, Options{
+		SendInbox: func() ([]IncomingSend, error) {
+			return []IncomingSend{{ID: "snd_0123456789abcdef0123456789abcdef", Envelope: "ciphertext"}}, nil
+		},
+		SendAccept:   func(id string) (string, error) { accepted = id != ""; return "ciphertext", nil },
+		SendDecline:  func(id string) error { declined = id != ""; return nil },
+		SendComplete: func(id string) error { completed = id != ""; return nil },
+	})
+	if w := do(t, srv, http.MethodGet, "/panel/api/send/inbox", testToken, "", ""); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "ciphertext") {
+		t.Fatalf("inbox: %d %s", w.Code, w.Body)
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || !strings.Contains(body.Error, "files") {
-		t.Fatalf("reason: %q %v", w.Body, err)
+	if w := do(t, srv, http.MethodPost, "/panel/api/files/snd_0123456789abcdef0123456789abcdef/accept", testToken, "", "{}"); w.Code != http.StatusOK || !accepted {
+		t.Fatalf("accept: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, srv, http.MethodPost, "/panel/api/files/snd_0123456789abcdef0123456789abcdef/complete", testToken, "", "{}"); w.Code != http.StatusNoContent || !completed {
+		t.Fatalf("complete: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, srv, http.MethodPost, "/panel/api/files/snd_0123456789abcdef0123456789abcdef/decline", testToken, "", "{}"); w.Code != http.StatusNoContent || !declined {
+		t.Fatalf("decline: %d %s", w.Code, w.Body)
 	}
 }
 
