@@ -156,7 +156,7 @@ func NewTokenSource(c *credentials.Credentials, client *http.Client, userAgent s
 
 // ConnectAudience is OpenVibe Connect's: any person's machine may buy a node token for it, whichever service paired
 // the machine (Network, CON-4), to serve the shares bound to it.
-const ConnectAudience = "openvibe.website"
+const ConnectAudience = "openvibe.link"
 
 // NewTokenSourceFor returns a token source for another audience the machine may speak to (ConnectAudience).
 func NewTokenSourceFor(c *credentials.Credentials, client *http.Client, userAgent, audience string) *TokenSource {

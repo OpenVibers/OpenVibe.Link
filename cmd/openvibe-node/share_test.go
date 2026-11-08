@@ -83,10 +83,10 @@ func TestSharesText(t *testing.T) {
 		t.Fatalf("no shares: %q", got)
 	}
 	got := sharesText([]connect.Status{
-		{ID: "shr_01K9ZZZZZZZZZZZZZZZZZZZZZZ", Port: 8790, Host: "bot--alex.openvibe.website", URL: "https://bot--alex.openvibe.website", Connected: true, Requests: 3},
+		{ID: "shr_01K9ZZZZZZZZZZZZZZZZZZZZZZ", Port: 8790, Host: "bot--alex.openvibe.link", URL: "https://bot--alex.openvibe.link", Connected: true, Requests: 3},
 		{Port: 9001, LastError: "dial: connection refused"},
 	})
-	for _, want := range []string{"Shares:   2 kept up", "localhost:8790", "https://bot--alex.openvibe.website", "connected, 3 requests", "localhost:9001", "not connected", "dial: connection refused"} {
+	for _, want := range []string{"Shares:   2 kept up", "localhost:8790", "https://bot--alex.openvibe.link", "connected, 3 requests", "localhost:9001", "not connected", "dial: connection refused"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("status is missing %q:\n%s", want, got)
 		}

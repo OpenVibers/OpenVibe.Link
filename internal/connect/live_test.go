@@ -16,12 +16,12 @@ func TestLiveSharesForStatus(t *testing.T) {
 	if got := LiveShares(); len(got) != 1 || got[0].Port != 8790 || got[0].Connected {
 		t.Fatalf("marked: %+v", got)
 	}
-	liveReady(s, Ready{Host: "agents--alex.openvibe.website", URL: "https://agents--alex.openvibe.website"})
+	liveReady(s, Ready{Host: "agents--alex.openvibe.link", URL: "https://agents--alex.openvibe.link"})
 	liveRequest(s)
 	liveRequest(s)
 	got := LiveShares()
-	if len(got) != 1 || !got[0].Connected || got[0].Host != "agents--alex.openvibe.website" ||
-		got[0].URL != "https://agents--alex.openvibe.website" || got[0].Requests != 2 || got[0].LastError != "" {
+	if len(got) != 1 || !got[0].Connected || got[0].Host != "agents--alex.openvibe.link" ||
+		got[0].URL != "https://agents--alex.openvibe.link" || got[0].Requests != 2 || got[0].LastError != "" {
 		t.Fatalf("ready: %+v", got)
 	}
 	if got[0].ID != s.ID {

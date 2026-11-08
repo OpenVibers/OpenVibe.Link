@@ -36,12 +36,12 @@ const shareUsage = `usage:
   openvibe-link share list                          the shares the service keeps up
   openvibe-link share remove <PORT|KEY|ID|ADDRESS>  stop keeping one up
 
-Make a share at https://connect.openvibe.website. On its page, pick this computer under "Or serve it from one of your
+Make a share at https://connect.openvibe.website; its address is https://<label>--<you>.openvibe.link. On its page, pick this computer under "Or serve it from one of your
 computers" to serve it with --share and no key (the computer must be added on openvibe.bot/machines). Without --port,
 the Node serves the port the share's page names now, and keeps that one. The Node only ever connects to localhost on
 the share's port; every visitor signs in with OpenVibe first.`
 
-// connectNodeToken buys this machine's node token for OpenVibe Connect (audience openvibe.website). A machine
+// connectNodeToken buys this machine's node token for OpenVibe Connect (audience openvibe.link). A machine
 // removed on OpenVibe stops its shares (connect.ErrStopped) instead of trying forever.
 func connectNodeToken(creds *credentials.Credentials) func(context.Context) (string, error) {
 	ts := link.NewTokenSourceFor(creds, nil, "openvibe-node/"+version, link.ConnectAudience)
