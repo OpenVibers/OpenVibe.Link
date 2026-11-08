@@ -44,3 +44,13 @@ func TestReceiveKeyRejectsMalformedSavedKey(t *testing.T) {
 		t.Fatal("accepted a malformed saved key")
 	}
 }
+
+func TestReceiveKeyRejectsBroadPermissions(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "link-send-key.json"), []byte(`{"kty":"EC","crv":"P-256","x":"x","y":"y","d":"d"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadOrCreate(dir); err == nil {
+		t.Fatal("accepted a receive key file readable by other accounts")
+	}
+}
