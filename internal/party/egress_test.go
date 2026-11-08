@@ -107,12 +107,16 @@ func TestPolicyForcesProxyAndBlocksLocalPages(t *testing.T) {
 	var policy struct {
 		ProxySettings map[string]string `json:"ProxySettings"`
 		URLBlocklist  []string          `json:"URLBlocklist"`
+		WebRTC        string            `json:"WebRtcIPHandling"`
 	}
 	if json.Unmarshal(data, &policy) != nil {
 		t.Fatal("invalid policy JSON")
 	}
 	if policy.ProxySettings["ProxyMode"] != "fixed_servers" || !strings.Contains(policy.ProxySettings["ProxyServer"], "172.17.0.1:45678") || policy.ProxySettings["ProxyBypassList"] != "<-loopback>" {
 		t.Fatal("proxy policy is incomplete")
+	}
+	if policy.WebRTC != "disable_non_proxied_udp" {
+		t.Fatal("a page's WebRTC could send UDP past the proxy")
 	}
 	for _, blocked := range []string{"file://*", "chrome://settings", "chrome://settings/*"} {
 		if !strings.Contains(strings.Join(policy.URLBlocklist, " "), blocked) {

@@ -161,6 +161,9 @@ func policyFile(address string) (string, error) {
 			"ProxyBypassList": "<-loopback>",
 		},
 		"URLBlocklist": []string{"file://*", "chrome://settings", "chrome://settings/*", "chrome://flags/*"},
+		// A page's own WebRTC would otherwise send UDP straight past the proxy and could reach the host's network:
+		// only proxied (TCP) WebRTC is allowed. The desktop's own stream is neko's, outside the browser.
+		"WebRtcIPHandling": "disable_non_proxied_udp",
 	}
 	data, err := json.Marshal(policy)
 	if err != nil {
