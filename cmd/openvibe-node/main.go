@@ -103,6 +103,7 @@ Usage:
   openvibe-link share --key ovc_… --port N           put this machine's port N on the web (OpenVibe Connect),
                                                    behind OpenVibe sign-in, until Ctrl-C
   openvibe-link share add|list|remove …             the shares the Node service keeps up (openvibe-link share)
+  openvibe-link party host <party-id>               host a shared browser for an openvibe.party room, until stopped
   openvibe-link version
 
 Global flags (before or after the command):
@@ -173,6 +174,13 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 	}
 	if cmd == "stream" { // its own flags: --probe and the latency probe's
 		return cmdStream(rest, stdin, stdout, stderr)
+	}
+	if cmd == "party" {
+		if err := cmdParty(rest, stdout, stderr); err != nil {
+			fmt.Fprintln(stderr, "error:", err)
+			return 1
+		}
+		return 0
 	}
 	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
 	fs.SetOutput(stderr)

@@ -42,6 +42,8 @@ serves the share this computer was picked for at `https://<name>--<you>.openvibe
 `openvibe-link share --key ovc_… --port 8790` with a key), and `openvibe-link share add` keeps it up with the service;
 `openvibe-link status` lists each share ([docs/connect.md](docs/connect.md)).
 
+**Host a shared party computer** with `openvibe-link party host <party-id>` from [openvibe.party](https://openvibe.party). Link shows the running desktop and its Stop action in its window ([guide](docs/party-desktop.md)).
+
 **Sell a local model** on [OpenVibe.Exchange](https://openvibe.exchange):
 `openvibe-link exchange serve --model qwen3:32b --public-url https://gpu.example.com/v1`. It serves the model from the
 local OpenAI-compatible server (Ollama by default at `127.0.0.1:11434`), registers the public https address through the

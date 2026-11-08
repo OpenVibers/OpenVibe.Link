@@ -221,6 +221,13 @@ func (n *Node) panelRunning(st Status) []panel.Running {
 				Title: fmt.Sprintf("Port %d shared", sh.Port), Detail: sh.URL})
 		}
 	}
+	n.mu.Lock()
+	partyID, hosting := n.partyID, n.partyCancel != nil
+	n.mu.Unlock()
+	if hosting {
+		out = append(out, panel.Running{ID: "party:" + partyID, Kind: "desk",
+			Title: "Hosting a party desktop", Detail: partyID})
+	}
 	if desks := sensorInt(st.Telemetry.Sensors["computer_desks"]); desks > 0 {
 		title := fmt.Sprintf("%d desks for your agents", desks)
 		if desks == 1 {
@@ -477,6 +484,8 @@ func (n *Node) panelStop(id string) error {
 			break
 		}
 		return n.shareRemove(port)
+	case strings.HasPrefix(id, "party:"):
+		return n.stopParty(strings.TrimPrefix(id, "party:"))
 	case id == "desks":
 		return errors.New("a desk is stopped by the agent that started it, or by Pause everything")
 	}
