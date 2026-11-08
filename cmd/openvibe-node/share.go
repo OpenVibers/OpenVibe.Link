@@ -36,7 +36,7 @@ const shareUsage = `usage:
   openvibe-link share list                          the shares the service keeps up
   openvibe-link share remove <PORT|KEY|ID|ADDRESS>  stop keeping one up
 
-Make a share at https://connect.openvibe.website; its address is https://<label>--<you>.openvibe.link. On its page, pick this computer under "Or serve it from one of your
+Make a share at https://connect.openvibe.link; its address is https://<label>--<you>.openvibe.link. On its page, pick this computer under "Or serve it from one of your
 computers" to serve it with --share and no key (the computer must be added on openvibe.bot/machines). Without --port,
 the Node serves the port the share's page names now, and keeps that one. The Node only ever connects to localhost on
 the share's port; every visitor signs in with OpenVibe first.`
@@ -61,7 +61,7 @@ func connectNodeToken(creds *credentials.Credentials) func(context.Context) (str
 // share's page's now).
 func nodeShare(ctx context.Context, g *globals, a shareArgs) (connect.Share, func(context.Context) (string, error), error) {
 	if !connect.ShareIDRe.MatchString(a.share) {
-		return connect.Share{}, nil, errors.New("--share is the share's shr_… id, from its page on connect.openvibe.website")
+		return connect.Share{}, nil, errors.New("--share is the share's shr_… id, from its page on connect.openvibe.link")
 	}
 	creds, err := credentials.Load(g.paths.CredentialFile(), nil)
 	if err != nil || !creds.NetworkPaired() {
@@ -84,7 +84,7 @@ func nodeShare(ctx context.Context, g *globals, a shareArgs) (connect.Share, fun
 			}
 		}
 		if s.Port == 0 {
-			return connect.Share{}, nil, fmt.Errorf("this computer does not serve %s: pick it on the share's page on connect.openvibe.website", a.share)
+			return connect.Share{}, nil, fmt.Errorf("this computer does not serve %s: pick it on the share's page on connect.openvibe.link", a.share)
 		}
 	}
 	return s, tokens, nil
@@ -117,7 +117,7 @@ func shareByPort(ctx context.Context, g *globals, a shareArgs) (connect.Share, f
 	}
 	switch len(found) {
 	case 0:
-		return connect.Share{}, nil, fmt.Errorf("this computer does not serve localhost:%d: pick it on the share's page on connect.openvibe.website", a.port)
+		return connect.Share{}, nil, fmt.Errorf("this computer does not serve localhost:%d: pick it on the share's page on connect.openvibe.link", a.port)
 	case 1:
 		return connect.Share{ID: found[0].ID, Port: found[0].LocalPort, Server: a.server, Name: found[0].Host}, tokens, nil
 	default:
@@ -173,7 +173,7 @@ func cmdShare(g *globals, positional []string, a shareArgs, stdout, stderr io.Wr
 			return err
 		}
 		if len(mine) == 0 {
-			fmt.Fprintln(stdout, "No shares picked this computer yet. On a share's page on connect.openvibe.website, pick it under \"Or serve it from one of your computers\".")
+			fmt.Fprintln(stdout, "No shares picked this computer yet. On a share's page on connect.openvibe.link, pick it under \"Or serve it from one of your computers\".")
 			return nil
 		}
 		for _, m := range mine {
@@ -213,7 +213,7 @@ func cmdShare(g *globals, positional []string, a shareArgs, stdout, stderr io.Wr
 			return errUsage
 		}
 		if !strings.HasPrefix(a.key, "ovc_") {
-			return errors.New("the key is the share's ovc_… connect key, from its page on connect.openvibe.website")
+			return errors.New("the key is the share's ovc_… connect key, from its page on connect.openvibe.link")
 		}
 		if err := g.paths.Ensure(); err != nil {
 			return err

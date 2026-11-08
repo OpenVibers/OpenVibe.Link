@@ -178,7 +178,7 @@ func TestNodeSharesAndTheAPIURL(t *testing.T) {
 	}
 	for in, want := range map[string]string{
 		"wss://connect.openvibe.website/tunnel": "https://connect.openvibe.website/x",
-		"":                                      "https://connect.openvibe.website/x",
+		"":                                      "https://connect.openvibe.link/x",
 		"ws://127.0.0.1:5240/tunnel":            "http://127.0.0.1:5240/x",
 	} {
 		if u, err := apiURL(in, "/x"); err != nil || u != want {

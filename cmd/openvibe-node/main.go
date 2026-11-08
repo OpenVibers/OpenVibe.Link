@@ -194,9 +194,9 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		session = fs.Bool("user-session", false, "Windows: start at sign-in in your own session instead of as a service (install, uninstall)")
 		keyID   = fs.String("key-id", "", "accept only this Bot signing key id (profile verify)")
 		autoArg = fs.String("autostart", "", "on or off: start the tray when you sign in (tray)")
-		shKey   = fs.String("key", "", "the share's ovc_… connect key from connect.openvibe.website (share)")
+		shKey   = fs.String("key", "", "the share's ovc_… connect key from connect.openvibe.link (share)")
 		shPort  = fs.Int("port", 0, "the local port to share (share)")
-		shSrv   = fs.String("connect-server", "", "OpenVibe Connect's tunnel URL; default wss://connect.openvibe.website/tunnel (share)")
+		shSrv   = fs.String("connect-server", "", "OpenVibe Connect's tunnel URL; default wss://connect.openvibe.link/tunnel (share)")
 		shID    = fs.String("share", "", "a share this computer serves itself, as OpenVibe Link: its shr_… id, no key (share)")
 	)
 	// Accept flags anywhere: split positionals out.

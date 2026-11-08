@@ -102,7 +102,11 @@
         $('[data-lk-caps]').replaceChildren.apply($('[data-lk-caps]'), caps.map(function (c) {
             var li = el('li', 'lk-cap'); var t = el('span'); t.append(el('b', '', c.name || c.id), el('small', '', c.who || ''));
             var sw = el('label', 'lk-switch'); var box = el('input'); box.type = 'checkbox'; box.checked = !!c.on; box.setAttribute('aria-label', c.name || c.id);
-            box.addEventListener('change', function () { send('capabilities/' + encodeURIComponent(c.id), 'POST', { on: box.checked }).catch(function () { box.checked = !box.checked; }); });
+            box.addEventListener('change', function () {
+                // Terminal and Desktop say what turning them on means, and wait for a yes.
+                if (box.checked && c.confirm && !window.confirm(c.confirm)) { box.checked = false; return; }
+                send('capabilities/' + encodeURIComponent(c.id), 'POST', { on: box.checked }).catch(function () { box.checked = !box.checked; });
+            });
             sw.append(box, el('i')); li.append(t, sw); return li;
         }));
         root.querySelector('[data-lk-sec="caps"]').hidden = caps.length === 0;

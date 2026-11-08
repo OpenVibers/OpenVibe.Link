@@ -1,7 +1,7 @@
 // Package connect keeps OpenVibe Connect shares up from the Node: each share is one port on this machine served at
 // https://<label>--<user>.openvibe.link behind OpenVibe sign-in (OpenVibe.Connect, ADR-057, Website Connect v0).
 //
-// The Node opens one outgoing WebSocket per share to wss://connect.openvibe.website/tunnel and speaks ovconnect-ws/1,
+// The Node opens one outgoing WebSocket per share to wss://connect.openvibe.link/tunnel and speaks ovconnect-ws/1,
 // the same protocol as the one-file client (OpenVibe.Connect public/ov-connect.js):
 //
 //	→ {"t":"hello","v":1,"key":"ovc_…","client":"openvibe-node/…","port":8790}
@@ -39,7 +39,7 @@ import (
 )
 
 // DefaultServer is OpenVibe Connect's tunnel endpoint.
-const DefaultServer = "wss://connect.openvibe.website/tunnel"
+const DefaultServer = "wss://connect.openvibe.link/tunnel"
 
 const (
 	protocolVersion = 1
@@ -103,7 +103,7 @@ func Run(ctx context.Context, s Share, o Options) error {
 	switch {
 	case s.ID != "":
 		if !ShareIDRe.MatchString(s.ID) {
-			return errors.New("connect: the share is its shr_… id from connect.openvibe.website")
+			return errors.New("connect: the share is its shr_… id from connect.openvibe.link")
 		}
 		if o.NodeToken == nil {
 			return errors.New("connect: this share is served by the computer itself; pair the Node with OpenVibe first (openvibe.bot/machines)")
