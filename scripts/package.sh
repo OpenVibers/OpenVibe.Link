@@ -12,6 +12,8 @@ cd "$(dirname "$0")/.."
 pkgver="${VERSION#v}"
 pkgver="$(printf '%s' "$pkgver" | sed 's/[^A-Za-z0-9.+~]/./g')"
 [ -n "$pkgver" ] || pkgver=0.0.0
+# dpkg refuses a version that does not start with a digit; the CI build is version "ci".
+case "$pkgver" in [0-9]*) ;; *) pkgver="0.$pkgver" ;; esac
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
