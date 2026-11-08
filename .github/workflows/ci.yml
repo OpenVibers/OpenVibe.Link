@@ -29,6 +29,14 @@ jobs:
       # The job worker's tests skip where jobs cannot run sandboxed: unprivileged, the runner's cgroup is not delegated
       # (and Ubuntu's AppArmor restricts unprivileged user namespaces).
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+      # The skill runner runs a skill tool with this Node.js. Test the runner itself here; its tests use --permission,
+      # so this must be Node.js 22.13 or newer, not a distro's Node 18.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node --test internal/skills/skill_runner.test.js
+      # A job's private root holds /usr only: put the runner's Node.js where the root sandbox test below can see it.
+      - run: sudo install -m 0755 "$(command -v node)" /usr/local/bin/node
       - run: go test -race -count=1 ./...
       # The tray's desktop notifications, against a fake notification server on a private session bus.
       - name: tray notifications (private D-Bus)

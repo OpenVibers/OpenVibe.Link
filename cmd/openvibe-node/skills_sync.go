@@ -54,6 +54,8 @@ func cmdSkills(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "sync":
 		return cmdSkillsSync(args[1:], stdin, stdout, stderr)
+	case "on", "off", "status":
+		return cmdSkillsRunner(args, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown skills command %q\n\n", args[0])
 		fmt.Fprint(stderr, skillsSyncUsage)
