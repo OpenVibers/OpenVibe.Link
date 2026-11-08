@@ -17,7 +17,7 @@ func TestShareCommands(t *testing.T) {
 	key := "ovc_" + strings.Repeat("K", 43)
 	var out, errb bytes.Buffer
 
-	if code := run([]string{"share", "--home", home}, &out, &errb); code != 2 || !strings.Contains(errb.String(), "connect.openvibe.website") {
+	if code := run([]string{"share", "--home", home}, &out, &errb); code != 2 || !strings.Contains(errb.String(), "connect.openvibe.link") {
 		t.Fatalf("usage: %d %q", code, errb.String())
 	}
 	out.Reset()

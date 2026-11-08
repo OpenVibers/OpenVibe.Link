@@ -61,6 +61,8 @@ type Capability struct {
 	Name string `json:"name"`
 	Who  string `json:"who,omitempty"`
 	On   bool   `json:"on"`
+	// Confirm is what the window asks, in plain words, before turning this switch on (Terminal and Desktop).
+	Confirm string `json:"confirm,omitempty"`
 }
 
 // Share is one port put on the web through OpenVibe Connect.

@@ -38,8 +38,13 @@ var panelCapabilityList = []struct {
 	{"ai", "Run AI models here", "Only you, from your other devices", false},
 }
 
-// panelGated are the switches Link may turn off but never on: Desktop and Terminal wait for the 11-05 review fixes.
-var panelGated = map[string]bool{"desk": true, "terminal": true}
+// panelAskFirst are the switches the window confirms in plain words before turning on. They were gated until the
+// 11-05 review's fixes (Node #102-#104, merged 11-06); they are never turned on by the first-run answer, only by their
+// own switch.
+var panelAskFirst = map[string]string{
+	"terminal": "Turn on the terminal? Your agents can ask to run commands on this computer. At level ask you approve each one; at trusted they run with your account's full reach.",
+	"desk":     "Turn on the desk? Your agents get their own desktop off your screen, with its own browser, and work there at the level you set.",
+}
 
 // capabilityForKind maps a command kind to the switch that can refuse it.
 var capabilityForKind = map[string]string{
@@ -260,7 +265,7 @@ func (n *Node) panelCapabilities(st Status) []panel.Capability {
 		if c.computer && (level == "" || level == "observe") {
 			on = false
 		}
-		out = append(out, panel.Capability{ID: c.ID, Name: c.Name, Who: c.Who, On: on})
+		out = append(out, panel.Capability{ID: c.ID, Name: c.Name, Who: c.Who, On: on, Confirm: panelAskFirst[c.ID]})
 	}
 	return out
 }
@@ -275,9 +280,6 @@ func (n *Node) setCapability(id string, on bool) error {
 	}
 	if !known {
 		return fmt.Errorf("no capability %q on this computer", id)
-	}
-	if on && panelGated[id] {
-		return fmt.Errorf("%s is gated until the 11-05 review fixes are in: it cannot be turned on from Link", id)
 	}
 	if on && computer && n.computerLevel() == "observe" {
 		return errors.New("this computer is at level observe: set its level on the machine first")
@@ -310,7 +312,7 @@ func (n *Node) setCapability(id string, on bool) error {
 
 // applyFirstRun records the answer to "What's this computer for?" and turns on what each use says: a browser for the
 // agents, or the AI plugin. Codes has no module switch on the Node yet and earn only records the wish (Exchange
-// confirms it); Terminal and Desktop are never turned on here, as they stay gated on the 11-05 review. A skip only
+// confirms it); Terminal and Desktop are never turned on here, only by their own switch in the window. A skip only
 // stops the question. One node.first_run event carries the answer.
 func (n *Node) applyFirstRun(uses []string, skip bool) error {
 	if skip {
@@ -329,7 +331,7 @@ func (n *Node) applyFirstRun(uses []string, skip bool) error {
 				n.log.Warn("first run: models stay off", "err", err)
 			}
 		case "codes":
-			// Recorded only: the Node has no Codes module to switch on, and Terminal stays as the gate allows.
+			// Recorded only: the Node has no Codes module to switch on, and Terminal stays as it is (its own switch).
 		case "earn":
 			// Recorded only: Exchange confirms it, and nothing on this machine turns on here.
 		}

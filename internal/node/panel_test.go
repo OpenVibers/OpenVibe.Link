@@ -94,15 +94,23 @@ func TestCapabilitySwitchIsARealRestriction(t *testing.T) {
 	if n2.capabilityOff(protocol.KindFS) {
 		t.Fatal("files on still refuses fs commands")
 	}
-	// Desktop and Terminal may be turned off but never on from Link.
-	if err := n2.setCapability("terminal", false); err != nil {
-		t.Fatal(err)
+	// Desktop and Terminal turn off and back on from Link (the 11-05 fixes are in); the window asks first.
+	for _, id := range []string{"terminal", "desk"} {
+		if err := n2.setCapability(id, false); err != nil {
+			t.Fatal(err)
+		}
+		if err := n2.setCapability(id, true); err != nil {
+			t.Fatalf("%s on: %v", id, err)
+		}
 	}
-	if err := n2.setCapability("terminal", true); err == nil || !strings.Contains(err.Error(), "gated") {
-		t.Fatalf("terminal on: %v", err)
+	if n2.capabilityOff(protocol.KindExec) || n2.capabilityOff(protocol.KindDesk) {
+		t.Fatal("terminal or desk still refused after turning them on")
 	}
-	if err := n2.setCapability("desk", true); err == nil || !strings.Contains(err.Error(), "gated") {
-		t.Fatalf("desk on: %v", err)
+	offer := Status{Plugins: []PluginStatus{{Capabilities: map[string]any{"terminal": true, "desk": true, "files": true}}}}
+	for _, c := range n2.panelCapabilities(offer) {
+		if (c.ID == "terminal" || c.ID == "desk") != (c.Confirm != "") {
+			t.Fatalf("%s: confirm %q", c.ID, c.Confirm)
+		}
 	}
 	if err := n2.setCapability("nope", true); err == nil {
 		t.Fatal("an unknown capability was accepted")
@@ -199,7 +207,7 @@ func TestFirstRunTurnsOnOnlyWhatEachUseSays(t *testing.T) {
 	if n.capabilityOff(protocol.KindAI) {
 		t.Fatal("models were not turned on")
 	}
-	// Codes and earn record the wish only; Terminal and Desktop stay exactly as the gate allows (off).
+	// Codes and earn record the wish only; an answer never turns Terminal or Desktop on (only their own switch).
 	if !n.capabilityOff(protocol.KindExec) {
 		t.Fatal("the answer turned Terminal on")
 	}

@@ -4,7 +4,7 @@ package connect
 // computer on the share's page; there is no connect key. Before every connection the Node buys its node token (subject
 // node:nod_…, audience openvibe.link) and asks Connect for a tunnel token for that one share:
 //
-//	POST https://connect.openvibe.website/api/v1/node/shares/<shr_…>/tunnel-token   Authorization: Bearer <node token>
+//	POST https://connect.openvibe.link/api/v1/node/shares/<shr_…>/tunnel-token   Authorization: Bearer <node token>
 //	→ {"tunnel_token":"ovt_…","expires_in":60,"share":{"id","host","url","local_port","mode"}}
 //
 // then says hello with both, {"t":"hello","v":1,"share":"shr_…","node_token":…,"tunnel":"ovt_…",…}, and sends

@@ -61,6 +61,7 @@ Turning one **off** adds a local restriction the Node enforces itself: a command
 `not_allowed` before it reaches the plugin. Turning it **on** removes only that restriction; it never grants more than
 the plugin already offers, and it cannot raise the computer's level.
 
-**Desktop (`desk`) and Terminal (`terminal`) are gated** on the 11-05 review fixes: they may be turned off here but
-never on (`409` with the reason). At level `observe` nothing can be turned on from the panel: the level is set on the
-machine.
+**Desktop (`desk`) and Terminal (`terminal`)** turn on only by their own switch, after the window says in plain words
+what that means (the capability's `confirm` text); the first-run answer never turns them on. They were gated until
+the 11-05 review's fixes landed (Node #102-#104, 2026-11-06); [computer.md](computer.md) says what a program run at
+`trusted` can reach. At level `observe` nothing can be turned on from the panel: the level is set on the machine.
