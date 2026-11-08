@@ -21,7 +21,13 @@ fragment: `/panel/#t=<token>`. The page sends that token as `X-Link-Panel` on ev
 | `POST /panel/api/capabilities/:id` | `{ "on": false }` | Turns a capability on or off. Turning one on is the consent step. |
 | `POST /panel/api/shares` | `{ "port": 3000 }` | Shares a local port through Connect, behind the person's sign-in. |
 | `DELETE /panel/api/shares/:port` | — | Ends that share. |
-| `POST /panel/api/files` | multipart `file`… | Sends the files to the person's other devices. |
+| `GET /panel/api/send/targets` | — | The person's other paired machines with receive keys. |
+| `GET /panel/api/send/inbox` | — | Pending encrypted items, shown with Accept and Decline. |
+| `GET /panel/api/send/key` | — | This machine's Locker private key, returned only to the token-protected loopback window. |
+| `POST /panel/api/files` | `{ "target_node": "nod_…", "envelope": "base64" }` | Relays Locker ciphertext to one of the person's other machines. |
+| `POST /panel/api/files/:id/accept` | — | Returns ciphertext for local Locker opening after the person chooses Accept. |
+| `POST /panel/api/files/:id/decline` | — | Removes the incoming item. |
+| `POST /panel/api/files/:id/complete` | — | Removes the accepted item after download starts. |
 | `POST /panel/api/first-run` | `{ "uses": ["codes", "browser"], "skip": false }` | The first-run answer. Uses are `codes`, `browser`, `models`, `earn` and `vibe`. The daemon turns on what each says (`earn` stays off until it is confirmed on Exchange) and stops asking; `skip: true` only stops asking. |
 
 ## `GET /panel/api/state`

@@ -17,9 +17,11 @@ import (
 	"time"
 
 	"github.com/OpenVibers/OpenVibe.Node/internal/firstrun"
+	"github.com/OpenVibers/OpenVibe.Node/internal/link"
 	"github.com/OpenVibers/OpenVibe.Node/internal/panel"
 	"github.com/OpenVibers/OpenVibe.Node/internal/plugins"
 	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Node/internal/send"
 )
 
 // panelCapabilities are the switches the window shows, in its order. Every one is a switch the daemon already has:
@@ -67,6 +69,75 @@ const panelFile = "panel.json"
 type panelFirstRun struct {
 	Answered bool     `json:"answered"`
 	Uses     []string `json:"uses,omitempty"`
+}
+
+type panelSend struct {
+	key      func() any
+	targets  func() ([]panel.SendMachine, error)
+	send     func(string, string) error
+	inbox    func() ([]panel.IncomingSend, error)
+	accept   func(string) (string, error)
+	decline  func(string) error
+	complete func(string) error
+}
+
+func (n *Node) panelSendOptions(ctx context.Context) panelSend {
+	if n.opt.Creds == nil || !n.opt.Creds.NetworkPaired() {
+		return panelSend{}
+	}
+	key, err := send.LoadOrCreate(n.opt.Paths.ConfigDir)
+	if err != nil {
+		n.log.Warn("Link Send is unavailable: the receive key could not be opened", "err", err)
+		return panelSend{}
+	}
+	client := &send.Client{BaseURL: n.opt.Creds.Network,
+		Tokens: link.NewTokenSourceFor(n.opt.Creds, nil, "openvibe-node/"+n.opt.Version, "openvibe.network"),
+		Agent:  "openvibe-node/" + n.opt.Version}
+	go func() {
+		t := time.NewTicker(time.Minute)
+		defer t.Stop()
+		for {
+			if err := client.Register(ctx, key); err == nil {
+				return
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+		}
+	}()
+	return panelSend{
+		key: func() any {
+			return map[string]any{"private_key": key, "subject": map[string]string{"type": "node", "id": n.opt.Creds.Principal}}
+		},
+		targets: func() ([]panel.SendMachine, error) {
+			machines, err := client.Targets(ctx)
+			if err != nil {
+				return nil, err
+			}
+			out := make([]panel.SendMachine, 0, len(machines))
+			for _, m := range machines {
+				out = append(out, panel.SendMachine{ID: m.ID, Name: m.Name, Online: m.Online, PublicKey: m.PublicKey})
+			}
+			return out, nil
+		},
+		send: func(target, envelope string) error { return client.Send(ctx, target, envelope) },
+		inbox: func() ([]panel.IncomingSend, error) {
+			items, err := client.Inbox(ctx)
+			if err != nil {
+				return nil, err
+			}
+			out := make([]panel.IncomingSend, 0, len(items))
+			for _, item := range items {
+				out = append(out, panel.IncomingSend{ID: item.ID, Sender: item.Sender, SenderName: item.SenderName, Bytes: item.Bytes, CreatedAt: item.CreatedAt})
+			}
+			return out, nil
+		},
+		accept:   func(id string) (string, error) { return client.Accept(ctx, id) },
+		decline:  func(id string) error { return client.Decline(ctx, id) },
+		complete: func(id string) error { return client.Complete(ctx, id) },
+	}
 }
 
 type panelSaved struct {
@@ -123,6 +194,7 @@ func (n *Node) startPanel(ctx context.Context) {
 		n.log.Warn("Link's window off: no token", "err", err)
 		return
 	}
+	transfer := n.panelSendOptions(ctx)
 	srv, err := panel.Listen(panel.Options{
 		Token:         token,
 		State:         n.panelState,
@@ -133,6 +205,13 @@ func (n *Node) startPanel(ctx context.Context) {
 		Unshare:       n.shareRemove,
 		FirstRun:      n.applyFirstRun,
 		CodesStop:     n.panelStopCodesTask,
+		SendKey:       transfer.key,
+		SendTargets:   transfer.targets,
+		SendFile:      transfer.send,
+		SendInbox:     transfer.inbox,
+		SendAccept:    transfer.accept,
+		SendDecline:   transfer.decline,
+		SendComplete:  transfer.complete,
 		Log:           n.log,
 	})
 	if err != nil {

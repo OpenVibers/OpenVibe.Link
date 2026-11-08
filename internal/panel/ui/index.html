@@ -60,9 +60,15 @@
 
       <section class="lk-sec" data-lk-sec="drop" aria-labelledby="lk-drop-h">
         <h2 id="lk-drop-h" class="lk-sr">Send files</h2>
-        <label class="lk-drop" data-lk-drop for="lk-files"><span class="lk-drop-ic" aria-hidden="true"></span><b>Send files to your other devices</b><small>Drop them here, or choose</small></label>
-        <input id="lk-files" class="lk-sr" type="file" multiple data-lk-files>
-        <p class="lk-fine" data-lk-drop-say role="status"></p>
+        <label class="lk-fine" for="lk-send-target">Send to</label>
+        <select id="lk-send-target" data-lk-send-target><option value="">Loading your machines…</option></select>
+        <label class="lk-drop" data-lk-drop for="lk-files"><span class="lk-drop-ic" aria-hidden="true"></span><b>Send a file</b><small>Drop it here, or choose</small></label>
+        <input id="lk-files" class="lk-sr" type="file" data-lk-files>
+        <label class="lk-fine" for="lk-send-note">Or send a text note</label>
+        <textarea id="lk-send-note" data-lk-send-note rows="3" maxlength="10000" placeholder="Write a short note"></textarea>
+        <button type="button" data-lk-send-note-button>Send note</button>
+        <p class="lk-fine" data-lk-drop-say role="status" aria-live="polite"></p>
+        <h3>Waiting for you</h3><ul class="lk-send-inbox" data-lk-send-inbox></ul>
       </section>
     </div>
 
