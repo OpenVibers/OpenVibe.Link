@@ -114,8 +114,10 @@ turns on a feature you turned off here.
 **Link's own window:** the tray's **Open Link** (or `openvibe-link panel`) opens a small page on the machine itself
 at `127.0.0.1` that shows what runs here, what this computer allows, your shares, the coding-agent CLIs and the Codes
 tasks this machine ran today, and what happened, and lets you pause everything, stop one thing, turn a capability off,
-share a port, or send files (not in this version). It is served only on loopback, with a per-run token in the address
-fragment that every API call must send; see [docs/panel.md](docs/panel.md) for the security rules.
+share a port, or send a file or a note to another of your machines (sealed on this computer with
+openvibe-sdk/locker; the other machine lists the sender and size and asks before saving). It is served only on
+loopback, with a per-run token in the address fragment that every API call must send; see [docs/panel.md](docs/panel.md)
+for the security rules.
 
 **Your machines:** [openvibe.link/machines](https://openvibe.link/machines) opens the signed-in machines hub: each
 paired machine, whether it is online, the roles it plays (Codes jobs, desks, your own models, a robot), and pairing a
