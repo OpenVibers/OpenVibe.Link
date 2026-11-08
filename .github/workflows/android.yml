@@ -21,9 +21,12 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - uses: actions/setup-go@41dfa10bad2bb2ae585af6ee5bb4d7d973ad74ed # v5.1.0
-        with:
-          go-version-file: go.mod
+      - name: Install pinned Go
+        run: |
+          curl -fL --retry 3 https://go.dev/dl/go1.24.7.linux-amd64.tar.gz -o "$RUNNER_TEMP/go1.24.7.linux-amd64.tar.gz"
+          echo 'da18191ddb7db8a9339816f3e2b54bdded8047cdc2a5d67059478f8d1595c43f  '"$RUNNER_TEMP/go1.24.7.linux-amd64.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/go1.24.7.linux-amd64.tar.gz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/go/bin" >> "$GITHUB_PATH"
       - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: "20"
