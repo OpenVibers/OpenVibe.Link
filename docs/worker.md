@@ -42,6 +42,76 @@ with a token from this `env`. Codes CLI 0.6.1 and later sends it to git as an `A
 alone, through `GIT_CONFIG_*` variables: it is never on a command line, in the clone's remote URL or in its
 `.git/config`, and it never passes through OpenVibe.
 
+## Skills that run code (`openvibe-skill-runner@1.0.0`)
+
+A skill that declares `runs: "sandbox"` has tools whose code runs as a **function job** on a Node that declared the
+skill runner. The runner is a declared function like the Codes runner, and it is **off until the owner turns it on**:
+
+```sh
+sudo openvibe-node skills on        # write the runner and declare it in worker.functions
+openvibe-node skills status [--json]
+sudo openvibe-node skills off
+```
+
+`skills on` finds a system Node.js (`/usr/bin/node`, `/usr/local/bin/node`, then `node` on PATH; `--node PATH` overrides),
+requires one whose permission model is stable behind `--permission` (Node.js 22.13 or newer; it runs the exact flags
+once before writing anything), writes the runner script into `--dir` (default `/opt/openvibe-skill-runner`) and adds
+this entry to `worker.functions`:
+
+```json
+{"name": "openvibe-skill-runner", "version": "1.0.0", "class": "function",
+ "command": ["/usr/bin/node", "/opt/openvibe-skill-runner/openvibe-skill-runner.js", "job"],
+ "artifact_dir": "/opt/openvibe-skill-runner"}
+```
+
+It does not turn `worker.enabled` on: the installer's `--worker` does. Restart the Node to load the entry. `skills off`
+removes the entry and keeps the script, so `on` is instant again.
+
+### What a job of the runner runs
+
+The job's `args` are `{"tool": "<tool name>", "entry": "<input name>", "input": <JSON>}`. `entry` must be the name of
+one of the job's `inputs` (the contract's file-name pattern), which the worker staged in the job directory before the
+job started; a missing, non-regular or symlinked entry fails before anything runs. A digest mismatch on an input ends
+the job `failed` before the runner starts (the worker's rule), so nothing runs.
+
+The runner runs the entry with **this Node's own node binary** (`process.execPath`, the one in the entry's command), cwd
+the job's directory, `input` as one JSON value on the tool's stdin, and an **environment with nothing in it** (not the
+Node's, not the function's):
+
+```sh
+node --permission --allow-fs-read=<the job directory> --disallow-code-generation-from-strings <entry>
+```
+
+It passes **none** of `--allow-child-process`, `--allow-worker`, `--allow-addons`, `--allow-wasi`,
+`--allow-fs-write` or `--allow-fs-read=*`: the tool cannot spawn a process, start a worker thread, load a native addon,
+write any file (in the job directory included), read anything outside the job directory, or use `eval`/`new Function`.
+The runner adds no network of its own: the tool has the job sandbox's network namespace, so under `net: deny` (the
+default) there is no network at all, and under `public` or `openvibe-only` only what the job's `net` and the owner's
+egress allow. The tool also has the job's uid/gid, private root, seccomp filter, cgroups and rlimits; it sees no Node
+credential, no owner home and no state.
+
+The tool writes **one JSON value to stdout, at most 64 KiB**. More is stopped and the result says `limit`; stderr is
+kept for the person, cut at 16 KiB. The runner writes the job's result to fd 3:
+
+```json
+{"ok": true, "output": <the tool's JSON>, "exit": 0, "stderr": "…", "stderr_truncated": false}
+{"ok": false, "error": "…", "exit": 7, "stderr": "…"}
+```
+
+`exit` is the tool's status, `null` when it never ran or was killed. A failed tool is still a result: the runner exits
+0 whenever it wrote one (the worker keeps a result only from a function that exits 0), so the person sees what
+happened instead of a bare job failure. The job's own wall, CPU, memory and output limits are the worker's (`limits`,
+`worker.caps`).
+
+### What it never does
+
+It never fetches code, installs a dependency, runs `npm`, writes a file back to the person, keeps state between jobs,
+or calls another tool or the network on the skill's behalf: the only bytes it runs are the input files the worker
+fetched and checked against their pinned sha256. It never runs on an OpenVibe server; the job runs on the Node that
+declared the runner, in the same sandbox as every function job. Node's permission model is a seat belt against a
+tool's accidents, not a boundary against deliberately malicious code; the kernel sandbox (namespaces, seccomp,
+cgroups, no network) is that boundary.
+
 ## Config
 
 `config.json`, section `worker` (defaults shown; a zero cap means the default):

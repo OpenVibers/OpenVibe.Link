@@ -16,6 +16,7 @@
 //	                              read the memory files of the coding tools (read-only, local)
 //	openvibe-node skills sync [--tools a,b] [--project DIR …] [--dry-run]
 //	                              write the skills you chose in the hub into each tool's own folders
+//	openvibe-node skills on|off|status  declare/remove/check the skill runner (sandboxed skill code)
 //	openvibe-node version
 package main
 
@@ -91,6 +92,9 @@ Usage:
   openvibe-node skills sync --undo
                     write the skills and rules you chose at openvibe.codes/skills
                     into each tool's own folders, inside one marked block
+  openvibe-node skills on|off|status [--dir DIR] [--node PATH] [--json]
+                    run a skill's code as a sandboxed job on this machine
+                    (openvibe-skill-runner@1.0.0; off until "on")
   openvibe-node exchange serve --model <id> [--public-url URL]
                     serve a local model as an OpenVibe.Exchange seller offer
   openvibe-node stream --probe --whip-url URL [--seconds N] [--size WxH] [--json]
