@@ -13,7 +13,7 @@ import (
 // config with no worker.run_as.
 func TestDeskSandboxCommand(t *testing.T) {
 	var out, errb bytes.Buffer
-	if code := run([]string{"desk-sandbox"}, &out, &errb); code != 2 || !strings.Contains(errb.String(), "usage: openvibe-node desk-sandbox") {
+	if code := run([]string{"desk-sandbox"}, &out, &errb); code != 2 || !strings.Contains(errb.String(), "usage: openvibe-link desk-sandbox") {
 		t.Fatalf("no program: code %d, stderr %q", code, errb.String())
 	}
 	errb.Reset()

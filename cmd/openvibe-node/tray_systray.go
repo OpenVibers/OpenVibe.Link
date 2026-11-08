@@ -43,7 +43,7 @@ type systrayUI struct {
 func (u *systrayUI) build() {
 	u.link = systray.AddMenuItem("Open Link", "Link's own window: what runs here, what you allow, your shares")
 	systray.AddSeparator()
-	u.header = systray.AddMenuItem("OpenVibe Node", "")
+	u.header = systray.AddMenuItem("OpenVibe Link", "")
 	u.header.Disable()
 	u.level = systray.AddMenuItem("", "")
 	u.level.Disable()
@@ -59,7 +59,7 @@ func (u *systrayUI) build() {
 	u.panel = systray.AddMenuItem("Open my machines page", "This machine on openvibe.bot")
 	u.panel.Hide()
 	systray.AddSeparator()
-	u.quit = systray.AddMenuItem("Quit the tray", "The Node keeps running; requests wait for `openvibe-node approve`")
+	u.quit = systray.AddMenuItem("Quit the tray", "The Node keeps running; requests wait for `openvibe-link approve`")
 }
 
 func (u *systrayUI) SetIcon(state string) {
@@ -178,14 +178,14 @@ func (u *systrayUI) SetPanel(has bool) {
 
 func runTray(g *globals) error {
 	if runtime.GOOS == "linux" && os.Getenv("DBUS_SESSION_BUS_ADDRESS") == "" && os.Getenv("XDG_RUNTIME_DIR") == "" {
-		return fmt.Errorf("the tray runs in your desktop session: start it there (openvibe-node tray --autostart on starts it when you sign in)")
+		return fmt.Errorf("the tray runs in your desktop session: start it there (openvibe-link tray --autostart on starts it when you sign in)")
 	}
 	ui := &systrayUI{}
 	core := newTrayCore(g.paths.SocketPath(), ui, newDesktopNotifier(g.log))
 	stopSig := make(chan os.Signal, 1)
 	signal.Notify(stopSig, os.Interrupt, syscall.SIGTERM)
 	systray.Run(func() {
-		systray.SetTitle("OpenVibe Node")
+		systray.SetTitle("OpenVibe Link")
 		ui.build()
 		core.tick()
 		// The first time the tray runs, Link's window opens by itself: the person sees what the machine does.
@@ -218,16 +218,16 @@ func trayLoop(core *trayCore, ui *systrayUI, stopSig <-chan os.Signal, g *global
 			core.tick()
 		case <-ui.stop.ClickedCh:
 			if err := core.stop(); err != nil {
-				core.note.Info("OpenVibe Node", "Could not stop: "+err.Error())
+				core.note.Info("OpenVibe Link", "Could not stop: "+err.Error())
 			}
 			core.tick()
 		case <-ui.link.ClickedCh:
 			if err := core.openPanel(); err != nil {
-				core.note.Info("OpenVibe Node", err.Error())
+				core.note.Info("OpenVibe Link", err.Error())
 			}
 		case <-ui.resume.ClickedCh:
 			if err := core.resume(); err != nil {
-				core.note.Info("OpenVibe Node", "Could not resume: "+err.Error())
+				core.note.Info("OpenVibe Link", "Could not resume: "+err.Error())
 			}
 			core.tick()
 		case <-ui.panel.ClickedCh:
@@ -293,9 +293,9 @@ func trayAutostart(on bool, exe, home string, stdout io.Writer) error {
 		var out []byte
 		var err error
 		if on {
-			out, err = exec.Command("reg", "add", runKey, "/v", "OpenVibe Node tray", "/t", "REG_SZ", "/d", line, "/f").CombinedOutput()
+			out, err = exec.Command("reg", "add", runKey, "/v", "OpenVibe Link tray", "/t", "REG_SZ", "/d", line, "/f").CombinedOutput()
 		} else {
-			out, err = exec.Command("reg", "delete", runKey, "/v", "OpenVibe Node tray", "/f").CombinedOutput()
+			out, err = exec.Command("reg", "delete", runKey, "/v", "OpenVibe Link tray", "/f").CombinedOutput()
 			if err != nil && strings.Contains(strings.ToLower(string(out)), "unable to find") {
 				err = nil
 			}

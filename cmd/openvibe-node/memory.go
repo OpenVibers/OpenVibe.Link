@@ -11,13 +11,13 @@ import (
 	"github.com/OpenVibers/OpenVibe.Node/internal/memory"
 )
 
-// memoryUsage is what "openvibe-node memory" prints.
-const memoryUsage = "openvibe-node memory scan [--tools a,b] [--project DIR] [--json]\n" +
-	"openvibe-node memory upload [--tools a,b] [--project DIR …] [--dry-run] [--yes]\n" +
-	"openvibe-node memory status [--show]\n" +
-	"openvibe-node memory sync [--tools a,b] [--project DIR …] [--dry-run] [--yes] | --disable a,b | --undo\n" +
-	"openvibe-node memory export [--out FILE] [--scope SCOPE] [--force]\n" +
-	"openvibe-node memory import --file FILE [--dry-run] [--yes]\n" +
+// memoryUsage is what "openvibe-link memory" prints.
+const memoryUsage = "openvibe-link memory scan [--tools a,b] [--project DIR] [--json]\n" +
+	"openvibe-link memory upload [--tools a,b] [--project DIR …] [--dry-run] [--yes]\n" +
+	"openvibe-link memory status [--show]\n" +
+	"openvibe-link memory sync [--tools a,b] [--project DIR …] [--dry-run] [--yes] | --disable a,b | --undo\n" +
+	"openvibe-link memory export [--out FILE] [--scope SCOPE] [--force]\n" +
+	"openvibe-link memory import --file FILE [--dry-run] [--yes]\n" +
 	"\n" +
 	"  scan    reads the memory files of the coding tools on this machine and\n" +
 	"          prints what it found. It is read-only and local: nothing is written\n" +

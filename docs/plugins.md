@@ -23,7 +23,7 @@ hardware.
 A bundled plugin needs only its `name`; the core runs `<state>/venv/bin/python -m openvibe_<name>`. Anything else needs
 `command`. `config` is sent to the plugin in `hello`. The core adds `frame_dir` (where to write camera frames) unless
 set, and the environment variables `OPENVIBE_NODE_STATE` and `OPENVIBE_NODE_CONFIG` (its state and config directories)
-and `OPENVIBE_NODE_EXE` (its own executable), so a command a plugin runs with it (`openvibe-node desk-sandbox`, the
+and `OPENVIBE_NODE_EXE` (its own executable), so a command a plugin runs with it (`openvibe-link desk-sandbox`, the
 computer plugin's shared desks) reads the same config as the Node that started it.
 
 ## Lifecycle
@@ -42,7 +42,7 @@ A plugin that exits is restarted with exponential backoff (1 s doubling to 30 s,
 starts stopped; if the e-stop or the local kill switch is latched, the core sends `estop` right after `hello`.
 A plugin that does not describe itself within 15 s, or stops reading stdin, is killed.
 
-Probe mode (`hello` with `"probe": true`) is used by `openvibe-node pair` and `openvibe-node plugins`: the plugin
+Probe mode (`hello` with `"probe": true`) is used by `openvibe-link pair` and `openvibe-link plugins`: the plugin
 describes itself and waits for EOF without opening any hardware.
 
 ## Messages
@@ -180,14 +180,14 @@ Asked by the Generic LOOI driver's authors (2026-10-27). Each answer is what Bot
      - a `halt` (a change of driver, with its `turn_epoch`, or an operator's halt);
      - the link to Bot dropping;
      - the core shutting down (then stdin closes);
-     - `openvibe-node quit`;
+     - `openvibe-link quit`;
      - a plugin missing its reply window.
    - `estop` stops every actuator **and latches**. The core refuses `drive`, `ptz` and `actuator` itself (`estopped`,
      `local_stop`), and so does the runtime, until `resume`. The latch:
-     - is set by Bot's e-stop (an owner or operator presses it), by `openvibe-node stop`, or by a driver's `local_stop`;
+     - is set by Bot's e-stop (an owner or operator presses it), by `openvibe-link stop`, or by a driver's `local_stop`;
      - is written to disk, survives a Node restart, and is sent again at once to a plugin that restarts;
      - is reapplied from Bot's config on every reconnect.
-   - Only the owner clears Bot's e-stop. A local stop is cleared only by `openvibe-node resume` on the machine.
+   - Only the owner clears Bot's e-stop. A local stop is cleared only by `openvibe-link resume` on the machine.
    - A `halt` still passes while latched.
    - The driver's own stops (a motion deadline passing, a second without a heartbeat, stdin closing) are `stop`s.
      Heartbeat loss also refuses motion until heartbeats return.
@@ -240,11 +240,11 @@ Asked next by the same authors (2026-10-27, P7 LOOI shadow integration), and cha
      |---|---|---|---|
      | `stop` | `halt` | Bot's halt: a turn ended, a viewer handoff, a release, a timeout, an unbind (with `turn_epoch`) | no |
      | `stop` | `link_lost` | the link to Bot dropped (two missed heartbeats, a close) | no |
-     | `stop` | `shutdown` | the Node is stopping (service stop, `openvibe-node quit`), or the core is stopping this process | no |
+     | `stop` | `shutdown` | the Node is stopping (service stop, `openvibe-link quit`), or the core is stopping this process | no |
      | `stop` | `timeout` | a command got no answer from the driver within its window | no |
      | `estop` | `remote` | the platform's e-stop (a robot owner or staff), with its `reason` | yes, until the owner clears it |
-     | `estop` | `local` | `openvibe-node stop` on the device | yes, until `openvibe-node resume` |
-     | `estop` | `driver` | a driver's own `local_stop` (this plugin's or another's) | yes, until `openvibe-node resume` |
+     | `estop` | `local` | `openvibe-link stop` on the device | yes, until `openvibe-link resume` |
+     | `estop` | `driver` | a driver's own `local_stop` (this plugin's or another's) | yes, until `openvibe-link resume` |
      | `estop` | `latched` | the latch was already set when the Node or this process started (`replayed: true`, `first_cause` when known) | yes |
      | `resume` | `cleared` | the owner cleared the platform's latch | clears the core's and the runtime's refusal only |
 
@@ -481,9 +481,9 @@ A plugin must stop every actuator itself — the core dying must never leave mot
 **A driver's own stop.** A driver with a stop of its own (a stop button on the robot, a hotkey on a bridge computer,
 a sensor it trusts) sends `local_stop` (Python: `self.local_stop("reason")`). The core stops every plugin at once and
 latches its **local** stop with that reason, persisted across restarts; Bot shows the robot as stopped on the robot.
-Only `openvibe-node resume` on that machine releases it: the owner's remote clear does not, and nothing a plugin sends
+Only `openvibe-link resume` on that machine releases it: the owner's remote clear does not, and nothing a plugin sends
 releases a latch. The Python runtime refuses motion from the moment it is called and ignores a `resume` that crosses it
-on the wire. `openvibe-node stop` sets the same latch from a terminal.
+on the wire. `openvibe-link stop` sets the same latch from a terminal.
 
 A plugin whose setup can fail only because something is not up yet (the robot's computer still booting) sets
 `retry_setup_s` (Python): the runtime sends the fault once, sets up again that often, and sends `ready` when it works,
@@ -644,9 +644,9 @@ with the owner's control level (`observe`, `ask`, `trusted`, `full`) and folders
 `screen` (not motion kinds: long deadlines, no clamping, not in `GuardedKinds`; the core refuses `exec` and file writes
 while a stop is latched). Its `ack` carries the answer in `data`. The level is enforced in the plugin from its local
 config, never from a command; `ask` holds a command (`Deferred` in the SDK), raises an `approval` event and answers
-once the owner runs `openvibe-node approve|deny <id>`, which the core forwards to the plugin as `{"op": "approval", "id",
+once the owner runs `openvibe-link approve|deny <id>`, which the core forwards to the plugin as `{"op": "approval", "id",
 "approved"}`. The local kill switch drops it to `observe`. `input` (mouse and keyboard) and `browser` are kinds on the
-same plugin; the machine's own coding agents come later. While `openvibe-node tray` runs, the core sends the plugin
+same plugin; the machine's own coding agents come later. While `openvibe-link tray` runs, the core sends the plugin
 `{"op": "tray", "attached": true, "ttl_s": 15}` every few seconds (and `attached: false` when it quits), and the plugin
 leaves the desktop prompts to the tray.
 
@@ -663,8 +663,8 @@ source the profile's page links to and lists it in the config's `plugins`, as wi
 Before installing one, check that the profile is the one that was reviewed:
 
 ```sh
-openvibe-node profile verify community.ballbot            # Bot from the config, else https://openvibe.bot
-openvibe-node profile verify community.ballbot --key-id a7a0f02462c68119   # accept only this signing key
+openvibe-link profile verify community.ballbot            # Bot from the config, else https://openvibe.bot
+openvibe-link profile verify community.ballbot --key-id a7a0f02462c68119   # accept only this signing key
 ```
 
 The Node fetches the profile (`GET /api/v1/profiles/:id`, with the `signature` Bot made on approval) and Bot's key

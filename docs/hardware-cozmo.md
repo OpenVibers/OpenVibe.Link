@@ -48,7 +48,7 @@ Then check the written config (`cat /etc/openvibe-node/config.json`): `device_ki
 `cozmo`, and `video.source` is `auto` (the plugin supplies JPEG camera frames). The config has no `video.whip_url`: the
 ingest URL + publish key the pairing returned is stored in `/etc/openvibe-node/credential.json`, and video publishes
 there unless a `video.whip_url` in the config overrides it. Setup waits `connect_timeout_s` (default 10 s) for the
-robot; if it is unreachable the plugin reports fault `not_connected`. `openvibe-node status --json` should show
+robot; if it is unreachable the plugin reports fault `not_connected`. `openvibe-link status --json` should show
 `link.connected: true`, `sensors` (`head_deg`, `lift_mm`, `cliff`, `picked_up`, `cubes`) and `video.state` at
 `connecting` or `live`.
 
@@ -62,11 +62,11 @@ know a version works, allow it with `allow_firmware: [2381, <version>]` in the p
 
 ## 4. Panel checklist
 
-Drive from openvibe.bot; watch `openvibe-node status --json` for telemetry.
+Drive from openvibe.bot; watch `openvibe-link status --json` for telemetry.
 
 | Subsystem | Expected | Pass |
 |---|---|---|
-| Drive (`drive` `{"throttle": -1..1, "steer": -1..1}`) | left = throttle + steer, right = throttle − steer (steer > 0 turns right), × `max_wheel_mmps`; wheels stop at the deadline and on `openvibe-node stop` | |
+| Drive (`drive` `{"throttle": -1..1, "steer": -1..1}`) | left = throttle + steer, right = throttle − steer (steer > 0 turns right), × `max_wheel_mmps`; wheels stop at the deadline and on `openvibe-link stop` | |
 | Head (`ptz` `{"tilt": -1..1}` / actuator `head`) | −1 = 25° down → +1 = 44.5° up (no pan: turn with `drive`) | |
 | Lift (actuator `lift` 0..1) | 0 = 32 mm down → 1 = 92 mm up | |
 | Say (`say` `{"text"}`) | espeak-ng / pico2wave played on Cozmo's speaker (ack = queued) | |
@@ -83,7 +83,7 @@ Drive from openvibe.bot; watch `openvibe-node status --json` for telemetry.
 - **No telemetry / `not_connected`**: confirm the second interface is joined to `Cozmo_XXXXXX`, the default route is
   still on the internet NIC (`ip route`), the Cozmo app is closed everywhere, and the robot is on its charger.
 - **No video**: the plugin writes JPEG frames to `frame_dir` (a temp dir by default) and announces each as
-  `{"op":"video","format":"jpeg","path":…,"seq":n}`; the core publishes them. Check `openvibe-node status --json` for
+  `{"op":"video","format":"jpeg","path":…,"seq":n}`; the core publishes them. Check `openvibe-link status --json` for
   `video.state` / `video.last_error` and journalctl for `openvibe-node`. To check the WHIP path without the camera, set
   `"video": {"source": "test"}` in `/etc/openvibe-node/config.json` and restart: the panel then shows the test pattern.
 - **A command answers `nack`**: read the fault — `firmware_unsupported` is the firmware latch above; `cliff` and

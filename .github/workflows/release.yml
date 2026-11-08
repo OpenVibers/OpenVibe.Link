@@ -33,7 +33,12 @@ jobs:
           test -s dist/install.sh
           test -s dist/openvibe-node-plugins.tar.gz
           test -s dist/SHA256SUMS
+          # The new name and the alias it replaces are both in every release for a year (plan 2026-11-07 §5).
+          test -s dist/openvibe-link-linux-amd64
+          test -s dist/openvibe-node-linux-amd64
+          test -s dist/openvibe-link-windows-amd64.exe
+          test -s dist/openvibe-node-windows-amd64.exe
       - name: publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" dist/* --title "OpenVibe Node ${GITHUB_REF_NAME}" --generate-notes
+        run: gh release create "${GITHUB_REF_NAME}" dist/* --title "OpenVibe Link ${GITHUB_REF_NAME}" --generate-notes

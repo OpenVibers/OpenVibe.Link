@@ -26,7 +26,7 @@ func TestTrayViewStates(t *testing.T) {
 	st := &node.Status{Server: "https://openvibe.bot", Link: node.LinkStatus{Connected: true}}
 	st.Telemetry.Sensors = map[string]any{"computer_level": "ask"}
 	v := viewOf(st, nil, nil)
-	if v.State != trayOK || v.Level != "ask" || v.Panel != "https://openvibe.bot/machines" || v.Tooltip != "OpenVibe Node: online, computer level ask" {
+	if v.State != trayOK || v.Level != "ask" || v.Panel != "https://openvibe.bot/machines" || v.Tooltip != "OpenVibe Link: online, computer level ask" {
 		t.Fatalf("all well: %+v", v)
 	}
 	v = viewOf(st, []node.Approval{{ID: "a"}, {ID: "b"}}, nil)

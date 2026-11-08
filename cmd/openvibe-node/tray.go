@@ -1,6 +1,6 @@
 package main
 
-// `openvibe-node tray`: the Node in its owner's notification area. It runs in the graphical session (not in the
+// `openvibe-link tray`: the Node in its owner's notification area. It runs in the graphical session (not in the
 // service), talks to the running Node over the local control socket like the other commands, and shows:
 //
 //   - the state in the icon: blue when all is well, amber while a computer request waits for an answer, red while a
@@ -64,7 +64,7 @@ type trayView struct {
 // viewOf builds the view from the Node's status and approvals; err is the socket error (the Node is not running).
 func viewOf(st *node.Status, list []node.Approval, err error) trayView {
 	if err != nil || st == nil {
-		return trayView{State: trayDown, Tooltip: "OpenVibe Node: not running", Header: "The Node is not running"}
+		return trayView{State: trayDown, Tooltip: "OpenVibe Link: not running", Header: "The Node is not running"}
 	}
 	v := trayView{Waiting: list, Panel: panelURL(st.Server)}
 	if lv, ok := st.Telemetry.Sensors["computer_level"].(string); ok {
@@ -84,9 +84,9 @@ func viewOf(st *node.Status, list []node.Approval, err error) trayView {
 		v.Header = fmt.Sprintf("%d %s your answer", len(list), plural(len(list), "request waits for", "requests wait for"))
 	default:
 		v.State = trayOK
-		v.Header = "OpenVibe Node: " + link
+		v.Header = "OpenVibe Link: " + link
 	}
-	tip := []string{"OpenVibe Node: " + link}
+	tip := []string{"OpenVibe Link: " + link}
 	if v.Level != "" {
 		tip = append(tip, "computer level "+v.Level)
 	}
@@ -267,7 +267,7 @@ func (t *trayCore) answer(a node.Approval, approved bool) error {
 		if approved && strings.Contains(err.Error(), "mouse or keyboard") {
 			t.note.Ask(a, "Not taken: the agent was using the mouse or keyboard. Answer again if it was you.")
 		} else {
-			t.note.Info("OpenVibe Node", err.Error())
+			t.note.Info("OpenVibe Link", err.Error())
 		}
 		return err
 	}
@@ -349,7 +349,7 @@ func trayDesktopEntry(exe, home string) string {
 	if home != "" {
 		line += " --home " + shellQuote(home)
 	}
-	return "[Desktop Entry]\nType=Application\nName=OpenVibe Node\nComment=Approve what your agents ask to do on this computer\n" +
+	return "[Desktop Entry]\nType=Application\nName=OpenVibe Link\nComment=Approve what your agents ask to do on this computer\n" +
 		"Exec=" + line + "\nIcon=dialog-question\nTerminal=false\nX-GNOME-Autostart-enabled=true\nNoDisplay=false\n"
 }
 

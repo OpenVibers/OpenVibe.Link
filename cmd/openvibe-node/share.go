@@ -17,7 +17,7 @@ import (
 	"github.com/OpenVibers/OpenVibe.Node/internal/link"
 )
 
-// shareArgs is `openvibe-node share …` (OpenVibe Connect, Website Connect v0).
+// shareArgs is `openvibe-link share …` (OpenVibe Connect, Website Connect v0).
 type shareArgs struct {
 	key    string
 	port   int
@@ -26,15 +26,15 @@ type shareArgs struct {
 }
 
 const shareUsage = `usage:
-  openvibe-node share <port>                        serve the share this computer was picked for on that port, until Ctrl-C
-  openvibe-node share add <port>                    keep that share up from the Node service
-  openvibe-node share --share shr_… [--port N]      serve one by its id, until Ctrl-C (no key)
-  openvibe-node share add --share shr_… [--port N]  keep one by its id up from the Node service
-  openvibe-node share mine                          the shares this computer was picked for
-  openvibe-node share --key ovc_… --port N          serve a share with its connect key, until Ctrl-C
-  openvibe-node share add --key ovc_… --port N      keep it up from the Node service (restart the service to start it)
-  openvibe-node share list                          the shares the service keeps up
-  openvibe-node share remove <PORT|KEY|ID|ADDRESS>  stop keeping one up
+  openvibe-link share <port>                        serve the share this computer was picked for on that port, until Ctrl-C
+  openvibe-link share add <port>                    keep that share up from the Node service
+  openvibe-link share --share shr_… [--port N]      serve one by its id, until Ctrl-C (no key)
+  openvibe-link share add --share shr_… [--port N]  keep one by its id up from the Node service
+  openvibe-link share mine                          the shares this computer was picked for
+  openvibe-link share --key ovc_… --port N          serve a share with its connect key, until Ctrl-C
+  openvibe-link share add --key ovc_… --port N      keep it up from the Node service (restart the service to start it)
+  openvibe-link share list                          the shares the service keeps up
+  openvibe-link share remove <PORT|KEY|ID|ADDRESS>  stop keeping one up
 
 Make a share at https://connect.openvibe.website. On its page, pick this computer under "Or serve it from one of your
 computers" to serve it with --share and no key (the computer must be added on openvibe.bot/machines). Without --port,
@@ -91,7 +91,7 @@ func nodeShare(ctx context.Context, g *globals, a shareArgs) (connect.Share, fun
 }
 
 // shareByPort finds the one share the owner picked this computer for that names local port a.port (CON-4). It is the
-// `openvibe-node share <port>` form: the machine's own node token buys the tunnel token, so there is no key.
+// `openvibe-link share <port>` form: the machine's own node token buys the tunnel token, so there is no key.
 func shareByPort(ctx context.Context, g *globals, a shareArgs) (connect.Share, func(context.Context) (string, error), error) {
 	if a.port < 1 || a.port > 65535 {
 		return connect.Share{}, nil, fmt.Errorf("port %d is not a port", a.port)
@@ -133,7 +133,7 @@ func cmdShare(g *globals, positional []string, a shareArgs, stdout, stderr io.Wr
 	if a.key == "" {
 		a.key = os.Getenv("OV_CONNECT_KEY")
 	}
-	// `openvibe-node share <port>`: the share this computer was picked for, found by the local port its owner set on
+	// `openvibe-link share <port>`: the share this computer was picked for, found by the local port its owner set on
 	// the share's page (CON-4). The page gives this form because there is no key to copy.
 	if a.share == "" && a.key == "" && a.port == 0 && len(positional) == 1 {
 		if p, err := strconv.Atoi(positional[0]); err == nil && p > 0 && p < 65536 {
@@ -229,7 +229,7 @@ func cmdShare(g *globals, positional []string, a shareArgs, stdout, stderr io.Wr
 			return err
 		}
 		if len(shares) == 0 {
-			fmt.Fprintln(stdout, "No saved shares. Add one with: openvibe-node share add --key ovc_… --port N")
+			fmt.Fprintln(stdout, "No saved shares. Add one with: openvibe-link share add --key ovc_… --port N")
 			return nil
 		}
 		for _, s := range shares {

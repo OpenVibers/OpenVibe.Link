@@ -45,7 +45,7 @@ RFC 9457 problems; the Node turns their `code` into a sentence: `bot.pairing_cod
 (tests).
 
 The credential and publish key are stored in `credential.json` (mode 0600, with the device and robot ids) and never
-appear in a URL, a log line, an error, `openvibe-node status` or telemetry (the Go type `credentials.Secret` prints as
+appear in a URL, a log line, an error, `openvibe-link status` or telemetry (the Go type `credentials.Secret` prints as
 `[redacted]` in every format).
 
 ### Pairing through OpenVibe.Network
@@ -126,7 +126,7 @@ body into the Node to take the new pair without pairing again:
 
 ```sh
 curl -s -X POST -H "Authorization: Bearer $TOKEN" https://openvibe.bot/api/v1/devices/dev_…/rotate \
-  | openvibe-node credential import
+  | openvibe-link credential import
 ```
 
 `import` keeps every other stored field (server, WHIP URL, robot ids, profile, version), rewrites `credential.json`
@@ -171,7 +171,7 @@ applied the Node runs nothing but `halt` (`nack not_ready`), so that latch is in
 this machine was installed for; the local configuration always wins (a role never installs anything and never turns on
 a feature the owner turned off here), and a role the Node does not know is ignored.
 `estop` `latched:false` is the owner's clear: it clears the remote latch only, never the local kill switch. A computer
-plugin is the one exception to the remote latch's reach: an e-stop on a computer waits for `openvibe-node resume` on the
+plugin is the one exception to the remote latch's reach: an e-stop on a computer waits for `openvibe-link resume` on the
 machine, whatever the server clears (docs/computer.md).
 
 ### Device → server
@@ -256,7 +256,7 @@ reply window (an owner's approval on the machine plus the program's own run): ab
 writing a file (`exec`, `fs` other than `list`/`stat`/`read`) are refused while the local kill switch is latched
 (`nack local_stop`) or the remote e-stop is (`nack estopped`); capturing the screen and reading files are not. The
 `computer` plugin applies its owner's control level, and its `ack` carries the answer in `data` (at most 512 KB of JSON,
-else `nack bad_value`). An `ask`-level command waits for `openvibe-node approve|deny <id>` on the machine; the plugin
+else `nack bad_value`). An `ask`-level command waits for `openvibe-link approve|deny <id>` on the machine; the plugin
 raises an `approval` event while it waits and `approval_done` when it is answered or expires.
 
 Commands are never queued while offline and never replayed after a reconnect.
@@ -377,8 +377,8 @@ original expiry, [plugins.md](plugins.md) answer 9). Plugins may add their own; 
 |----------------------------------------------|----------------------------------------------------|-----------------------------------------|
 | motion command's deadline passes             | the plugin (its own timer)                         | no                                      |
 | 2 missed heartbeats / link closed            | the core → `stop` to every plugin                  | no                                      |
-| server `estop`                               | the core → `estop` to every plugin                 | yes, persisted; `estop` `latched:false` or `openvibe-node resume` |
-| `openvibe-node stop` (local kill switch)     | the core → `estop` to every plugin                 | yes, persisted; only `openvibe-node resume` |
+| server `estop`                               | the core → `estop` to every plugin                 | yes, persisted; `estop` `latched:false` or `openvibe-link resume` |
+| `openvibe-link stop` (local kill switch)     | the core → `estop` to every plugin                 | yes, persisted; only `openvibe-link resume` |
 | core shutdown                                | `stop`, then stdin closed                          | no                                      |
 | core killed / crashed                        | the plugin: stdin EOF, or 1 s without a heartbeat  | no                                      |
 | plugin crash                                 | restarted with backoff; starts stopped; `estop` re-sent if latched | —                        |

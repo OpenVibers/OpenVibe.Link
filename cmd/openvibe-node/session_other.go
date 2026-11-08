@@ -4,7 +4,7 @@ package main
 
 import "errors"
 
-var errUserSessionWindowsOnly = errors.New("--user-session is for Windows; on Linux and macOS install the service (sudo openvibe-node install), or start `openvibe-node run --home DIR` from your desktop's autostart")
+var errUserSessionWindowsOnly = errors.New("--user-session is for Windows; on Linux and macOS install the service (sudo openvibe-link install), or start `openvibe-link run --home DIR` from your desktop's autostart")
 
 func userSessionSupported() error                   { return errUserSessionWindowsOnly }
 func registerUserSession(string, string) error      { return errUserSessionWindowsOnly }

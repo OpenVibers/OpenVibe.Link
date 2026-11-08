@@ -119,7 +119,7 @@ func Body(content Content) string {
 	if text == "" && len(rules) == 0 {
 		return ""
 	}
-	b.WriteString("<!-- Managed by OpenVibe Node from your OpenVibe Memory. Edit the memory in OpenVibe, not in this block. This file may be shared or committed. -->\n")
+	b.WriteString("<!-- Managed by OpenVibe Link from your OpenVibe Memory. Edit the memory in OpenVibe, not in this block. This file may be shared or committed. -->\n")
 	if text != "" {
 		if isProject(content.Scope) {
 			b.WriteString("\n## About this project\n\n")

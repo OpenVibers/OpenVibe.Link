@@ -14,8 +14,8 @@ import (
 	"github.com/OpenVibers/OpenVibe.Node/internal/memorystore"
 )
 
-// memoryExportUsage is what "openvibe-node memory export" prints.
-const memoryExportUsage = "openvibe-node memory export [--out FILE] [--scope SCOPE] [--force]\n" +
+// memoryExportUsage is what "openvibe-link memory export" prints.
+const memoryExportUsage = "openvibe-link memory export [--out FILE] [--scope SCOPE] [--force]\n" +
 	"\n" +
 	"  Writes your one portable memory file: a JSON document with every note, its\n" +
 	"  kind, scope, source and confidence, and no account id or note id. The same\n" +
@@ -28,8 +28,8 @@ const memoryExportUsage = "openvibe-node memory export [--out FILE] [--scope SCO
 	"  --endpoint URL   the store (default " + memorystore.DefaultBaseURL + ")\n" +
 	"  --token-env NAME the variable the access token is read from (default " + memorystore.DefaultTokenEnv + ")\n"
 
-// memoryImportUsage is what "openvibe-node memory import" prints.
-const memoryImportUsage = "openvibe-node memory import --file FILE [--dry-run] [--yes]\n" +
+// memoryImportUsage is what "openvibe-link memory import" prints.
+const memoryImportUsage = "openvibe-link memory import --file FILE [--dry-run] [--yes]\n" +
 	"\n" +
 	"  Reads a portable memory file back into your store. The store validates the\n" +
 	"  format, removes secrets again and merges a note that says the same thing as\n" +

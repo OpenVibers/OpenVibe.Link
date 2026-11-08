@@ -1,4 +1,4 @@
-"""OpenVibe Node computer plugin: the machine's terminal, files, screen and input for its owner's agents (plan T14/T17).
+"""OpenVibe Link computer plugin: the machine's terminal, files, screen and input for its owner's agents (plan T14/T17).
 
 Off unless its owner lists it in the Node's config. The owner sets the **control level** on the machine itself; a cloud
 command can never raise it:
@@ -143,7 +143,7 @@ INPUT_GUARD_S = 2.0
 # macOS dialog); the owner answers it in full with `openvibe-node approvals`.
 NOTIFY_SUMMARY_MAX = 300
 DIALOG_SUMMARY_MAX = 400
-FULL_VIEW_HINT = "openvibe-node approvals"
+FULL_VIEW_HINT = "openvibe-link approvals"
 # Control, ANSI and bidi characters are escaped before any surface shows them: a summary can be a terminal, a
 # notification or a dialog, and none of them may interpret what the agent wrote as layout or markup.
 BIDI_CHARS = frozenset("\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
@@ -1383,23 +1383,23 @@ class Computer(Plugin):
             return
         title = "OpenVibe: your agent asks"
         summary = _plain(summary)
-        hint = "openvibe-node approve %s  (or deny %s)" % (shlex.quote(_plain(cid)), shlex.quote(_plain(cid)))
+        hint = "openvibe-link approve %s  (or deny %s)" % (shlex.quote(_plain(cid)), shlex.quote(_plain(cid)))
         parse = None
         if self.platform.startswith("linux") and (self.env.get("DISPLAY") or self.env.get("WAYLAND_DISPLAY")) and self.which("notify-send"):
             # A notification cannot show an arbitrarily long request; when it is longer than this surface can show in
             # full, it offers no button at all and points at the full view instead of approving a cut summary.
             if self._notify_can_act() and len(summary) <= NOTIFY_SUMMARY_MAX:
-                argv = ["notify-send", "--app-name=OpenVibe Node", "--urgency=critical", "--wait",
+                argv = ["notify-send", "--app-name=OpenVibe Link", "--urgency=critical", "--wait",
                         "--expire-time=%d" % (self.approval_timeout_s * 1000), "--action=approve=Approve",
                         "--action=deny=Deny", "--", title, _markup(summary)]
                 parse = _parse_notify_send
             elif len(summary) > NOTIFY_SUMMARY_MAX:
-                argv = ["notify-send", "--app-name=OpenVibe Node", "--urgency=critical",
+                argv = ["notify-send", "--app-name=OpenVibe Link", "--urgency=critical",
                         "--expire-time=%d" % (self.approval_timeout_s * 1000), "--", title,
                         _markup("This request is too long to show whole here. Run `%s` to read it and answer it.\n%s"
                                 % (FULL_VIEW_HINT, hint))]
             else:
-                argv = ["notify-send", "--app-name=OpenVibe Node", title, _markup("%s\n%s" % (summary, hint))]
+                argv = ["notify-send", "--app-name=OpenVibe Link", title, _markup("%s\n%s" % (summary, hint))]
         elif self.platform == "darwin" and self.which("osascript"):
             quote = lambda s: '"%s"' % s.replace("\\", "\\\\").replace('"', '\\"')
             if len(summary) <= DIALOG_SUMMARY_MAX:
@@ -2653,10 +2653,10 @@ class Computer(Plugin):
         if not self.notify:
             return
         title = "Your screen is live on OpenVibe"
-        body = "Shown to your own account for %d min. Run `openvibe-node stop` to end it now." % max(1, seconds // 60)
+        body = "Shown to your own account for %d min. Run `openvibe-link stop` to end it now." % max(1, seconds // 60)
         argv = None
         if self.platform.startswith("linux") and (self.env.get("DISPLAY") or self.env.get("WAYLAND_DISPLAY")) and self.which("notify-send"):
-            argv = ["notify-send", "--app-name=OpenVibe Node", "--", title, body]
+            argv = ["notify-send", "--app-name=OpenVibe Link", "--", title, body]
         elif self.platform == "darwin" and self.which("osascript"):
             quote = lambda s: '"%s"' % s.replace("\\", "\\\\").replace('"', '\\"')
             argv = ["osascript", "-e", "display notification %s with title %s" % (quote(body), quote(title))]

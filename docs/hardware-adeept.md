@@ -1,6 +1,6 @@
 # Adeept ADR036 4WD Smart Car — hardware bring-up (O30)
 
-The device side is the OpenVibe Node (`openvibe-node`) with the `adeept_adr036` plugin. Bot serves the one-paste
+The device side is the OpenVibe Link (`openvibe-node`) with the `adeept_adr036` plugin. Bot serves the one-paste
 installer; the panel is `openvibe.bot/panel/<rob_…>`. Nothing here runs the kit's stock control server — the Node
 replaces it, and the installer disables the kit's own autostart (`docs/install.md`).
 
@@ -43,16 +43,16 @@ Then check the written config (`cat /etc/openvibe-node/config.json`): `plugins` 
 `real` and `wheels: "ordinary"`, and `video.source` is `auto`. The config has no `video.whip_url`: the ingest URL +
 publish key the pairing returned (O30: `https://ingest.openre.stream/whip/<key>`) is stored in
 `/etc/openvibe-node/credential.json`, and video publishes there unless a `video.whip_url` in the config overrides it.
-`openvibe-node status --json` should show `link.connected: true` and
+`openvibe-link status --json` should show `link.connected: true` and
 `video.state` at `connecting` or `live`.
 
 ## 3. Panel checklist
 
-Drive from openvibe.bot; watch `openvibe-node status --json` for telemetry.
+Drive from openvibe.bot; watch `openvibe-link status --json` for telemetry.
 
 | Subsystem | Expected | Pass |
 |---|---|---|
-| Motors (PCA9685 `0x5f`, 50 Hz; M1–M4 = 15/14, 12/13, 11/10, 8/9) | forward/back + steer; wheels stop at the 300 ms deadline and on `openvibe-node stop` | |
+| Motors (PCA9685 `0x5f`, 50 Hz; M1–M4 = 15/14, 12/13, 11/10, 8/9) | forward/back + steer; wheels stop at the 300 ms deadline and on `openvibe-link stop` | |
 | Servos pan ch0 / tilt ch1 (500–2400 µs) | reach min → centre → max | |
 | Battery (ADS7830 `0x48`, 2×18650 6.0–8.4 V) | telemetry `battery.volts` ≈ pack, `percent` sane | |
 | Ultrasonic (`DistanceSensor(echo=24, trigger=23)`) | `sensors.distance_cm` changes with a hand | |
@@ -70,7 +70,7 @@ widget and a `display` command is nacked.
 
 If `rpicam-vid` is missing, `video.source` `auto` has nothing to fall back to: the Adeept plugin offers only the
 H.264 camera command (no JPEG frames, no test pattern), so the core publishes **no video** — `journalctl -u openvibe-node` shows
-`camera program not found` and then `no camera to publish`, and `openvibe-node status --json` has no `video.source`.
+`camera program not found` and then `no camera to publish`, and `openvibe-link status --json` has no `video.source`.
 Install `rpicam-apps` (noted in `docs/install.md`) and `sudo systemctl restart openvibe-node`. To check the WHIP path without the camera,
 set `"video": {"source": "test"}` in `/etc/openvibe-node/config.json` and restart: the panel then shows the test
 pattern. Report `video.state`, `video.last_error` and the journal lines above.

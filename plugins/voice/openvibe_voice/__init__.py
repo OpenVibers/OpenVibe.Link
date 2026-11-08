@@ -1,4 +1,4 @@
-"""OpenVibe Node voice plugin: Vibe by voice on the person's own machine (contracts 0.214.0; consumer plan §8).
+"""OpenVibe Link voice plugin: Vibe by voice on the person's own machine (contracts 0.214.0; consumer plan §8).
 
 The owner lets Vibe answer their voice on this machine and chooses a call word on openvibe.bot/machines; Bot's config
 says so (the core passes it on as the ``voice`` op). While it is on, this plugin listens on the machine itself, and

@@ -19,7 +19,7 @@ and adds the plugin with your home folder as its only folder. It cannot share a 
 worker's service runs as root).
 
 By hand, or on another system, add it to `plugins` in the Node's `config.json` and run the Node as your own account
-(`openvibe-node run` in your session, or `openvibe-node install --user <you>`):
+(`openvibe-link run` in your session, or `openvibe-link install --user <you>`):
 
 ```json
 {"name": "computer", "config": {"level": "ask", "roots": ["/home/you/projects"]}}
@@ -52,22 +52,22 @@ plugin compares path names only: there a name that changes under it is still a n
 (default 120 s) and never longer than the request's own deadline:
 
 ```sh
-openvibe-node approvals          # what waits: id, kind, what it would do
-openvibe-node approve <ID>       # let it run
-openvibe-node deny <ID>          # refuse it
+openvibe-link approvals          # what waits: id, kind, what it would do
+openvibe-link approve <ID>       # let it run
+openvibe-link deny <ID>          # refuse it
 ```
 
 A request shows what it would do in full: every argument of a program, the program it resolves to, the folder, and
 whether stdin is given with its size and digest; a write's path, mode, size and content digest; the whole text to type,
 or its length and digest. Control, ANSI and bidi characters are escaped. A notification or dialog that cannot show all
-of it offers no **Approve** button: answer that request from `openvibe-node approvals`.
+of it offers no **Approve** button: answer that request from `openvibe-link approvals`.
 
 **What an approval does not limit.** Approving a program lets it run as your account, with everything that account can
 reach: the folders are the plugin's own limit, not a sandbox around the program. Read what it would do before you
 approve it.
 
-**The tray** (Linux and Windows): `openvibe-node tray` puts the Node in your notification area. The installer's
-`--computer` starts it when you sign in (`openvibe-node tray --autostart on|off` does it by hand). It runs in your
+**The tray** (Linux and Windows): `openvibe-link tray` puts the Node in your notification area. The installer's
+`--computer` starts it when you sign in (`openvibe-link tray --autostart on|off` does it by hand). It runs in your
 desktop session, not in the service, and talks to the Node over the same local socket as the commands above:
 
 - the icon is blue when all is well, amber while a request waits, red while a stop is latched, grey when the Node does
@@ -86,15 +86,15 @@ the command to answer with); on macOS a dialog with **Deny** as its default butt
 expires. A prompt goes away once the request is answered anywhere else, expires or is stopped.
 
 **An approval is not taken while the agent drives the mouse or keyboard**, nor for 2 seconds after: an approved click
-must not be able to press another request's Approve button. `openvibe-node approve` then answers "answer again in a
+must not be able to press another request's Approve button. `openvibe-link approve` then answers "answer again in a
 moment", and the tray and the plugin ask again. Deny always goes through.
 
 At most 8 requests wait at once. The panel on openvibe.bot sees `approval` and `approval_done` events, so it can say
 that a request is waiting on the machine.
 
-**Kill switch:** `openvibe-node stop` (and an owner's e-stop) drops the plugin to `observe`: what runs is killed, what
+**Kill switch:** `openvibe-link stop` (and an owner's e-stop) drops the plugin to `observe`: what runs is killed, what
 waits is denied, the agent's browser is closed, and the core also refuses `exec`, file writes, `input` and the browser's
-acting actions until `openvibe-node resume`. `halt` kills what runs. An e-stop on this computer always needs that local
+acting actions until `openvibe-link resume`. `halt` kills what runs. An e-stop on this computer always needs that local
 resume: the owner's remote clear (`estop` `latched:false`, or a config without `estop_latched`) releases the robot's remote
 latch, never this computer.
 
@@ -124,10 +124,10 @@ You can watch your machine's screen live on openvibe.bot (**Your machines** → 
 - **How it works.** The plugin captures a JPEG frame with the same tools as `screen`, 1 to 5 times a second (2 by
   default), at most 1600 px wide when Pillow is installed. The core encodes the frames (ffmpeg, else its built-in
   encoder) and publishes them on a WebRTC session of their own, separate from a robot's camera.
-- **You are told.** The desktop says when it starts ("Your screen is live on OpenVibe"), and `openvibe-node status`
+- **You are told.** The desktop says when it starts ("Your screen is live on OpenVibe"), and `openvibe-link status`
   shows `Screen: live … until …` while it runs.
 - **It ends** when its time is up, when you press Stop, when capturing fails five times in a row, and at once on
-  `openvibe-node stop` or an e-stop. While a stop is latched, a new start is refused.
+  `openvibe-link stop` or an e-stop. While a stop is latched, a new start is refused.
 - **Levels.** It runs at every level, like a screenshot. To never offer it, set `allow_screen_stream: false`.
 - **Without Pillow** the capture tool must write JPEG itself: `screencapture`, `grim`, `import` and `scrot` do;
   `gnome-screenshot` does not.
@@ -202,7 +202,7 @@ An agent can work on a desk of its own instead of your screen (plan track K: Vib
   `status` and `list` run at every level. What runs on the desk keeps its own rules: input and the browser still act.
 - **Watching and taking over.** Start the live screen with `"desk": "private"` (your desktop is not told, since nothing of
   yours is shown) and drive it the same way.
-- **It ends** on `stop`, and at once on `openvibe-node stop` or an e-stop: every process the desk started is ended by
+- **It ends** on `stop`, and at once on `openvibe-link stop` or an e-stop: every process the desk started is ended by
   handle, never by name.
 - **Needs** Linux with `Xvfb` (Debian/Ubuntu: `apt install xvfb`), `xdotool` for input and ImageMagick `import` or `scrot`
   for screenshots. Not offered elsewhere; `allow_desk: false` turns it off.
@@ -289,7 +289,7 @@ each desk's browser runs in the job worker's sandbox (docs/worker.md):
 ```
 curl -fsSL https://node.openvibe.network/install | sudo sh -s -- --network … --pairing pair_… --code … --desk-host --shared
 ```
-- **Each desk sandboxed.** The plugin starts a desk's browser as `openvibe-node desk-sandbox -- <browser> …`: its own
+- **Each desk sandboxed.** The plugin starts a desk's browser as `openvibe-link desk-sandbox -- <browser> …`: its own
   user, mount, network, PID and IPC namespaces, as the unprivileged `openvibe-job` (`worker.run_as`), in a cgroup of its
   own with `desk_memory_mb` of memory (swap off: running out ends that desk alone), `desk_cpu_millis` of CPU,
   `desk_pids` processes and a `desk_disk_mb` private `/tmp`, where its profile and downloads live. It sees only the

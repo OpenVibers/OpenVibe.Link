@@ -203,8 +203,8 @@ class ComputerTest(unittest.TestCase):
         self.plugin.notify_actions = False  # an older notify-send: no buttons, the command to answer with
         cid = self.cmd("exec", {"argv": ["echo", "hi"]})
         self.out.wait_for(lambda m: m.get("name") == "approval")
-        self.assertEqual(calls[0][:3], ["notify-send", "--app-name=OpenVibe Node", "OpenVibe: your agent asks"])
-        self.assertIn("openvibe-node approve %s" % cid, calls[0][3])
+        self.assertEqual(calls[0][:3], ["notify-send", "--app-name=OpenVibe Link", "OpenVibe: your agent asks"])
+        self.assertIn("openvibe-link approve %s" % cid, calls[0][3])
         self.plugin.env = {}
         self.cmd("exec", {"argv": ["echo", "again"]})
         self.assertEqual(len(calls), 1, "no graphical session: no notification")
@@ -728,7 +728,7 @@ class ComputerTest(unittest.TestCase):
         self.out.wait_for(lambda m: m.get("name") == "approval" and m.get("id") == cid)
         argv = prompts[0].argv
         self.assertNotIn("--action=approve=Approve", argv, "no approval button on cut text")
-        self.assertIn("openvibe-node approvals", " ".join(argv))
+        self.assertIn("openvibe-link approvals", " ".join(argv))
 
     def test_a_stale_prompt_answer_is_discarded(self):
         # F6: an answer from the prompt instance that is no longer the one shown is not the owner's answer.

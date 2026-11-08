@@ -1,23 +1,23 @@
-// Command openvibe-node connects a computer, server, Raspberry Pi or robot to OpenVibe.
+// Command openvibe-link connects a computer, server, Raspberry Pi or robot to OpenVibe.
 //
-//	openvibe-node                 guided first run: pair, self-check, one first job, then what to do next
-//	openvibe-node pair <CODE>     redeem a one-time pairing code and store the device credential
+//	openvibe-link                 guided first run: pair, self-check, one first job, then what to do next
+//	openvibe-link pair <CODE>     redeem a one-time pairing code and store the device credential
 //	                              (--network/--pairing: pair on OpenVibe.Network and bind the device on Bot)
-//	openvibe-node credential import  take a rotated credential: reads the rotate response JSON on stdin
-//	openvibe-node run             run in the foreground (this is also what the service runs)
-//	openvibe-node install         install and start the system service
-//	openvibe-node uninstall       stop and remove the system service
-//	openvibe-node status          show the link, the plugins, the stop latch and video
-//	openvibe-node stop            local kill switch: stop every actuator and hold it stopped
-//	openvibe-node resume          release the local kill switch (and a server e-stop)
-//	openvibe-node quit            end the running node cleanly: every actuator stops, nothing is latched
-//	openvibe-node plugins         list plugins and their capabilities
-//	openvibe-node memory scan [--tools a,b] [--project DIR …] [--json]
+//	openvibe-link credential import  take a rotated credential: reads the rotate response JSON on stdin
+//	openvibe-link run             run in the foreground (this is also what the service runs)
+//	openvibe-link install         install and start the system service
+//	openvibe-link uninstall       stop and remove the system service
+//	openvibe-link status          show the link, the plugins, the stop latch and video
+//	openvibe-link stop            local kill switch: stop every actuator and hold it stopped
+//	openvibe-link resume          release the local kill switch (and a server e-stop)
+//	openvibe-link quit            end the running node cleanly: every actuator stops, nothing is latched
+//	openvibe-link plugins         list plugins and their capabilities
+//	openvibe-link memory scan [--tools a,b] [--project DIR …] [--json]
 //	                              read the memory files of the coding tools (read-only, local)
-//	openvibe-node skills sync [--tools a,b] [--project DIR …] [--dry-run]
+//	openvibe-link skills sync [--tools a,b] [--project DIR …] [--dry-run]
 //	                              write the skills you chose in the hub into each tool's own folders
-//	openvibe-node skills on|off|status  declare/remove/check the skill runner (sandboxed skill code)
-//	openvibe-node version
+//	openvibe-link skills on|off|status  declare/remove/check the skill runner (sandboxed skill code)
+//	openvibe-link version
 package main
 
 import (
@@ -54,56 +54,56 @@ import (
 // version is set at build time: -ldflags "-X main.version=v0.1.0".
 var version = "dev"
 
-const usage = `openvibe-node %s: connect this device to OpenVibe.
+const usage = `openvibe-link %s: connect this device to OpenVibe.
 
 Usage:
-  openvibe-node [--code CODE] [--network URL --pairing pair_…] [--home DIR]
+  openvibe-link [--code CODE] [--network URL --pairing pair_…] [--home DIR]
                     guided first run: pair with a code from openvibe.bot/machines, check this machine can reach
-                    OpenVibe, run one harmless first job, and report each step; the same as 'openvibe-node first-run'
-  openvibe-node pair <CODE> [--robot rob_…] [--name NAME] [--server URL] [--kind onboard|bridge] [--force]
-  openvibe-node pair --network URL --pairing pair_… --code CODE [--name NAME] [--server URL] [--force]
-  openvibe-node credential import   store the credential from a rotate response, read as JSON on stdin
-  openvibe-node run [--dry-run]
-  openvibe-node install [--user NAME]
-  openvibe-node install --user-session --home DIR    Windows: start at sign-in in your own session (Bluetooth bridges)
-  openvibe-node uninstall [--user-session]
-  openvibe-node status [--json]
-  openvibe-node stop        stop every actuator now and hold them stopped
-  openvibe-node resume      release the stop
-  openvibe-node quit        end the running node cleanly: every actuator stops and nothing is latched, so the next
+                    OpenVibe, run one harmless first job, and report each step; the same as 'openvibe-link first-run'
+  openvibe-link pair <CODE> [--robot rob_…] [--name NAME] [--server URL] [--kind onboard|bridge] [--force]
+  openvibe-link pair --network URL --pairing pair_… --code CODE [--name NAME] [--server URL] [--force]
+  openvibe-link credential import   store the credential from a rotate response, read as JSON on stdin
+  openvibe-link run [--dry-run]
+  openvibe-link install [--user NAME]
+  openvibe-link install --user-session --home DIR    Windows: start at sign-in in your own session (Bluetooth bridges)
+  openvibe-link uninstall [--user-session]
+  openvibe-link status [--json]
+  openvibe-link stop        stop every actuator now and hold them stopped
+  openvibe-link resume      release the stop
+  openvibe-link quit        end the running node cleanly: every actuator stops and nothing is latched, so the next
                             start drives as before (stop is the kill switch, and holds until resume)
-  openvibe-node plugins [--json]
-  openvibe-node approvals [--json]   what the computer plugin waits to be approved (control level "ask")
-  openvibe-node approve <ID>         let it run
-  openvibe-node deny <ID>            refuse it
-  openvibe-node tray [--autostart on|off]
+  openvibe-link plugins [--json]
+  openvibe-link approvals [--json]   what the computer plugin waits to be approved (control level "ask")
+  openvibe-link approve <ID>         let it run
+  openvibe-link deny <ID>            refuse it
+  openvibe-link tray [--autostart on|off]
                     the Node in your notification area (Linux, Windows): what waits with Approve and Deny, stop,
                     resume, Open Link; --autostart starts it when you sign in
-  openvibe-node panel                print Link's own window's address (loopback, this run's token)
-  openvibe-node profile verify community.<name> [--server URL] [--key-id ID]
+  openvibe-link panel                print Link's own window's address (loopback, this run's token)
+  openvibe-link profile verify community.<name> [--server URL] [--key-id ID]
                     check a community robot profile against the signature Bot made when it was reviewed
-  openvibe-node desk-sandbox [--memory-mb N] [--cpu-millis N] [--bind PATH]... [--egress public] -- PROGRAM [ARG]...
+  openvibe-link desk-sandbox [--memory-mb N] [--cpu-millis N] [--bind PATH]... [--egress public] -- PROGRAM [ARG]...
                     run one desk's browser confined (a desk host that serves other people; the computer plugin
                     calls it, with --remote-debugging-pipe on fds 3 and 4)
-  openvibe-node memory scan [--tools a,b] [--project DIR …] [--json]
+  openvibe-link memory scan [--tools a,b] [--project DIR …] [--json]
                     read the memory files of the coding tools on this machine
                     (read-only, local, secrets removed)
-  openvibe-node skills sync [--tools a,b] [--project DIR …] [--dry-run] [--yes]
-  openvibe-node skills sync --undo
+  openvibe-link skills sync [--tools a,b] [--project DIR …] [--dry-run] [--yes]
+  openvibe-link skills sync --undo
                     write the skills and rules you chose at openvibe.codes/skills
                     into each tool's own folders, inside one marked block
-  openvibe-node skills on|off|status [--dir DIR] [--node PATH] [--json]
+  openvibe-link skills on|off|status [--dir DIR] [--node PATH] [--json]
                     run a skill's code as a sandboxed job on this machine
                     (openvibe-skill-runner@1.0.0; off until "on")
-  openvibe-node exchange serve --model <id> [--public-url URL]
+  openvibe-link exchange serve --model <id> [--public-url URL]
                     serve a local model as an OpenVibe.Exchange seller offer
-  openvibe-node stream --probe --whip-url URL [--seconds N] [--size WxH] [--json]
+  openvibe-link stream --probe --whip-url URL [--seconds N] [--size WxH] [--json]
                     publish a QR of the millisecond clock for the headless latency viewer (the ticket comes from
                     OPENVIBE_STREAM_TICKET, never argv)
-  openvibe-node share --key ovc_… --port N           put this machine's port N on the web (OpenVibe Connect),
+  openvibe-link share --key ovc_… --port N           put this machine's port N on the web (OpenVibe Connect),
                                                    behind OpenVibe sign-in, until Ctrl-C
-  openvibe-node share add|list|remove …             the shares the Node service keeps up (openvibe-node share)
-  openvibe-node version
+  openvibe-link share add|list|remove …             the shares the Node service keeps up (openvibe-link share)
+  openvibe-link version
 
 Global flags (before or after the command):
   --home DIR        keep config and state in DIR (also OPENVIBE_NODE_HOME)
@@ -129,13 +129,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help" || args[0] == "--version") {
 		if args[0] == "--version" {
-			fmt.Fprintf(stdout, "openvibe-node %s %s/%s\n", version, runtime.GOOS, runtime.GOARCH)
+			fmt.Fprintf(stdout, "openvibe-link %s %s/%s\n", version, runtime.GOOS, runtime.GOARCH)
 			return 0
 		}
 		fmt.Fprintf(stdout, usage, version)
 		return 0
 	}
-	// A bare `openvibe-node` (or flags with no command) is the guided first run; it needs its own flag set, because
+	// A bare `openvibe-link` (or flags with no command) is the guided first run; it needs its own flag set, because
 	// its flags include the pairing ones and there is no command word to hang them on.
 	if len(args) == 0 || args[0] == "first-run" || strings.HasPrefix(args[0], "-") {
 		g := &globals{}
@@ -197,7 +197,7 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		shKey   = fs.String("key", "", "the share's ovc_… connect key from connect.openvibe.website (share)")
 		shPort  = fs.Int("port", 0, "the local port to share (share)")
 		shSrv   = fs.String("connect-server", "", "OpenVibe Connect's tunnel URL; default wss://connect.openvibe.website/tunnel (share)")
-		shID    = fs.String("share", "", "a share this computer serves itself, as OpenVibe Node: its shr_… id, no key (share)")
+		shID    = fs.String("share", "", "a share this computer serves itself, as OpenVibe Link: its shr_… id, no key (share)")
 	)
 	// Accept flags anywhere: split positionals out.
 	var positional []string
@@ -226,7 +226,7 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 			positional, p.pairing = []string{p.pairing}, ""
 		}
 		if len(positional) != 1 {
-			fmt.Fprintln(stderr, "usage: openvibe-node pair <CODE> [--robot rob_…] [--name NAME]\n       openvibe-node pair --network URL --pairing pair_… --code CODE [--name NAME]")
+			fmt.Fprintln(stderr, "usage: openvibe-link pair <CODE> [--robot rob_…] [--name NAME]\n       openvibe-link pair --network URL --pairing pair_… --code CODE [--name NAME]")
 			return 2
 		}
 		p.code = positional[0]
@@ -237,7 +237,7 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		}
 	case "credential":
 		if len(positional) != 1 || positional[0] != "import" {
-			fmt.Fprintln(stderr, "usage: openvibe-node credential import  (reads the rotate response JSON on stdin)")
+			fmt.Fprintln(stderr, "usage: openvibe-link credential import  (reads the rotate response JSON on stdin)")
 			return 2
 		}
 		err = cmdCredentialImport(g, stdin, stdout)
@@ -275,7 +275,7 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		err = cmdApprovals(g, *asJSON, stdout)
 	case "approve", "deny":
 		if len(positional) != 1 {
-			fmt.Fprintf(stderr, "usage: openvibe-node %s <ID>   (openvibe-node approvals lists the ids)\n", cmd)
+			fmt.Fprintf(stderr, "usage: openvibe-link %s <ID>   (openvibe-link approvals lists the ids)\n", cmd)
 			return 2
 		}
 		err = cmdAnswer(g, cmd, positional[0], stdout)
@@ -285,7 +285,7 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		err = cmdPanel(g, stdout)
 	case "profile":
 		if len(positional) != 2 || positional[0] != "verify" {
-			fmt.Fprintln(stderr, "usage: openvibe-node profile verify community.<name> [--server URL] [--key-id ID]")
+			fmt.Fprintln(stderr, "usage: openvibe-link profile verify community.<name> [--server URL] [--key-id ID]")
 			return 2
 		}
 		err = cmdProfileVerify(g, positional[1], *server, *keyID, stdout)
@@ -295,7 +295,7 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 			return 2
 		}
 	case "version", "--version":
-		fmt.Fprintf(stdout, "openvibe-node %s %s/%s\n", version, runtime.GOOS, runtime.GOARCH)
+		fmt.Fprintf(stdout, "openvibe-link %s %s/%s\n", version, runtime.GOOS, runtime.GOARCH)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n\n", cmd)
 		fmt.Fprintf(stderr, usage, version)
@@ -356,7 +356,7 @@ func probeAll(cfg *config.Config, paths config.Paths, log *slog.Logger) (map[str
 	return out, failed
 }
 
-// pairArgs are the flags of `openvibe-node pair`.
+// pairArgs are the flags of `openvibe-link pair`.
 type pairArgs struct {
 	code, robot, name, server, kind string
 	network, pairing                string
@@ -471,14 +471,14 @@ func cmdPair(g *globals, a pairArgs, stdout io.Writer) error {
 	}
 	chownLikeDir(g.paths.CredentialFile(), g.paths.ConfigDir)
 	fmt.Fprintf(stdout, "Paired as %s (robot %s). Credential saved to %s (mode 600).\n", creds.DeviceID, creds.RobotID, g.paths.CredentialFile())
-	fmt.Fprintln(stdout, "Confirm the device on openvibe.bot, then start it: `openvibe-node run` or `sudo openvibe-node install`.")
+	fmt.Fprintln(stdout, "Confirm the device on openvibe.bot, then start it: `openvibe-link run` or `sudo openvibe-link install`.")
 	reportCommunityProfile(ctx, cfg.Server, creds.Profile, stdout)
 	return finishPair(g, a, cfg, noConfig, stdout)
 }
 
 // cmdPairNetwork pairs through OpenVibe.Network: it redeems the code at <network>/api/v1/node-pairing, stores the
 // node principal and credential, then binds the device on Bot (POST /api/v1/devices/bind with a node token). A
-// failed bind keeps the credential: `openvibe-node run` binds on start.
+// failed bind keeps the credential: `openvibe-link run` binds on start.
 func cmdPairNetwork(g *globals, a pairArgs, stdout io.Writer) error {
 	code, err := link.NormalizeCode(a.code)
 	if err != nil {
@@ -523,7 +523,7 @@ func cmdPairNetwork(g *globals, a pairArgs, stdout io.Writer) error {
 			fmt.Fprintf(stdout, "Bound as %s (a machine for your jobs, no robot).\n", bound.DeviceID)
 		}
 	}
-	fmt.Fprintln(stdout, "Start it: `openvibe-node run` or `sudo openvibe-node install`.")
+	fmt.Fprintln(stdout, "Start it: `openvibe-link run` or `sudo openvibe-link install`.")
 	return finishPair(g, a, cfg, noConfig, stdout)
 }
 
@@ -595,7 +595,7 @@ func cmdCredentialImport(g *globals, stdin io.Reader, stdout io.Writer) error {
 	}
 	old, err := credentials.Load(g.paths.CredentialFile(), nil)
 	if errors.Is(err, credentials.ErrNotPaired) {
-		return errors.New("this Node is not paired yet; run `openvibe-node pair <CODE>` first")
+		return errors.New("this Node is not paired yet; run `openvibe-link pair <CODE>` first")
 	}
 	if err != nil {
 		return err
@@ -654,12 +654,12 @@ func cmdRun(g *globals, dryRun bool) error {
 	if err != nil {
 		return err
 	}
-	g.log.Info("openvibe-node starting", "version", version, "config", g.paths.ConfigDir, "plugins", len(cfg.Plugins))
+	g.log.Info("openvibe-link starting", "version", version, "config", g.paths.ConfigDir, "plugins", len(cfg.Plugins))
 	return service.Run(serviceOptions(g, ""), func(ctx context.Context) error {
 		if err := n.Run(ctx); !errors.Is(err, node.ErrQuit) {
 			return err
 		}
-		g.log.Info("openvibe-node exited: every actuator stopped, nothing latched")
+		g.log.Info("openvibe-link exited: every actuator stopped, nothing latched")
 		return service.ErrQuit
 	})
 }
@@ -700,14 +700,14 @@ func cmdInstall(g *globals, user string, stdout io.Writer) error {
 	if err := service.Control(opt, "start"); err != nil {
 		return fmt.Errorf("installed, but could not start: %w", err)
 	}
-	fmt.Fprintln(stdout, "Installed and started the openvibe-node service.")
+	fmt.Fprintln(stdout, "Installed and started the openvibe-link service.")
 	// The guided first run's clock starts here. Best effort: a record that cannot be written never fails an install.
 	if r, rerr := firstrun.Load(g.paths.FirstRunFile()); rerr == nil && !r.Has(firstrun.StepInstalled) {
 		r.Upsert(firstrun.Step{Name: firstrun.StepInstalled, At: time.Now().UTC()})
 		_ = r.Save(g.paths.FirstRunFile())
 	}
 	if _, err := credentials.Load(g.paths.CredentialFile(), nil); err != nil {
-		fmt.Fprintln(stdout, "Not paired yet: run `sudo openvibe-node first-run` to pair and finish the setup.")
+		fmt.Fprintln(stdout, "Not paired yet: run `sudo openvibe-link first-run` to pair and finish the setup.")
 	}
 	return nil
 }
@@ -715,7 +715,7 @@ func cmdInstall(g *globals, user string, stdout io.Writer) error {
 func cmdStop(g *globals, stdout io.Writer) error {
 	resp, err := localctl.Call(g.paths.SocketPath(), localctl.Request{Cmd: localctl.CmdStop}, 2*time.Second)
 	if err == nil {
-		fmt.Fprintln(stdout, "Stopped. Every actuator is held stopped until `openvibe-node resume`.")
+		fmt.Fprintln(stdout, "Stopped. Every actuator is held stopped until `openvibe-link resume`.")
 		return nil
 	}
 	if resp.Error != "" {
@@ -731,7 +731,7 @@ func cmdStop(g *globals, stdout io.Writer) error {
 	}
 	chownLikeDir(g.paths.LatchFile(), g.paths.StateDir) // the service account must be able to read it
 	fmt.Fprintln(stdout, "The node did not answer; the stop is latched in", g.paths.LatchFile())
-	fmt.Fprintln(stdout, "A running node obeys it within a quarter second; a starting node starts stopped. Release with `openvibe-node resume`.")
+	fmt.Fprintln(stdout, "A running node obeys it within a quarter second; a starting node starts stopped. Release with `openvibe-link resume`.")
 	return nil
 }
 
@@ -754,7 +754,7 @@ func cmdQuit(g *globals, stdout io.Writer) error {
 		}
 		c.Close()
 	}
-	return errors.New("the node took the quit but is still running after 20 s; `openvibe-node status` shows it")
+	return errors.New("the node took the quit but is still running after 20 s; `openvibe-link status` shows it")
 }
 
 func cmdResume(g *globals, stdout io.Writer) error {
@@ -796,7 +796,7 @@ func cmdApprovals(g *globals, asJSON bool, stdout io.Writer) error {
 		// with their control, ANSI and bidi characters made visible.
 		fmt.Fprintf(stdout, "%q  %s, %s ago: %s\n", a.ID, safety.DisplayText(a.Kind), age, safety.DisplayText(a.Summary))
 	}
-	fmt.Fprintln(stdout, "\nopenvibe-node approve <ID> lets one run; openvibe-node deny <ID> refuses it.")
+	fmt.Fprintln(stdout, "\nopenvibe-link approve <ID> lets one run; openvibe-link deny <ID> refuses it.")
 	return nil
 }
 
@@ -863,11 +863,11 @@ func cmdStatus(g *globals, asJSON bool, stdout io.Writer) error {
 	if err := json.Unmarshal(resp.Data, &s); err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "OpenVibe Node %s, running for %s (service: %s)\n", s.Version, s.Uptime, service.Status(serviceOptions(g, "")))
+	fmt.Fprintf(stdout, "OpenVibe Link %s, running for %s (service: %s)\n", s.Version, s.Uptime, service.Status(serviceOptions(g, "")))
 	if s.Paired {
 		fmt.Fprintf(stdout, "Device:   %s\n", deviceLine(s.DeviceID, s.Principal, s.Server))
 	} else {
-		fmt.Fprintln(stdout, "Device:   not paired (openvibe-node pair <CODE>)")
+		fmt.Fprintln(stdout, "Device:   not paired (openvibe-link pair <CODE>)")
 	}
 	link := "down"
 	if s.Link.Connected {
@@ -893,7 +893,7 @@ func cmdStatus(g *globals, asJSON bool, stdout io.Writer) error {
 		if s.Screen.LastError != "" && s.Screen.State != "live" {
 			fmt.Fprintf(stdout, " (%s)", s.Screen.LastError)
 		}
-		fmt.Fprintln(stdout, "; `openvibe-node stop` ends it")
+		fmt.Fprintln(stdout, "; `openvibe-link stop` ends it")
 	}
 	fmt.Fprintln(stdout, "Plugins:")
 	for _, p := range s.Plugins {
@@ -932,13 +932,13 @@ func deviceLine(device, principal, server string) string {
 
 func latchText(l safety.LatchState) string {
 	if l.Computer {
-		return "STOPPED for computer control (an e-stop on this computer); `openvibe-node resume` on this machine is required"
+		return "STOPPED for computer control (an e-stop on this computer); `openvibe-link resume` on this machine is required"
 	}
 	switch {
 	case l.Local && l.Remote:
-		return "STOPPED locally and by the server (" + l.RemoteReason + "); `openvibe-node resume` releases both"
+		return "STOPPED locally and by the server (" + l.RemoteReason + "); `openvibe-link resume` releases both"
 	case l.Local:
-		return "STOPPED locally; `openvibe-node resume` releases it"
+		return "STOPPED locally; `openvibe-link resume` releases it"
 	case l.Remote:
 		return "E-STOPPED by the server (" + l.RemoteReason + "); the owner clears it on openvibe.bot"
 	}
@@ -966,11 +966,11 @@ func offlineStatus(g *globals, asJSON bool, stdout io.Writer) error {
 	if asJSON {
 		return json.NewEncoder(stdout).Encode(o)
 	}
-	fmt.Fprintf(stdout, "OpenVibe Node %s is not running (service: %s).\n", version, o.Service)
+	fmt.Fprintf(stdout, "OpenVibe Link %s is not running (service: %s).\n", version, o.Service)
 	if o.Paired {
 		fmt.Fprintf(stdout, "Device:   %s\n", deviceLine(o.DeviceID, o.Principal, o.Server))
 	} else {
-		fmt.Fprintln(stdout, "Device:   not paired (openvibe-node pair <CODE>)")
+		fmt.Fprintln(stdout, "Device:   not paired (openvibe-link pair <CODE>)")
 	}
 	fmt.Fprintf(stdout, "Stop:     %s\n", latchText(o.Latch))
 	fmt.Fprintf(stdout, "Config:   %s\n", o.Config)
@@ -1064,7 +1064,7 @@ func reportCommunityProfile(ctx context.Context, server string, profile json.Raw
 	}
 	res, err := profilesig.Check(ctx, nil, server, p.ID, profile, "")
 	if err != nil {
-		fmt.Fprintf(stdout, "WARNING: the robot's community profile %s did not check out (%v). Do not install its driver until it does: openvibe-node profile verify %s\n", p.ID, err, p.ID)
+		fmt.Fprintf(stdout, "WARNING: the robot's community profile %s did not check out (%v). Do not install its driver until it does: openvibe-link profile verify %s\n", p.ID, err, p.ID)
 		return
 	}
 	fmt.Fprintf(stdout, "The robot's community profile %s (version %s) is the one Bot reviewed and signed (key %s).\n", res.ID, res.Version, res.KeyID)

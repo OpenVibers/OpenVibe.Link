@@ -16,8 +16,8 @@ import (
 	"github.com/OpenVibers/OpenVibe.Node/internal/memoryupload"
 )
 
-// memoryUploadUsage is what "openvibe-node memory upload" prints.
-const memoryUploadUsage = "openvibe-node memory upload [--tools a,b] [--project DIR …] [--dry-run] [--yes]\n" +
+// memoryUploadUsage is what "openvibe-link memory upload" prints.
+const memoryUploadUsage = "openvibe-link memory upload [--tools a,b] [--project DIR …] [--dry-run] [--yes]\n" +
 	"\n" +
 	"  Reads the memory files of the coding tools on this machine and sends the\n" +
 	"  items to your own memory store (OpenVibe.AI). It shows what it found and\n" +
@@ -31,8 +31,8 @@ const memoryUploadUsage = "openvibe-node memory upload [--tools a,b] [--project 
 	"  --token-env NAME the variable the access token is read from (default " + memorystore.DefaultTokenEnv + ")\n" +
 	"  --user-home DIR  read this directory as the person's home (default: yours)\n"
 
-// memoryStatusUsage is what "openvibe-node memory status" prints.
-const memoryStatusUsage = "openvibe-node memory status [--show]\n" +
+// memoryStatusUsage is what "openvibe-link memory status" prints.
+const memoryStatusUsage = "openvibe-link memory status [--show]\n" +
 	"\n" +
 	"  Shows what your own memory store holds: how many items, per source and per\n" +
 	"  scope. The text of an item is only printed with --show.\n" +

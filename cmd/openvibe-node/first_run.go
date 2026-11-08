@@ -23,12 +23,12 @@ import (
 	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
 )
 
-// The guided first run is what a bare `openvibe-node` does: pair (when needed), check the way to OpenVibe, run one
+// The guided first run is what a bare `openvibe-link` does: pair (when needed), check the way to OpenVibe, run one
 // harmless first job (this machine's OS, CPUs, memory and free disk) and report one event per step to Bot over the
-// link the Node already uses. `openvibe-node first-run` is the same command, for scripts that want to say it.
+// link the Node already uses. `openvibe-link first-run` is the same command, for scripts that want to say it.
 const firstRunDocs = "https://github.com/OpenVibers/OpenVibe.Node/blob/main/docs/install.md"
 
-// guideArgs are the flags a bare `openvibe-node` (or `openvibe-node first-run`) takes. They mirror the pair flags so
+// guideArgs are the flags a bare `openvibe-link` (or `openvibe-link first-run`) takes. They mirror the pair flags so
 // a machine's installer command can be pasted at the prompt, and so scripts can pass the code and Network pairing.
 type guideArgs struct {
 	code, robot, name, server, network, pairing string
@@ -56,7 +56,7 @@ func parseGuideFlags(args []string, g *globals, a *guideArgs, stderr io.Writer) 
 // never asks again once a credential exists.
 func cmdFirstRun(g *globals, a guideArgs, positional []string, stdin io.Reader, stdout io.Writer) error {
 	if len(positional) > 1 {
-		return errors.New("usage: openvibe-node [--code CODE] [--network URL --pairing pair_…] [--home DIR]")
+		return errors.New("usage: openvibe-link [--code CODE] [--network URL --pairing pair_…] [--home DIR]")
 	}
 	if len(positional) == 1 && a.code == "" {
 		a.code = positional[0]
@@ -71,7 +71,7 @@ func cmdFirstRun(g *globals, a guideArgs, positional []string, stdin io.Reader, 
 		fmt.Fprintln(stdout, "  sudo openvibe-node")
 		return fmt.Errorf("cannot write to %s: %w (run with sudo)", g.paths.StateDir, err)
 	}
-	fmt.Fprintln(stdout, "OpenVibe Node first run")
+	fmt.Fprintln(stdout, "OpenVibe Link first run")
 	fmt.Fprintln(stdout, "======================")
 
 	report, err := firstrun.Load(g.paths.FirstRunFile())
@@ -118,7 +118,7 @@ func cmdFirstRun(g *globals, a guideArgs, positional []string, stdin io.Reader, 
 		if err != nil {
 			fmt.Fprintln(stdout)
 			fmt.Fprintln(stdout, "That did not pair. Codes work once and expire; get a fresh one at openvibe.bot/machines")
-			fmt.Fprintln(stdout, "and run `openvibe-node` again.")
+			fmt.Fprintln(stdout, "and run `openvibe-link` again.")
 			return err
 		}
 		at := creds.PairedAt
@@ -130,7 +130,7 @@ func cmdFirstRun(g *globals, a guideArgs, positional []string, stdin io.Reader, 
 	} else if err != nil {
 		return err
 	} else {
-		// A pairing done by the installer (or `openvibe-node pair`) already has its time; keep it for the funnel.
+		// A pairing done by the installer (or `openvibe-link pair`) already has its time; keep it for the funnel.
 		if !report.Has(firstrun.StepPaired) {
 			at := creds.PairedAt
 			if at.IsZero() {
@@ -198,7 +198,7 @@ func cmdFirstRun(g *globals, a guideArgs, positional []string, stdin io.Reader, 
 	events := report.Events(version, info.OS, info.Arch)
 	if len(events) > 0 {
 		if err := sendFirstRun(g, creds, events); err != nil {
-			fmt.Fprintf(stdout, "Could not report this first run (%v). The report is kept; run `openvibe-node` again when the link is up.\n", err)
+			fmt.Fprintf(stdout, "Could not report this first run (%v). The report is kept; run `openvibe-link` again when the link is up.\n", err)
 		} else {
 			fmt.Fprintln(stdout, "Reported this first run to OpenVibe.Bot.")
 		}
@@ -206,12 +206,12 @@ func cmdFirstRun(g *globals, a guideArgs, positional []string, stdin io.Reader, 
 
 	// (d) What it can do next, in one line, with the docs.
 	fmt.Fprintln(stdout)
-	fmt.Fprintln(stdout, "Next: `openvibe-node status` shows this machine, `openvibe-node stop` stops everything, and")
+	fmt.Fprintln(stdout, "Next: `openvibe-link status` shows this machine, `openvibe-link stop` stops everything, and")
 	fmt.Fprintf(stdout, "your account lists it at https://openvibe.bot/machines. Docs: %s\n", firstRunDocs)
 	return nil
 }
 
-// pairFromGuide redeems the code and stores the credential, the same two paths `openvibe-node pair` takes.
+// pairFromGuide redeems the code and stores the credential, the same two paths `openvibe-link pair` takes.
 func pairFromGuide(g *globals, a pairArgs, stdout io.Writer) (*credentials.Credentials, error) {
 	cfg, noConfig, err := preparePair(g, a)
 	if err != nil {
@@ -353,7 +353,7 @@ func parsePairingInput(line string) (pairArgs, error) {
 		}
 	}
 	if a.code == "" {
-		// `openvibe-node pair ABCD-1234` pasted without --code.
+		// `openvibe-link pair ABCD-1234` pasted without --code.
 		for i := 0; i+1 < len(fields); i++ {
 			if fields[i] == "pair" && !strings.HasPrefix(fields[i+1], "-") {
 				a.code = fields[i+1]

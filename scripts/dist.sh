@@ -11,15 +11,19 @@ for target in linux/amd64 linux/arm64 linux/arm/7 darwin/amd64 darwin/arm64 wind
 	rest="${target#*/}"
 	arch="${rest%%/*}"
 	arm=""
-	name="openvibe-node-$os-$arch"
+	name="openvibe-link-$os-$arch"
 	if [ "$arch" = arm ]; then
 		arm="${rest#*/}"
-		name="openvibe-node-$os-armv$arm"
+		name="openvibe-link-$os-armv$arm"
 	fi
 	[ "$os" = windows ] && name="$name.exe"
 	CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" GOARM="$arm" \
 		go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o "dist/$name" ./cmd/openvibe-node
-	echo "built dist/$name"
+	# openvibe-node is kept as an alias for existing installs and scripts (plan 2026-11-07 §5): the same binary,
+	# under the old asset name, in every release for a year. The daemon's unit/service name does not change.
+	old="openvibe-node-${name#openvibe-link-}"
+	cp "dist/$name" "dist/$old"
+	echo "built dist/$name and dist/$old"
 done
 # The plugin bundle: the Python packages without their tests.
 tar -czf dist/openvibe-node-plugins.tar.gz -C plugins \

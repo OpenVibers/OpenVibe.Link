@@ -1,6 +1,6 @@
-# Handoff: build the OpenVibe Node (cloud session brief)
+# Handoff: build the OpenVibe Link (cloud session brief)
 
-You are starting the OpenVibe Node from an empty repository. Read this whole file and `docs/ADR-043-bot-devices-and-control.md`
+You are starting the OpenVibe Link from an empty repository. Read this whole file and `docs/ADR-043-bot-devices-and-control.md`
 first; they are binding. Work on a branch `node-core`, commit in small steps with clear messages, push, and open a pull
 request when the core and both robot plugins pass their tests. Do not deploy anything; you have no access to OpenVibe's
 servers and do not need it.
@@ -29,9 +29,9 @@ and a **Cozmo**.
 
 ## The CLI
 
-`openvibe-node pair <CODE>` (redeems a one-time pairing code, stores the credential), `openvibe-node run` (foreground),
-`openvibe-node install` / `uninstall` (as a service), `openvibe-node status`, `openvibe-node stop` (**the local kill
-switch**: stops every plugin's actuators immediately and holds them stopped until `openvibe-node resume`), `openvibe-node
+`openvibe-link pair <CODE>` (redeems a one-time pairing code, stores the credential), `openvibe-link run` (foreground),
+`openvibe-link install` / `uninstall` (as a service), `openvibe-link status`, `openvibe-link stop` (**the local kill
+switch**: stops every plugin's actuators immediately and holds them stopped until `openvibe-link resume`), `openvibe-node
 plugins` (list, with capabilities). Config in `/etc/openvibe-node/` (or the platform's equivalent); the credential file is
 mode 0600 and its contents never appear in logs, errors or `status`.
 
@@ -56,9 +56,9 @@ mode 0600 and its contents never appear in logs, errors or `status`.
   capped by the profile's `max_command_ms`); the core nacks `expired` a command that arrives after it and gives the plugin
   only the time left, and the plugin stops at that deadline unless a newer command arrived. Held controls are re-sent by the operator every 150 ms.
 - Stop all actuators on: 2 missed heartbeats, link loss, core shutdown, plugin crash (the core restarts it with backoff
-  and it starts stopped), `openvibe-node stop`, an `estop`.
+  and it starts stopped), `openvibe-link stop`, an `estop`.
 - Two latches, both persisted across restarts. The **remote** e-stop: a server `estop` sets it, and the owner's `estop`
-  `latched:false` or the local `resume` clears it. The **local** stop (`openvibe-node stop`, or a driver's `local_stop`):
+  `latched:false` or the local `resume` clears it. The **local** stop (`openvibe-link stop`, or a driver's `local_stop`):
   only the local `resume` clears it, never the owner. Owner limits (`max_speed`, `max_turn`) clamp every value in the core before it reaches a plugin.
 - Never run or expose a kit's stock control server (the Adeept kit ships one on 0.0.0.0:8888 with the fixed login
   `admin:123456` and an MJPEG stream on :5000 — the Node replaces it; `install.sh` disables it if it finds it enabled).
@@ -130,7 +130,7 @@ core. Say in `docs/` where it will attach.
 
 ## Done means
 
-`go test ./...` and the Python plugin tests green in CI on the PR; `openvibe-node run` with `dryrun` pairs against the fake
+`go test ./...` and the Python plugin tests green in CI on the PR; `openvibe-link run` with `dryrun` pairs against the fake
 server, publishes a test pattern, obeys commands and stops on every safety path; the Adeept and Cozmo plugins pass their
 tests with fake hardware; `docs/protocol.md`, `docs/plugins.md` and `docs/install.md` written; README says what the Node
 is and how to install it.

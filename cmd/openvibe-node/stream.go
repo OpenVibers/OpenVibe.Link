@@ -16,7 +16,7 @@ import (
 	"github.com/OpenVibers/OpenVibe.Node/internal/stream"
 )
 
-// cmdStream is `openvibe-node stream --probe`: it publishes a QR of the millisecond clock over WHIP, so a headless
+// cmdStream is `openvibe-link stream --probe`: it publishes a QR of the millisecond clock over WHIP, so a headless
 // viewer can report the glass-to-glass latency. The ticket comes from the environment or stdin, never from argv.
 func cmdStream(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("stream", flag.ContinueOnError)
@@ -37,7 +37,7 @@ func cmdStream(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if !*probe {
-		fmt.Fprintln(stderr, "usage: openvibe-node stream --probe --whip-url URL [--seconds N] [--size WxH] [--json]")
+		fmt.Fprintln(stderr, "usage: openvibe-link stream --probe --whip-url URL [--seconds N] [--size WxH] [--json]")
 		fmt.Fprintln(stderr, "the publish ticket is read from OPENVIBE_STREAM_TICKET, or with --ticket-stdin from stdin (never argv)")
 		return 2
 	}

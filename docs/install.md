@@ -1,6 +1,6 @@
-# Installing the OpenVibe Node
+# Installing OpenVibe Link
 
-The Node is one program, `openvibe-node`, plus Python plugins for robots. It connects **out** to OpenVibe (no open
+OpenVibe Link is one program, `openvibe-link` (`openvibe-node` is kept as an alias), plus Python plugins for robots. It connects **out** to OpenVibe (no open
 ports, works behind any home router), and a local kill switch stops everything it drives.
 
 ## The one command (Raspberry Pi and other Linux robots)
@@ -138,53 +138,54 @@ first job those counts: never a path, a username, an IP or a secret. Bot stores 
 many installs reach each step and how long they take (`/admin/first-run`), and the machine's page shows what the first
 job found.
 
-`openvibe-node first-run` is the same command when a script wants to say it. `--code CODE`, `--network URL
+`openvibe-link first-run` is the same command when a script wants to say it. `--code CODE`, `--network URL
 --pairing pair_…` and `--home DIR` work as flags instead of the prompt.
 
 ## By hand
 
 ```sh
-sudo install -m 755 openvibe-node-linux-arm64 /usr/local/bin/openvibe-node
-sudo openvibe-node pair ABCD-1234 --robot rob_…   # stores /etc/openvibe-node/credential.json (mode 600)
+sudo install -m 755 openvibe-link-linux-arm64 /usr/local/bin/openvibe-link
+sudo ln -s openvibe-link /usr/local/bin/openvibe-node
+sudo openvibe-link pair ABCD-1234 --robot rob_…   # stores /etc/openvibe-node/credential.json (mode 600)
 # or, for a Network pairing:
-sudo openvibe-node pair --network https://openvibe.network --pairing pair_… --code ABCD-1234
-sudo openvibe-node install               # systemd / launchd / Windows service, starts it
-openvibe-node status
+sudo openvibe-link pair --network https://openvibe.network --pairing pair_… --code ABCD-1234
+sudo openvibe-link install               # systemd / launchd / Windows service, starts it
+openvibe-link status
 ```
 
 Without root, everything goes to your user config directory (`~/.config/openvibe-node`), or to any directory with
 `--home DIR` / `OPENVIBE_NODE_HOME`:
 
 ```sh
-openvibe-node --home ~/node pair ABCD-1234
-openvibe-node --home ~/node run --dry-run      # foreground; Ctrl-C stops it
+openvibe-link --home ~/node pair ABCD-1234
+openvibe-link --home ~/node run --dry-run      # foreground; Ctrl-C stops it
 ```
 
-**Windows**: download `openvibe-node-windows-amd64.exe`, then in an Administrator prompt `openvibe-node pair <CODE>`
-and `openvibe-node install` (the service runs as LocalSystem; files go to `%ProgramData%\OpenVibe Node`). Robot plugins
+**Windows**: download `openvibe-link-windows-amd64.exe` (or `openvibe-node-windows-amd64.exe`, the same program under its old name), then in an Administrator prompt `openvibe-link pair <CODE>`
+and `openvibe-link install` (the service runs as LocalSystem; files go to `%ProgramData%\OpenVibe Node`). Robot plugins
 need Python; set `"python"` in `config.json`.
 
 A driver that needs your signed-in session (Bluetooth through the Windows runtime, as a LOOI bridge does) runs the
-Node there instead, with no administrator: `openvibe-node pair <CODE> --home "%LOCALAPPDATA%\OpenVibe Node"`, then
-`openvibe-node install --user-session --home "%LOCALAPPDATA%\OpenVibe Node"`. It starts when you sign in, in a
-console window that shows its log; closing the window stops the Node and every actuator. `openvibe-node uninstall
+Node there instead, with no administrator: `openvibe-link pair <CODE> --home "%LOCALAPPDATA%\OpenVibe Node"`, then
+`openvibe-link install --user-session --home "%LOCALAPPDATA%\OpenVibe Node"`. It starts when you sign in, in a
+console window that shows its log; closing the window stops the Node and every actuator. `openvibe-link uninstall
 --user-session` removes it. See [hardware-looi.md](hardware-looi.md).
 
 ## Commands
 
 | command                                   | what it does                                                               |
 |-------------------------------------------|----------------------------------------------------------------------------|
-| `openvibe-node pair <CODE> [--force]`     | redeem a pairing code (or `--code CODE`); `--robot rob_…` the robot it is for, `--name` the device name (default: hostname); `--server`, `--kind onboard\|bridge` override config. With `--network URL [--pairing pair_…]` the code is redeemed on OpenVibe.Network and the device bound on Bot |
-| `openvibe-node run [--dry-run]`           | run in the foreground (what the service runs)                              |
-| `openvibe-node install [--user NAME]`     | install and start the service                                              |
-| `openvibe-node uninstall`                 | stop and remove the service (config and credential are kept)               |
-| `openvibe-node install --user-session --home DIR` | Windows: start at sign-in in your own session instead of as a service |
-| `openvibe-node uninstall --user-session --home DIR` | Windows: remove that directory's sign-in start (one per directory) |
-| `openvibe-node status [--json]`           | link, stop latch, limits, plugins, video, battery, running jobs            |
-| `openvibe-node stop`                      | **kill switch**: stop every actuator now and hold it stopped              |
-| `openvibe-node resume`                    | release the local stop (and a server e-stop)                               |
-| `openvibe-node quit`                      | end the running Node cleanly: every actuator stops, **nothing is latched**, and it waits until the Node has exited |
-| `openvibe-node plugins [--json]`          | plugins and their capabilities                                             |
+| `openvibe-link pair <CODE> [--force]`     | redeem a pairing code (or `--code CODE`); `--robot rob_…` the robot it is for, `--name` the device name (default: hostname); `--server`, `--kind onboard\|bridge` override config. With `--network URL [--pairing pair_…]` the code is redeemed on OpenVibe.Network and the device bound on Bot |
+| `openvibe-link run [--dry-run]`           | run in the foreground (what the service runs)                              |
+| `openvibe-link install [--user NAME]`     | install and start the service                                              |
+| `openvibe-link uninstall`                 | stop and remove the service (config and credential are kept)               |
+| `openvibe-link install --user-session --home DIR` | Windows: start at sign-in in your own session instead of as a service |
+| `openvibe-link uninstall --user-session --home DIR` | Windows: remove that directory's sign-in start (one per directory) |
+| `openvibe-link status [--json]`           | link, stop latch, limits, plugins, video, battery, running jobs            |
+| `openvibe-link stop`                      | **kill switch**: stop every actuator now and hold it stopped              |
+| `openvibe-link resume`                    | release the local stop (and a server e-stop)                               |
+| `openvibe-link quit`                      | end the running Node cleanly: every actuator stops, **nothing is latched**, and it waits until the Node has exited |
+| `openvibe-link plugins [--json]`          | plugins and their capabilities                                             |
 
 `stop` works even when the Node does not answer: it latches `latch.json` in the state directory, which a running Node
 obeys within a quarter second and a starting Node obeys before anything moves. The latch survives restarts.
@@ -193,23 +194,23 @@ obeys within a quarter second and a starting Node obeys before anything moves. T
 
 `stop` is a kill switch, not an exit: it holds every actuator stopped, across restarts, until `resume`. To end the Node
 from a script (a stream launcher that starts and stops it with OBS, say), use `quit`. Every actuator stops, the Node
-exits, and nothing is latched, so the next `openvibe-node run` drives as before. `quit` waits until the process has
+exits, and nothing is latched, so the next `openvibe-link run` drives as before. `quit` waits until the process has
 gone and succeeds when no Node is running, so a launcher can call it without checking first.
 
 `quit` ends a Node started from a terminal, by a launcher, or at sign-in (`install --user-session`). A Node installed as
 a system service refuses it, because systemd, launchd or Windows would start it again. Stop the service there instead
-(`sudo systemctl stop openvibe-node`, or Services on Windows), or remove it with `openvibe-node uninstall`. A launcher
-that owns the Node's life should run `openvibe-node run --home DIR` itself, with no service and no sign-in start.
+(`sudo systemctl stop openvibe-node`, or Services on Windows), or remove it with `openvibe-link uninstall`. A launcher
+that owns the Node's life should run `openvibe-link run --home DIR` itself, with no service and no sign-in start.
 
 ## Files
 
 | Linux                                 | macOS / Windows                                       | contents                          |
 |---------------------------------------|-------------------------------------------------------|-----------------------------------|
-| `/etc/openvibe-node/config.json`      | `…/OpenVibe Node/config.json`                         | configuration                     |
-| `/etc/openvibe-node/credential.json`  | `…/OpenVibe Node/credential.json`                     | device or node credential (mode 600) |
-| `/var/lib/openvibe-node/latch.json`   | `…/OpenVibe Node/latch.json`                          | e-stop / kill switch latch        |
-| `/var/lib/openvibe-node/node.sock`    | `…/OpenVibe Node/node.sock`                           | local control socket (mode 600)   |
-| `/var/lib/openvibe-node/venv`         | `…/OpenVibe Node/venv`                                | plugin Python environment         |
+| `/etc/openvibe-node/config.json`      | `…/OpenVibe Link/config.json`                         | configuration                     |
+| `/etc/openvibe-node/credential.json`  | `…/OpenVibe Link/credential.json`                     | device or node credential (mode 600) |
+| `/var/lib/openvibe-node/latch.json`   | `…/OpenVibe Link/latch.json`                          | e-stop / kill switch latch        |
+| `/var/lib/openvibe-node/node.sock`    | `…/OpenVibe Link/node.sock`                           | local control socket (mode 600)   |
+| `/var/lib/openvibe-node/venv`         | `…/OpenVibe Link/venv`                                | plugin Python environment         |
 
 macOS: `/Library/Application Support/OpenVibe Node`. Windows: `%ProgramData%\OpenVibe Node`.
 
@@ -270,22 +271,22 @@ internet (Ethernet, or a second Wi-Fi adapter). Install with `--driver cozmo`; t
 
 ## Troubleshooting
 
-- `openvibe-node status` shows the last link error. "the server refused the device credential" means it was revoked:
-  `sudo openvibe-node pair --force <NEW-CODE>`.
+- `openvibe-link status` shows the last link error. "the server refused the device credential" means it was revoked:
+  `sudo openvibe-link pair --force <NEW-CODE>`.
 - A Network-paired machine whose node credential OpenVibe.Network refuses (revoked or removed) stops with "OpenVibe.Network
   refused this machine's node credential" and exit status 78, which the systemd unit does not restart. Get a new
   installer command on openvibe.bot and pair again with `--force`.
-- Logs: `journalctl -u openvibe-node -f` (Linux), `/usr/local/var/log/openvibe-node.err.log` (macOS). On Windows the
-  service's log is not kept yet; stop the service and run `openvibe-node run` in a terminal to watch it.
+- Logs: `journalctl -u openvibe-link -f` (Linux), `/usr/local/var/log/openvibe-node.err.log` (macOS). On Windows the
+  service's log is not kept yet; stop the service and run `openvibe-link run` in a terminal to watch it.
 - A plugin in `faulted` state says why in `status` (missing library, not a Raspberry Pi, robot not reachable, firmware).
-- `openvibe-node plugins` works without the service running: it asks each plugin to describe itself without touching
+- `openvibe-link plugins` works without the service running: it asks each plugin to describe itself without touching
   hardware.
 
 ## Uninstall
 
 ```sh
-sudo openvibe-node uninstall
-sudo rm -rf /usr/local/bin/openvibe-node /etc/openvibe-node /var/lib/openvibe-node
+sudo openvibe-link uninstall
+sudo rm -rf /usr/local/bin/openvibe-link /etc/openvibe-node /var/lib/openvibe-node
 sudo userdel openvibe-node
 ```
 

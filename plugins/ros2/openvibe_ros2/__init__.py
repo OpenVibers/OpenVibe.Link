@@ -1,4 +1,4 @@
-"""OpenVibe Node bridge plugin for ROS 2 robots.
+"""OpenVibe Link bridge plugin for ROS 2 robots.
 
 The Node runs on the robot's computer (or next to it) and this plugin turns Bot's commands into ROS 2 messages and the
 robot's topics into telemetry and camera frames:
