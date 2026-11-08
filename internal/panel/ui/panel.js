@@ -215,8 +215,10 @@
     function sendFile(file) { return file.arrayBuffer().then(function (b) { return sendPayload(file.name, file.type, new Uint8Array(b)); }); }
     function sendNote() { var text = $('[data-lk-send-note]').value; if (!text.trim()) { say('Write a note first.'); return; } sendPayload('note.txt', 'text/plain;charset=utf-8', new TextEncoder().encode(text)).then(function () { $('[data-lk-send-note]').value = ''; }); }
     function downloadAccepted(item) {
-        return Promise.all([moduleLocker(), panelApi('send/key')]).then(function (parts) {
-            var locker = parts[0], envelope = unbase64(item.envelope), own = parts[1];
+        var path = 'files/' + encodeURIComponent(item.id);
+        return Promise.all([moduleLocker(), panelApi('send/key'), panelApi(path + '/accept', 'POST', {})]).then(function (parts) {
+            var locker = parts[0], own = parts[1], envelope = unbase64(parts[2].envelope || '');
+            if (!envelope.length) throw new Error('The encrypted item is no longer waiting.');
             return locker.open(envelope, { privateKey: own.private_key.privateKey || own.private_key, subject: own.subject });
         }).then(function (bytes) {
             var view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes), n = new DataView(view.buffer, view.byteOffset, view.byteLength).getUint32(0);
@@ -228,11 +230,15 @@
             return panelApi('files/' + encodeURIComponent(item.id) + '/complete', 'POST', {}).then(function () { say('Accepted. Your browser saved ' + safeName + ' to Downloads.'); });
         });
     }
+    function size(bytes) {
+        var n = Number(bytes) || 0;
+        return n < 1024 ? n + ' B' : n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
+    }
     function loadInbox() {
         panelApi('send/inbox').then(function (body) {
             var list = $('[data-lk-send-inbox]');
             list.replaceChildren.apply(list, (body.items || []).map(function (item) {
-                var li = el('li', 'lk-send-item'), label = el('span', '', 'Encrypted item · ' + ago(item.created_at));
+                var li = el('li', 'lk-send-item'), label = el('span', '', 'Encrypted item from ' + (item.sender_name || 'your machine') + ' · ' + size(item.bytes) + ' · ' + ago(item.created_at));
                 var actions = el('div'), accept = el('button', '', 'Accept'), decline = el('button', '', 'Decline');
                 accept.type = decline.type = 'button';
                 accept.addEventListener('click', function () { accept.disabled = true; say('Opening the encrypted item…'); downloadAccepted(item).catch(function (e) { accept.disabled = false; say(e.message || 'The item could not be opened. It is still waiting.'); }); });

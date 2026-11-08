@@ -154,7 +154,8 @@ type FirstRunAnswer struct {
 	Skip bool     `json:"skip"`
 }
 
-// SendMachine and IncomingSend are the Link Send payloads shown in the window. Envelope is ciphertext only.
+// SendMachine and IncomingSend are the Link Send payloads shown in the window. An IncomingSend carries no ciphertext:
+// the window asks for it through accept when the person chooses to receive the item.
 type SendMachine struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
@@ -162,10 +163,11 @@ type SendMachine struct {
 	PublicKey any    `json:"public_key"`
 }
 type IncomingSend struct {
-	ID        string    `json:"id"`
-	Sender    string    `json:"sender_node,omitempty"`
-	Envelope  string    `json:"envelope"`
-	CreatedAt time.Time `json:"created_at"`
+	ID         string    `json:"id"`
+	Sender     string    `json:"sender_node,omitempty"`
+	SenderName string    `json:"sender_name,omitempty"`
+	Bytes      int64     `json:"bytes"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // Options are what the daemon gives the panel: its state, and the actions the window can ask for.

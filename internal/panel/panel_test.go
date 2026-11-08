@@ -346,16 +346,16 @@ func TestIncomingItemsNeedAnExplicitAcceptOrDecline(t *testing.T) {
 	accepted, declined, completed := false, false, false
 	srv := testServer(t, Options{
 		SendInbox: func() ([]IncomingSend, error) {
-			return []IncomingSend{{ID: "snd_0123456789abcdef0123456789abcdef", Envelope: "ciphertext"}}, nil
+			return []IncomingSend{{ID: "snd_0123456789abcdef0123456789abcdef", SenderName: "Desk PC", Bytes: 2048}}, nil
 		},
 		SendAccept:   func(id string) (string, error) { accepted = id != ""; return "ciphertext", nil },
 		SendDecline:  func(id string) error { declined = id != ""; return nil },
 		SendComplete: func(id string) error { completed = id != ""; return nil },
 	})
-	if w := do(t, srv, http.MethodGet, "/panel/api/send/inbox", testToken, "", ""); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "ciphertext") {
+	if w := do(t, srv, http.MethodGet, "/panel/api/send/inbox", testToken, "", ""); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "Desk PC") || strings.Contains(w.Body.String(), "envelope") {
 		t.Fatalf("inbox: %d %s", w.Code, w.Body)
 	}
-	if w := do(t, srv, http.MethodPost, "/panel/api/files/snd_0123456789abcdef0123456789abcdef/accept", testToken, "", "{}"); w.Code != http.StatusOK || !accepted {
+	if w := do(t, srv, http.MethodPost, "/panel/api/files/snd_0123456789abcdef0123456789abcdef/accept", testToken, "", "{}"); w.Code != http.StatusOK || !accepted || !strings.Contains(w.Body.String(), "ciphertext") {
 		t.Fatalf("accept: %d %s", w.Code, w.Body)
 	}
 	if w := do(t, srv, http.MethodPost, "/panel/api/files/snd_0123456789abcdef0123456789abcdef/complete", testToken, "", "{}"); w.Code != http.StatusNoContent || !completed {

@@ -34,12 +34,16 @@ type Machine struct {
 	Online    bool   `json:"online"`
 	PublicKey JWK    `json:"public_key"`
 }
+
+// Item is one waiting transfer as the inbox lists it: who sent it and how big it is. The ciphertext is not in the
+// list (it is polled every few seconds); Accept fetches it once.
 type Item struct {
-	ID        string    `json:"id"`
-	Sender    string    `json:"sender_node"`
-	Envelope  string    `json:"envelope"`
-	CreatedAt time.Time `json:"created_at"`
-	ExpiresAt time.Time `json:"expires_at"`
+	ID         string    `json:"id"`
+	Sender     string    `json:"sender_node"`
+	SenderName string    `json:"sender_name"`
+	Bytes      int64     `json:"bytes"`
+	CreatedAt  time.Time `json:"created_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
 }
 
 func (c *Client) Register(ctx context.Context, key JWK) error {

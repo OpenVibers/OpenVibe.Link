@@ -130,7 +130,7 @@ func (n *Node) panelSendOptions(ctx context.Context) panelSend {
 			}
 			out := make([]panel.IncomingSend, 0, len(items))
 			for _, item := range items {
-				out = append(out, panel.IncomingSend{ID: item.ID, Sender: item.Sender, Envelope: item.Envelope, CreatedAt: item.CreatedAt})
+				out = append(out, panel.IncomingSend{ID: item.ID, Sender: item.Sender, SenderName: item.SenderName, Bytes: item.Bytes, CreatedAt: item.CreatedAt})
 			}
 			return out, nil
 		},
