@@ -18,6 +18,9 @@ import network.openvibe.link.ui.ApprovalsScreen
 import network.openvibe.link.ui.LinkTheme
 import network.openvibe.link.ui.PairScreen
 import network.openvibe.link.ui.PhoneScreen
+import java.util.TimeZone
+import org.junit.After
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 
@@ -29,6 +32,16 @@ import org.junit.Test
 class ScreensSnapshotTest {
     @get:Rule
     val paparazzi = Paparazzi(deviceConfig = DeviceConfig.PIXEL_5, theme = "android:Theme.Material.NoActionBar")
+    private lateinit var previousTimeZone: TimeZone
+
+    @Before fun useSnapshotTimeZone() {
+        previousTimeZone = TimeZone.getDefault()
+        TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+    }
+
+    @After fun restoreTimeZone() {
+        TimeZone.setDefault(previousTimeZone)
+    }
 
     /** The pair screen asks for a scanner result; under Paparazzi there is no activity, so a registry that never launches. */
     private val noResults = object : ActivityResultRegistryOwner {
@@ -48,6 +61,12 @@ class ScreensSnapshotTest {
     @Test fun approvalsDark() = shot(true) { ApprovalsScreen(preview = PreviewActivity.SAMPLE_APPROVALS) }
     @Test fun approvalsLight() = shot(false) { ApprovalsScreen(preview = PreviewActivity.SAMPLE_APPROVALS) }
     @Test fun approvalsEmptyDark() = shot(true) { ApprovalsScreen(preview = emptyList()) }
+    @Test fun cameraDark() = shot(true) { ApprovalsScreen(preview = PreviewActivity.SAMPLE_CAMERA) }
+    @Test fun cameraLight() = shot(false) { ApprovalsScreen(preview = PreviewActivity.SAMPLE_CAMERA) }
+    @Test fun locationDark() = shot(true) { ApprovalsScreen(preview = PreviewActivity.SAMPLE_LOCATION) }
+    @Test fun locationLight() = shot(false) { ApprovalsScreen(preview = PreviewActivity.SAMPLE_LOCATION) }
+    @Test fun notifyDark() = shot(true) { ActivityScreen(preview = PreviewActivity.SAMPLE_NOTIFY) }
+    @Test fun notifyLight() = shot(false) { ActivityScreen(preview = PreviewActivity.SAMPLE_NOTIFY) }
     @Test fun activityDark() = shot(true) { ActivityScreen(preview = PreviewActivity.SAMPLE_ACTIVITY) }
     @Test fun activityLight() = shot(false) { ActivityScreen(preview = PreviewActivity.SAMPLE_ACTIVITY) }
     @Test fun phoneDark() = shot(true) { PhoneScreen(previewInfo = PreviewActivity.SAMPLE_DEVICE, preview = true) }

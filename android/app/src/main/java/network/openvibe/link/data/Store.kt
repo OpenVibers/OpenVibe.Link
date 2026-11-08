@@ -91,6 +91,14 @@ object Store {
         prefs.edit().putBoolean("stay_connected", on).apply()
     }
 
+    /** Non-secret Action Center cursor: a local notification is raised at most once per item. */
+    fun noticeCursor(): String = prefs.getString("notice_cursor", null)
+        ?: java.time.Instant.now().minusSeconds(60).toString()
+
+    fun advanceNoticeCursor(at: String) {
+        if (at > (prefs.getString("notice_cursor", null) ?: "")) prefs.edit().putString("notice_cursor", at).apply()
+    }
+
     private fun encryptedKey(name: String) = "enc_$name"
 
     private fun write(name: String, value: String) {

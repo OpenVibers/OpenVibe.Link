@@ -8,6 +8,8 @@ import network.openvibe.link.data.ActionsDoc
 import network.openvibe.link.data.Api
 import network.openvibe.link.data.Session
 import network.openvibe.link.data.Store
+import network.openvibe.link.data.LinkController
+import org.json.JSONObject
 
 /** Intents the activity received, for the Compose tree to read (a deep link can arrive while it is already drawn). */
 object Incoming {
@@ -50,6 +52,10 @@ object ActionsRepo {
         loading = true
         error = null
         try {
+            if (LinkController.connected) {
+                val id = LinkController.info()?.let { JSONObject(it).optString("device_id") }
+                if (!id.isNullOrBlank()) runCatching { Api.devicePresence(id) }
+            }
             doc = Api.actions()
         } catch (e: Exception) {
             error = e.message ?: "Could not read your activity."

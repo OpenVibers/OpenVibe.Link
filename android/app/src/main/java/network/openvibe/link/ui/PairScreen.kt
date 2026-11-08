@@ -1,5 +1,6 @@
 package network.openvibe.link.ui
 
+import android.os.Build
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -13,9 +14,6 @@ import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material3.Icon
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontWeight
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
@@ -40,12 +38,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
-import com.journeyapps.barcodescanner.ScanContract
-import com.journeyapps.barcodescanner.ScanOptions
+import androidx.core.content.FileProvider
+import java.io.File
+import java.util.UUID
 import kotlinx.coroutines.launch
 import network.openvibe.link.data.Api
 import network.openvibe.link.data.PairLinks
+import network.openvibe.link.data.PairPhoto
 import network.openvibe.link.data.Store
 
 /**
@@ -60,6 +59,7 @@ fun PairScreen(initialCode: String?) {
     var pairing by rememberSaveable { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var scanFile by remember { mutableStateOf<File?>(null) }
 
     LaunchedEffect(initialCode) {
         if (!initialCode.isNullOrBlank()) code = initialCode
@@ -71,22 +71,24 @@ fun PairScreen(initialCode: String?) {
         Incoming.pairRefused = null
     }
 
-    val scanner = rememberLauncherForActivityResult(ScanContract()) { result ->
-        val link = PairLinks.codeFromScan(result.contents)
-        when {
-            link?.refusedServer != null -> {
-                error = "That QR points at ${link.refusedServer}, not OpenVibe Network."
-                Messages.show("That QR points at ${link.refusedServer}, not OpenVibe Network.")
+    val scanner = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
+        val file = scanFile
+        scanFile = null
+        if (saved && file != null) {
+            val link = PairLinks.codeFromScan(PairPhoto.decode(file))
+            when {
+                link?.refusedServer != null -> {
+                    error = "That QR points at ${link.refusedServer}, not OpenVibe Network."
+                    Messages.show(error)
+                }
+                link?.code != null -> {
+                    code = link.code
+                    pairing = link.pairing
+                }
+                else -> Messages.show("The photo has no OpenVibe pairing QR. Try again or type the code.")
             }
-            link?.code != null -> {
-                code = link.code
-                pairing = link.pairing
-            }
-            result.contents != null -> Messages.show("That QR is not an OpenVibe pairing link.")
         }
-    }
-    val askCamera = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) launchScanner(scanner) else Messages.show("The camera is how the QR is read; you can type the code instead.")
+        file?.delete()
     }
 
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp)) {
@@ -103,16 +105,15 @@ fun PairScreen(initialCode: String?) {
         }
         Button(
             onClick = {
-                if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                    launchScanner(scanner)
-                } else {
-                    askCamera.launch(Manifest.permission.CAMERA)
-                }
+                val folder = File(context.cacheDir, "pair-photos").apply { mkdirs() }
+                val file = File(folder, "${UUID.randomUUID()}.jpg")
+                scanFile = file
+                scanner.launch(FileProvider.getUriForFile(context, "${context.packageName}.devicephotos", file))
             },
             modifier = Modifier.fillMaxWidth().padding(top = 16.dp).heightIn(min = 52.dp),
         ) {
             Icon(Icons.Outlined.QrCodeScanner, contentDescription = null, modifier = Modifier.padding(end = 10.dp))
-            Text("Scan the QR", fontWeight = FontWeight.Bold)
+            Text("Photograph the QR", fontWeight = FontWeight.Bold)
         }
         Text(
             "Or type the code",
@@ -167,16 +168,6 @@ fun PairScreen(initialCode: String?) {
             modifier = Modifier.padding(top = 24.dp),
         )
     }
-}
-
-private fun launchScanner(scanner: androidx.activity.result.ActivityResultLauncher<ScanOptions>) {
-    scanner.launch(
-        ScanOptions()
-            .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-            .setPrompt("Scan the QR on openvibe.bot/link/phone")
-            .setBeepEnabled(false)
-            .setOrientationLocked(false),
-    )
 }
 
 /** One numbered step of pairing. */

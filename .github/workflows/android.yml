@@ -12,7 +12,7 @@ permissions:
 jobs:
   apk:
     name: Go core, unit tests and the APK
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write # the APK is attached to the release on a tag
     steps:
@@ -21,15 +21,37 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - uses: actions/setup-go@41dfa10bad2bb2ae585af6ee5bb4d7d973ad74ed # v5.1.0
-        with:
-          go-version-file: go.mod
+      - name: Install pinned Go
+        run: |
+          curl -fL --retry 3 https://go.dev/dl/go1.24.7.linux-amd64.tar.gz -o "$RUNNER_TEMP/go1.24.7.linux-amd64.tar.gz"
+          echo 'da18191ddb7db8a9339816f3e2b54bdded8047cdc2a5d67059478f8d1595c43f  '"$RUNNER_TEMP/go1.24.7.linux-amd64.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/go1.24.7.linux-amd64.tar.gz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/go/bin" >> "$GITHUB_PATH"
+          echo "$("$RUNNER_TEMP/go/bin/go" env GOPATH)/bin" >> "$GITHUB_PATH"
       - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: "20"
-      - uses: gradle/actions/setup-gradle@d156388eb19639ec20ade50009f3d199ce1e2808 # v4.1.0
-        with:
-          gradle-version: "8.11.1"
+      - name: Install pinned Gradle
+        run: |
+          curl -fL --retry 3 -H 'Accept: application/octet-stream' \
+            https://api.github.com/repos/gradle/gradle-distributions/releases/assets/207876967 \
+            -o "$RUNNER_TEMP/gradle-8.11.1-bin.zip"
+          echo 'f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6  '"$RUNNER_TEMP/gradle-8.11.1-bin.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/gradle-8.11.1-bin.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/gradle-8.11.1/bin" >> "$GITHUB_PATH"
+
+      - name: Cache pinned Kotlin compiler
+        run: |
+          artifact="$HOME/.m2/repository/org/jetbrains/kotlin/kotlin-compiler-embeddable/2.0.21"
+          mkdir -p "$artifact"
+          curl -fL --retry 3 -H 'Accept: application/octet-stream' \
+            https://api.github.com/repos/JetBrains/kotlin/releases/assets/587823233 \
+            -o "$artifact/kotlin-compiler-embeddable-2.0.21.jar"
+          echo '9fa8cdd1de0dccffe154c997d423ec6b5f53cd6d9177e3a77a9b0de03fb1bc81  '"$artifact/kotlin-compiler-embeddable-2.0.21.jar" | sha256sum -c -
+          curl -fL --retry 3 \
+            https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-compiler-embeddable/2.0.21/kotlin-compiler-embeddable-2.0.21.pom \
+            -o "$artifact/kotlin-compiler-embeddable-2.0.21.pom"
+          echo 'bd4656a46ec418252e5bc5e1c20eb2029fb2a8e0e3cc94eeddfac7e87c8cd5b6  '"$artifact/kotlin-compiler-embeddable-2.0.21.pom" | sha256sum -c -
 
       - name: Android NDK (gomobile needs one)
         run: |

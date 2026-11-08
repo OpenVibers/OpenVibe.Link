@@ -17,7 +17,7 @@ adb shell settings put global animator_duration_scale 0 || true
 apk=$(find android/app/build/outputs/apk/debug -name "*.apk" | head -n 1)
 adb install -r "$apk"
 
-for screen in pair approvals activity phone; do
+for screen in pair approvals camera location notify activity phone; do
     adb shell am force-stop network.openvibe.link || true
     adb shell am start -W -n network.openvibe.link/.PreviewActivity --es screen "$screen" >/dev/null
     sleep 2
