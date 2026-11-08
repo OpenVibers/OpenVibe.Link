@@ -1,5 +1,5 @@
 // Package connect keeps OpenVibe Connect shares up from the Node: each share is one port on this machine served at
-// https://<label>--<user>.openvibe.website behind OpenVibe sign-in (OpenVibe.Connect, ADR-057, Website Connect v0).
+// https://<label>--<user>.openvibe.link behind OpenVibe sign-in (OpenVibe.Connect, ADR-057, Website Connect v0).
 //
 // The Node opens one outgoing WebSocket per share to wss://connect.openvibe.website/tunnel and speaks ovconnect-ws/1,
 // the same protocol as the one-file client (OpenVibe.Connect public/ov-connect.js):
@@ -80,7 +80,7 @@ type Options struct {
 	MinWait   time.Duration // reconnect backoff floor (default 1 s)
 	MaxWait   time.Duration // reconnect backoff ceiling (default 30 s)
 
-	// NodeToken buys this computer's node token for openvibe.website, for shares it serves by id (node.go). An error
+	// NodeToken buys this computer's node token for openvibe.link, for shares it serves by id (node.go). An error
 	// wrapping ErrStopped (the machine was removed on OpenVibe) stops the share; any other is tried again.
 	NodeToken   func(ctx context.Context) (string, error)
 	HTTPClient  *http.Client  // Connect's API, for tunnel tokens (default: 20 s timeout)

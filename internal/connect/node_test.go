@@ -39,7 +39,7 @@ func newNodeServer(t *testing.T) *nodeServer {
 		n.mu.Lock()
 		n.bearers = append(n.bearers, r.Header.Get("Authorization"))
 		n.mu.Unlock()
-		_ = json.NewEncoder(w).Encode(map[string]any{"shares": []map[string]any{{"id": testShareID, "host": "portal--alex.openvibe.website", "url": "https://portal--alex.openvibe.website", "local_port": n.pagePort, "mode": "owner"}}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"shares": []map[string]any{{"id": testShareID, "host": "portal--alex.openvibe.link", "url": "https://portal--alex.openvibe.link", "local_port": n.pagePort, "mode": "owner"}}})
 	})
 	mux.HandleFunc("/api/v1/node/shares/"+testShareID+"/tunnel-token", func(w http.ResponseWriter, r *http.Request) {
 		n.mu.Lock()
@@ -71,7 +71,7 @@ func newNodeServer(t *testing.T) *nodeServer {
 		var hello map[string]any
 		_ = json.Unmarshal(data, &hello)
 		n.hellos <- hello
-		_ = ws.WriteMessage(websocket.TextMessage, []byte(`{"t":"ready","v":1,"node":true,"share":{"id":"`+testShareID+`","host":"portal--alex.openvibe.website","url":"https://portal--alex.openvibe.website","mode":"owner","local_port":8790}}`))
+		_ = ws.WriteMessage(websocket.TextMessage, []byte(`{"t":"ready","v":1,"node":true,"share":{"id":"`+testShareID+`","host":"portal--alex.openvibe.link","url":"https://portal--alex.openvibe.link","mode":"owner","local_port":8790}}`))
 		for {
 			_, data, err := ws.ReadMessage()
 			if err != nil {
@@ -123,7 +123,7 @@ func TestAShareServedByThisComputer(t *testing.T) {
 	if _, has := hello["key"]; has {
 		t.Fatal("no key in a computer's hello")
 	}
-	if r := <-ready; r.Host != "portal--alex.openvibe.website" {
+	if r := <-ready; r.Host != "portal--alex.openvibe.link" {
 		t.Fatalf("ready %v", r)
 	}
 	// It keeps the tunnel with fresh node tokens.

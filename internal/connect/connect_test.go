@@ -67,7 +67,7 @@ func newFakeServer(t *testing.T, refuse int) *fakeServer {
 			_ = ws.Close()
 			return
 		}
-		_ = ws.WriteMessage(websocket.TextMessage, []byte(`{"t":"ready","v":1,"share":{"id":"shr_1","host":"agents--alex.openvibe.website","url":"https://agents--alex.openvibe.website","mode":"owner"}}`))
+		_ = ws.WriteMessage(websocket.TextMessage, []byte(`{"t":"ready","v":1,"share":{"id":"shr_1","host":"agents--alex.openvibe.link","url":"https://agents--alex.openvibe.link","mode":"owner"}}`))
 		c := &serverConn{ws: ws, frames: map[uint32]chan frame{}}
 		f.conns <- c
 		for {
@@ -237,7 +237,7 @@ func TestHelloAndHTTP(t *testing.T) {
 	if hello["t"] != "hello" || hello["v"].(float64) != 1 || hello["port"].(float64) != float64(port) || !strings.HasPrefix(hello["key"].(string), "ovc_") {
 		t.Fatalf("hello %v", hello)
 	}
-	if r := <-ready; r.Host != "agents--alex.openvibe.website" {
+	if r := <-ready; r.Host != "agents--alex.openvibe.link" {
 		t.Fatalf("ready %v", r)
 	}
 
