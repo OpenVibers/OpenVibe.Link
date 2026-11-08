@@ -24,21 +24,34 @@ jobs:
       - run: go vet ./... && go test -count=1 ./...
       - run: |
           for p in sdk dryrun adeept_adr036 cozmo relay ros2 computer voice; do python -m pytest -q plugins/$p/tests; done
+      # The packages are built on every tag, and CI already built them on the PR that made this commit: rpm is the
+      # only tool Ubuntu does not ship.
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm
       - run: scripts/dist.sh "${GITHUB_REF_NAME}"
       # Every release must carry the installer OpenVibe.Bot's GET /install route and BOT_INSTALLER_SOURCE_URL are
-      # documented to serve (releases/latest/download/install.sh), the plugin bundle the installer downloads, and the
-      # checksums it verifies them against.
-      - name: the release carries the assets the installer and OpenVibe.Bot depend on
+      # documented to serve (releases/latest/download/install.sh), the plugin bundle the installer downloads, every
+      # OS/architecture the site offers, and the checksums they are verified against.
+      - name: the release carries every OS, architecture and package the site offers
         run: |
           test -s dist/install.sh
           test -s dist/openvibe-node-plugins.tar.gz
           test -s dist/SHA256SUMS
-          # The new name and the alias it replaces are both in every release for a year (plan 2026-11-07 §5).
-          test -s dist/openvibe-link-linux-amd64
-          test -s dist/openvibe-node-linux-amd64
-          test -s dist/openvibe-link-windows-amd64.exe
-          test -s dist/openvibe-node-windows-amd64.exe
+          for f in \
+            dist/openvibe-link-linux-amd64 dist/openvibe-link-linux-arm64 \
+            dist/openvibe-link-darwin-amd64 dist/openvibe-link-darwin-arm64 \
+            dist/openvibe-link-windows-amd64.exe dist/openvibe-link-windows-arm64.exe \
+            dist/openvibe-link_*_amd64.deb dist/openvibe-link_*_arm64.deb \
+            dist/openvibe-link-*-1.x86_64.rpm dist/openvibe-link-*-1.aarch64.rpm \
+            dist/openvibe-link_*_linux_amd64.tar.gz dist/openvibe-link_*_linux_arm64.tar.gz \
+            dist/openvibe-link_*_darwin_amd64.tar.gz dist/openvibe-link_*_darwin_arm64.tar.gz \
+            dist/openvibe-node-linux-amd64 dist/openvibe-node-windows-amd64.exe; do
+            test -s "$f" || { echo "missing $f"; exit 1; }
+          done
       - name: publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" dist/* --title "OpenVibe Link ${GITHUB_REF_NAME}" --generate-notes
+        # The Android workflow also attaches its APK on a tag, and either job may reach the release first: create it
+        # only when it is absent, then upload (clobber) so both workflows can publish to the same tag.
+        run: |
+          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || gh release create "${GITHUB_REF_NAME}" --title "OpenVibe Link ${GITHUB_REF_NAME}" --generate-notes
+          gh release upload "${GITHUB_REF_NAME}" dist/* --clobber

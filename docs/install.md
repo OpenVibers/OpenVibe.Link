@@ -3,16 +3,101 @@
 OpenVibe Link is one program, `openvibe-link` (`openvibe-node` is kept as an alias), plus Python plugins for robots. It connects **out** to OpenVibe (no open
 ports, works behind any home router), and a local kill switch stops everything it drives.
 
+
+## Install on your OS
+
+Every release is built by CI on the tag and carries the same program for each system: Windows x64 and ARM64, macOS
+Apple silicon and Intel, Linux x64 and ARM64 (.deb, .rpm, tarball and the `curl | sh` script), and the Android APK.
+Links for every file are on [openvibe.link](https://openvibe.link/#install); the release page has the same files and
+`SHA256SUMS`.
+
+### Windows (x64 and ARM64)
+
+1. Download `openvibe-link-windows-amd64.exe` (x64) or `openvibe-link-windows-arm64.exe` (ARM64) from
+   [openvibe.link](https://openvibe.link/#install) or the latest release.
+2. Windows may show SmartScreen the first time: **More info** → **Run anyway**.
+3. In an **Administrator** PowerShell, from the folder you saved it in:
+
+   ```powershell
+   .\openvibe-link pair <CODE>
+   .\openvibe-link install
+   ```
+
+   The code comes from [openvibe.bot/machines](https://openvibe.bot/machines) (**Add a machine**).
+4. `openvibe-link status` shows the link; the machine appears in your account's machines.
+
+`openvibe-node.exe` is the same program under its old name, so an existing shortcut or script keeps working.
+
+### macOS (Apple silicon and Intel)
+
+The one command installs the right build and the launchd service:
+
+```sh
+curl -fsSL https://openvibe.link/install | sh
+```
+
+Or download the program: `openvibe-link-darwin-arm64` (Apple silicon) or `openvibe-link-darwin-amd64` (Intel), or the
+tarball `openvibe-link_<version>_darwin_arm64.tar.gz` / `..._darwin_amd64.tar.gz` with `install.sh` and the plugins
+beside it. Gatekeeper: right-click the file and choose **Open** the first time. Then:
+
+```sh
+sudo ./openvibe-link pair <CODE>
+sudo ./openvibe-link install
+```
+
+The same command works on a Raspberry Pi or another Linux robot and also finds the kit and its driver.
+
+### Linux (x64 and ARM64: .deb, .rpm, tarball, script)
+
+The one command, on any distribution, finds the CPU and installs the systemd service:
+
+```sh
+curl -fsSL https://openvibe.link/install | sh
+```
+
+Or use the package for your distribution:
+
+```sh
+sudo apt install ./openvibe-link_<version>_amd64.deb     # Debian, Ubuntu (x64; _arm64.deb on ARM64)
+sudo dnf install ./openvibe-link-<version>-1.x86_64.rpm  # Fedora, RHEL (aarch64 on ARM64)
+```
+
+The packages put `openvibe-link` in `/usr/local/bin` and make `openvibe-node` a symlink to it; they do not start or
+pair anything by themselves. Then:
+
+```sh
+openvibe-link pair <CODE>
+sudo openvibe-link install
+```
+
+The tarballs (`openvibe-link_<version>_linux_amd64.tar.gz` and `..._linux_arm64.tar.gz`) carry the program, the
+plugin bundle and `install.sh`; unpack one and run `sudo ./install.sh --local .`.
+
+### Android (the existing APK)
+
+Download `openvibe-link-<tag>.apk` on the phone, allow installing from that source when Android asks, and open
+**OpenVibe Link**. Pair with a code from [openvibe.bot/link/phone](https://openvibe.bot/link/phone). This is the direct
+APK, not Google Play; it has approvals, Activity, pairing and **Send to OpenVibe**, and no phone automation. Details:
+[android.md](android.md).
+
+### iPhone and iPad (what works today)
+
+There is no native iOS app yet. The home-screen web app works now: open [openvibe.my](https://openvibe.my/) in Safari,
+sign in, then **Share** → **Add to Home Screen**. It gives you **Approvals**, **Activity**, your **machines** and
+pairing from the phone.
+
+A native iOS app, push notifications and a background Link connection wait on an Apple Developer account and the App
+Store review that follows it; nothing here pretends they already work.
+
 ## The one command (Raspberry Pi and other Linux robots)
 
 On the robot's computer, with nothing set up on openvibe.bot first:
 
 ```sh
-curl -fsSL https://node.openvibe.network/install | sh
+curl -fsSL https://openvibe.link/install | sh
 ```
 
-The same installer is also at <https://openvibe.bot/install>, which keeps working; `node.openvibe.network` is the
-Node's own address and has a page that says what it is and how to install it.
+The same installer is also at <https://openvibe.bot/install>, which keeps working; `node.openvibe.network/install` keeps working and sends you to openvibe.link.
 
 On a Raspberry Pi it turns on I2C and SPI (now and after a reboot, through `raspi-config`), installs what is missing of
 `i2c-tools`, the camera tools (`rpicam-apps`), `python3-venv`, `python3-lgpio` and `qrencode`, and looks at the I2C bus:
@@ -48,7 +133,7 @@ write Raspberry Pi OS Lite (64-bit) with Raspberry Pi Imager, copy the page's `u
 card's `bootfs` drive, and switch the robot on. On first boot the Pi joins your Wi-Fi, turns on SSH, and runs
 
 ```sh
-curl -fsSL https://node.openvibe.network/install | sh -s -- --setup osk_…
+curl -fsSL https://openvibe.link/install | sh -s -- --setup osk_…
 ```
 
 with the card's setup key (`OPENVIBE_SETUP_KEY` works too). openvibe.bot approves that claim at once for the person who
@@ -63,7 +148,7 @@ Its output is in `journalctl -u openvibe-setup` on the Pi.
 2. On the device, run that command, adding `--driver` for your robot:
 
    ```sh
-   curl -fsSL https://node.openvibe.network/install | sh -s -- --robot rob_01J8Z4M2Q0R7T9YV3K6N8P1W2X --code ABCD-1234 --driver adeept
+   curl -fsSL https://openvibe.link/install | sh -s -- --robot rob_01J8Z4M2Q0R7T9YV3K6N8P1W2X --code ABCD-1234 --driver adeept
    ```
 
    The shape is `--robot rob_… --code CODE [--driver adeept|adeept-mecanum|cozmo|looi|ros2|ros2-holonomic|none]`. `--robot` is the robot's
@@ -94,7 +179,7 @@ has the details.
 - **Network pairing**: `--network <URL> --pairing pair_… --code CODE`, e.g.
 
   ```sh
-  curl -fsSL https://node.openvibe.network/install | sh -s -- --network https://openvibe.network --pairing pair_01J8Z4M2Q0R7T9YV3K6N8P1W2Y --code ABCD-1234 --driver adeept
+  curl -fsSL https://openvibe.link/install | sh -s -- --network https://openvibe.network --pairing pair_01J8Z4M2Q0R7T9YV3K6N8P1W2Y --code ABCD-1234 --driver adeept
   ```
 
   The Node redeems the code on OpenVibe.Network (`POST <network>/api/v1/node-pairing`) and stores the machine's node

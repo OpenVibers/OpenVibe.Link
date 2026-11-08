@@ -8,6 +8,11 @@ One service for your computers, servers, Raspberry Pis, phones and robots: pair 
 like **OpenVibe.Bot** (robots: drive, cameras, sensors, with safety) and **OpenVibe.Actor** (computer control for AI
 agents, at the level you set on the machine) can use the device. It connects out, needs no open ports, and keeps a local kill switch.
 
+Every release is built by CI for every system: **Windows x64 and ARM64**, **macOS Apple silicon and Intel**, **Linux
+x64 and ARM64** (`.deb`, `.rpm`, a tarball, and the `curl | sh` script), and the **Android APK**. The
+[openvibe.link install page](https://openvibe.link/#install) picks the visitor's OS and offers the others; the
+[install guide](docs/install.md) has the exact steps, including the home-screen web app for iPhone and iPad.
+
 On a robot's Raspberry Pi (or other Linux computer), the one command:
 
 ```sh

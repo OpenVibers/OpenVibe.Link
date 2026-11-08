@@ -82,9 +82,41 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # The packages are built on every run so a broken .deb/.rpm is caught before a tag: dpkg-deb ships with Ubuntu,
+      # rpm (rpmbuild) does not.
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm
       - run: scripts/dist.sh ci
       # OpenVibe.Bot's /install route and BOT_INSTALLER_SOURCE_URL are documented to serve this exact release asset.
       - run: test -s dist/install.sh && cmp -s install/install.sh dist/install.sh
+      - name: every OS, architecture and package the release promises is in dist
+        run: |
+          for f in \
+            dist/openvibe-link-linux-amd64 dist/openvibe-link-linux-arm64 \
+            dist/openvibe-link-darwin-amd64 dist/openvibe-link-darwin-arm64 \
+            dist/openvibe-link-windows-amd64.exe dist/openvibe-link-windows-arm64.exe \
+            dist/openvibe-link_*_amd64.deb dist/openvibe-link_*_arm64.deb \
+            dist/openvibe-link-*-1.x86_64.rpm dist/openvibe-link-*-1.aarch64.rpm \
+            dist/openvibe-link_*_linux_amd64.tar.gz dist/openvibe-link_*_linux_arm64.tar.gz \
+            dist/openvibe-link_*_darwin_amd64.tar.gz dist/openvibe-link_*_darwin_arm64.tar.gz; do
+            test -s "$f" || { echo "missing $f"; exit 1; }
+          done
+      - name: the packages carry the program and the alias, not just a file
+        run: |
+          for f in dist/*.deb; do
+            dpkg-deb -c "$f" > /tmp/pkg.txt
+            grep -q 'usr/local/bin/openvibe-link$' /tmp/pkg.txt
+            grep -q 'usr/local/bin/openvibe-node -> openvibe-link$' /tmp/pkg.txt
+          done
+          for f in dist/*.rpm; do
+            rpm -qpl "$f" > /tmp/pkg.txt
+            grep -qx '/usr/local/bin/openvibe-link' /tmp/pkg.txt
+            grep -qx '/usr/local/bin/openvibe-node' /tmp/pkg.txt
+          done
+          for f in dist/openvibe-link_*.tar.gz; do
+            tar -tzf "$f" > /tmp/pkg.txt
+            grep -q '/install.sh$' /tmp/pkg.txt
+            grep -q '/README.md$' /tmp/pkg.txt
+          done
       - run: ls -l dist && cat dist/SHA256SUMS
 
   go-other-os:

@@ -6,7 +6,7 @@ VERSION="${1:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}"
 cd "$(dirname "$0")/.."
 rm -rf dist
 mkdir -p dist
-for target in linux/amd64 linux/arm64 linux/arm/7 darwin/amd64 darwin/arm64 windows/amd64; do
+for target in linux/amd64 linux/arm64 linux/arm/7 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
 	os="${target%%/*}"
 	rest="${target#*/}"
 	arch="${rest%%/*}"
@@ -32,5 +32,7 @@ tar -czf dist/openvibe-node-plugins.tar.gz -C plugins \
 # OpenVibe.Bot's GET /install route and BOT_INSTALLER_SOURCE_URL are documented to serve this asset name:
 # https://github.com/OpenVibers/OpenVibe.Node/releases/latest/download/install.sh — do not rename it.
 cp install/install.sh dist/install.sh
+# Friendly Linux and macOS artifacts: .deb, .rpm and a tarball per architecture, from the binaries above.
+scripts/package.sh "$VERSION"
 (cd dist && if command -v sha256sum >/dev/null 2>&1; then sha256sum -- * >SHA256SUMS; else shasum -a 256 -- * >SHA256SUMS; fi)
 echo "dist/ ready for $VERSION"
