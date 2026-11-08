@@ -48,9 +48,9 @@ A skill that declares `runs: "sandbox"` has tools whose code runs as a **functio
 skill runner. The runner is a declared function like the Codes runner, and it is **off until the owner turns it on**:
 
 ```sh
-sudo openvibe-node skills on        # write the runner and declare it in worker.functions
-openvibe-node skills status [--json]
-sudo openvibe-node skills off
+sudo openvibe-link skills on        # write the runner and declare it in worker.functions
+openvibe-link skills status [--json]
+sudo openvibe-link skills off
 ```
 
 `skills on` finds a system Node.js (`/usr/bin/node`, `/usr/local/bin/node`, then `node` on PATH; `--node PATH` overrides),
@@ -247,7 +247,7 @@ exactly as with the worker off: there is no weaker mode. A job whose sandbox fai
 its function having run.
 
 Requirements: Linux 5.14 or later with cgroup v2; the Node's cgroup **delegated** to it (`Delegate=yes` on its
-systemd unit, which the service `openvibe-node install` writes sets; running `install.sh` again rewrites an older
+systemd unit, which the service `openvibe-link install` writes sets; running `install.sh` again rewrites an older
 install's service, or add it by hand: `sudo systemctl edit openvibe-node`, add `[Service]` and `Delegate=yes`,
 restart). The Node moves itself into an `openvibe-node` leaf of that cgroup and makes one `openvibe-job-*` cgroup per
 job beside it; a cgroup that holds any process other than the Node and its children (a login session's, say) is not
@@ -302,11 +302,11 @@ AppArmor; a Node running as root with `run_as` is not affected.
 Every kill is SIGKILL to the whole process group and to the leader, which is PID 1 of the job's PID namespace, so its
 death also kills every process the job left behind. The watchdog kills at `ttl_ms` (from receipt), `wall_ms` (from
 start), `cpu_ms`, `mem_bytes`, at `max_output_bytes` of stdout, on `job_cancel`, and the moment the e-stop or the local
-stop latches (`openvibe-node stop`); while the latch is set every job is refused, and `openvibe-node resume` admits
+stop latches (`openvibe-link stop`); while the latch is set every job is refused, and `openvibe-link resume` admits
 them again. A Node shutting down kills its jobs (`stopped`); a job acked but not started yet never starts and gets its
 `job_exit` (`stopped`) all the same.
 
-`openvibe-node status` lists the jobs not ended yet under `jobs` (`--json`: `id`, `function` as `name@version`,
+`openvibe-link status` lists the jobs not ended yet under `jobs` (`--json`: `id`, `function` as `name@version`,
 `state` `admitted`, `running` or `stopping`, and `started_ms` once running); the list is empty when the worker is off.
 
 ## Isolation model and its limits
@@ -420,16 +420,16 @@ name the new file.
 - **What may be named.** An absolute path under the Node user's home, and a plain file. A path outside the home, a
   directory or a symlink is refused when the config loads.
 - **Which home.** The service's `HOME`, which `install.sh --plan-logins` sets to the owner's home. A
-  `sudo openvibe-node …` command uses the sudo user's home for the same check, so the CLI and the service see the same
+  `sudo openvibe-link …` command uses the sudo user's home for the same check, so the CLI and the service see the same
   folder rather than root's.
 - **A file that is not there is skipped**, not an error: the CLI it belongs to is simply not signed in. A file that is
   there but cannot be read, or is not a plain file, ends the job: a half-copied credential is worse than none.
 - **What the job sees.** `openvibe-codes logins` (the Codes job runner) reports each CLI as installed, signed in, and
   with the limit windows its login file carries, and nothing else: no key, no token, no account name.
-### Desks in the sandbox (`openvibe-node desk-sandbox`, Node v0.32.0)
+### Desks in the sandbox (`openvibe-link desk-sandbox`, Node v0.32.0)
 
 A desk host for other people (docs/computer.md, "Desk hosts for other people") runs each desk's browser in this same
-sandbox: `openvibe-node desk-sandbox [--memory-mb N] [--cpu-millis N] [--disk-mb N] [--pids N] [--egress public]
+sandbox: `openvibe-link desk-sandbox [--memory-mb N] [--cpu-millis N] [--disk-mb N] [--pids N] [--egress public]
 [--bind PATH]... [--setenv NAME=VALUE]... -- PROGRAM [ARG]...`, which the computer plugin runs. What differs from a job:
 
 - **It lives for hours and talks both ways.** Fds 3 and 4 pass through to the program (a browser's

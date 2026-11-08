@@ -1,12 +1,12 @@
 #!/bin/sh
-# OpenVibe Node installer.
+# OpenVibe Link installer (the former OpenVibe Node; the openvibe-node command and service name keep working as aliases).
 #
-#   curl -fsSL https://node.openvibe.network/install | sh
-#   curl -fsSL https://node.openvibe.network/install | sh -s -- --robot <rob_…> --code <CODE> [--driver adeept|adeept-mecanum|cozmo|looi|ros2|ros2-holonomic|none]
-#   curl -fsSL https://node.openvibe.network/install | sh -s -- --network <URL> --pairing <pair_…> --code <CODE> [--driver …]
-#   curl -fsSL https://node.openvibe.network/install | sh -s -- --network <URL> --pairing <pair_…> --code <CODE> --worker
-#   curl -fsSL https://node.openvibe.network/install | sh -s -- --network <URL> --pairing <pair_…> --code <CODE> --plan-logins
-#   curl -fsSL https://node.openvibe.network/install | sh -s -- --setup <osk_…>
+#   curl -fsSL https://openvibe.link/install | sh
+#   curl -fsSL https://openvibe.link/install | sh -s -- --robot <rob_…> --code <CODE> [--driver adeept|adeept-mecanum|cozmo|looi|ros2|ros2-holonomic|none]
+#   curl -fsSL https://openvibe.link/install | sh -s -- --network <URL> --pairing <pair_…> --code <CODE> [--driver …]
+#   curl -fsSL https://openvibe.link/install | sh -s -- --network <URL> --pairing <pair_…> --code <CODE> --worker
+#   curl -fsSL https://openvibe.link/install | sh -s -- --network <URL> --pairing <pair_…> --code <CODE> --plan-logins
+#   curl -fsSL https://openvibe.link/install | sh -s -- --setup <osk_…>
 #
 # (the same script is also at https://openvibe.bot/install, which keeps working)
 #
@@ -126,13 +126,13 @@ usage() {
 	echo "                  [--computer observe|ask|trusted|full] [--desk-host [--shared]] [--ai] [--ai-endpoint URL]"
 	echo "                  [--no-service] [--no-claim] [--setup osk_…]"
 	echo "                  [--local DIR] [--version TAG]"
-	echo "  curl -fsSL https://node.openvibe.network/install | sh      (finds the kit, then shows a code to approve on openvibe.bot/link)"
-	echo "  curl -fsSL https://node.openvibe.network/install | sh -s -- --robot rob_… --code ABCD-1234 --driver adeept"
-	echo "  curl -fsSL https://node.openvibe.network/install | sh -s -- --network https://openvibe.network --pairing pair_… --code ABCD-1234"
-	echo "  curl -fsSL https://node.openvibe.network/install | sh -s -- --network https://openvibe.network --pairing pair_… --code ABCD-1234 --plan-logins"
+	echo "  curl -fsSL https://openvibe.link/install | sh      (finds the kit, then shows a code to approve on openvibe.bot/link)"
+	echo "  curl -fsSL https://openvibe.link/install | sh -s -- --robot rob_… --code ABCD-1234 --driver adeept"
+	echo "  curl -fsSL https://openvibe.link/install | sh -s -- --network https://openvibe.network --pairing pair_… --code ABCD-1234"
+	echo "  curl -fsSL https://openvibe.link/install | sh -s -- --network https://openvibe.network --pairing pair_… --code ABCD-1234 --plan-logins"
 }
-say() { printf '%s\n' "openvibe-node: $*"; }
-die() { printf '%s\n' "openvibe-node: error: $*" >&2; exit 1; }
+say() { printf '%s\n' "openvibe-link: $*"; }
+die() { printf '%s\n' "openvibe-link: error: $*" >&2; exit 1; }
 # --robot is the rob_… pairing target; it used to name the driver kind, which still works but is deprecated.
 robot_arg() {
 	case "$1" in
@@ -393,7 +393,7 @@ def call(method, path, body=None, headers=None):
     with urllib.request.urlopen(req, timeout=20) as r:
         return json.load(r)
 def die(msg):
-    print(f'\nopenvibe-node: error: {msg}', file=sys.stderr)
+    print(f'\nopenvibe-link: error: {msg}', file=sys.stderr)
     sys.exit(1)
 setup_key = os.environ.get('OV_SETUP_KEY', '')
 body = {'hostname': host, 'hardware': hw}
@@ -859,9 +859,16 @@ if [ "$CLAIM" = 1 ] || [ "$DRIVER" = adeept ] || [ "$DRIVER" = adeept-mecanum ];
 # ---- download ----
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-BIN_NAME="openvibe-node-$OS-$ARCH"
+BIN_NAME="openvibe-link-$OS-$ARCH"
+OLD_BIN_NAME="openvibe-node-$OS-$ARCH"
 if [ -n "$LOCAL" ]; then
-	cp "$LOCAL/$BIN_NAME" "$TMP/$BIN_NAME" || die "$LOCAL/$BIN_NAME not found"
+	if [ -f "$LOCAL/$BIN_NAME" ]; then
+		cp "$LOCAL/$BIN_NAME" "$TMP/$BIN_NAME" || die "$LOCAL/$BIN_NAME not found"
+	else
+		# A folder filled from a release before the rename still installs; the old name is an alias either way.
+		BIN_NAME="$OLD_BIN_NAME"
+		cp "$LOCAL/$BIN_NAME" "$TMP/$BIN_NAME" || die "$LOCAL/$BIN_NAME not found"
+	fi
 	cp "$LOCAL/openvibe-node-plugins.tar.gz" "$TMP/" || die "$LOCAL/openvibe-node-plugins.tar.gz not found"
 else
 	if [ "$TAG" = latest ]; then
@@ -875,7 +882,8 @@ else
 		else die "curl or wget is needed"; fi
 	}
 	say "downloading $BIN_NAME"
-	fetch "$BASE/$BIN_NAME" "$TMP/$BIN_NAME" || die "download failed: $BASE/$BIN_NAME"
+	# A release made before the rename has only the old asset name: install it as the alias, the same program.
+	fetch "$BASE/$BIN_NAME" "$TMP/$BIN_NAME" || { say "no $BIN_NAME in this release; trying $OLD_BIN_NAME"; BIN_NAME="$OLD_BIN_NAME"; fetch "$BASE/$BIN_NAME" "$TMP/$BIN_NAME"; } || die "download failed: $BASE/$BIN_NAME"
 	fetch "$BASE/openvibe-node-plugins.tar.gz" "$TMP/openvibe-node-plugins.tar.gz" || die "download failed: plugin bundle"
 	fetch "$BASE/SHA256SUMS" "$TMP/SHA256SUMS" || die "download failed: SHA256SUMS"
 	( cd "$TMP"
@@ -885,8 +893,10 @@ else
 fi
 
 # ---- binary ----
-$SUDO install -m 0755 "$TMP/$BIN_NAME" "$BIN_DIR/openvibe-node"
-say "installed $BIN_DIR/openvibe-node ($("$BIN_DIR/openvibe-node" version))"
+$SUDO install -m 0755 "$TMP/$BIN_NAME" "$BIN_DIR/openvibe-link"
+# The old command is a link to the same program for a year (plan 2026-11-07 §5), never a second install.
+$SUDO ln -sf openvibe-link "$BIN_DIR/openvibe-node" || $SUDO install -m 0755 "$TMP/$BIN_NAME" "$BIN_DIR/openvibe-node"
+say "installed $BIN_DIR/openvibe-link ($("$BIN_DIR/openvibe-link" version)); openvibe-node is an alias"
 
 # ---- service account (Linux): hardware groups, no login ----
 # A worker (--worker) runs the service as root: the job sandbox's run_as and its public egress (a veth, NAT and the
@@ -1098,12 +1108,12 @@ elif [ -n "$COMPUTER" ]; then
 	# The tray starts when they sign in: what waits for approval with Approve and Deny, the stop and resume.
 	had_config=0
 	[ -d "$COMPUTER_HOME/.config" ] && had_config=1
-	if XDG_CONFIG_HOME="$COMPUTER_HOME/.config" "$BIN_DIR/openvibe-node" tray --autostart on >/dev/null 2>&1; then
+	if XDG_CONFIG_HOME="$COMPUTER_HOME/.config" "$BIN_DIR/openvibe-link" tray --autostart on >/dev/null 2>&1; then
 		if [ "$(id -u)" = 0 ]; then
 			[ "$had_config" = 1 ] || chown "$SVC_USER": "$COMPUTER_HOME/.config" 2>/dev/null || true
 			chown "$SVC_USER": "$COMPUTER_HOME/.config/autostart" "$COMPUTER_HOME/.config/autostart/openvibe-node-tray.desktop" 2>/dev/null || true
 		fi
-		say "the tray starts when $SVC_USER signs in (openvibe-node tray; openvibe-node tray --autostart off removes it)"
+		say "the tray starts when $SVC_USER signs in (openvibe-link tray; openvibe-link tray --autostart off removes it)"
 	fi
 fi
 
@@ -1194,19 +1204,19 @@ disable_stock_server
 if [ "$SERVICE" = 1 ]; then
 	# An upgrade rewrites the service definition (this version's adds Delegate=yes, which the worker needs): the
 	# service manager refuses to install over an existing one. Config and credential are kept.
-	$SUDO "$BIN_DIR/openvibe-node" uninstall >/dev/null 2>&1 || true
+	$SUDO "$BIN_DIR/openvibe-link" uninstall >/dev/null 2>&1 || true
 	if [ -n "$SVC_USER" ]; then
-		$SUDO "$BIN_DIR/openvibe-node" install --user "$SVC_USER" >/dev/null 2>&1 || $SUDO "$BIN_DIR/openvibe-node" install --user "$SVC_USER"
+		$SUDO "$BIN_DIR/openvibe-link" install --user "$SVC_USER" >/dev/null 2>&1 || $SUDO "$BIN_DIR/openvibe-link" install --user "$SVC_USER"
 	else
-		$SUDO "$BIN_DIR/openvibe-node" install >/dev/null 2>&1 || $SUDO "$BIN_DIR/openvibe-node" install
+		$SUDO "$BIN_DIR/openvibe-link" install >/dev/null 2>&1 || $SUDO "$BIN_DIR/openvibe-link" install
 	fi
 	say "service installed and started"
 fi
 
 # ---- the one command: the owner approves the code on openvibe.bot/link, then this machine pairs at once ----
 if [ "$CLAIM" = 1 ]; then
-	if $SUDO "$BIN_DIR/openvibe-node" status --json 2>/dev/null | grep -q '"paired":true'; then
-		say "already paired; keeping it (to make it a new robot: sudo openvibe-node pair --force <CODE> with a code from openvibe.bot)"
+	if $SUDO "$BIN_DIR/openvibe-link" status --json 2>/dev/null | grep -q '"paired":true'; then
+		say "already paired; keeping it (to make it a new robot: sudo openvibe-link pair --force <CODE> with a code from openvibe.bot)"
 		CLAIM=0
 	else
 		claim_robot || die "not paired: nothing was added on openvibe.bot"
@@ -1221,10 +1231,10 @@ fi
 
 # ---- pair ----
 if [ -n "$CODE" ]; then
-	if $SUDO "$BIN_DIR/openvibe-node" status --json 2>/dev/null | grep -q '"paired":true'; then
+	if $SUDO "$BIN_DIR/openvibe-link" status --json 2>/dev/null | grep -q '"paired":true'; then
 		say "already paired; keeping the credential (to pair again: sudo openvibe-node pair --force <CODE>, adding --network <URL> --pairing <pair_…> for a Network pairing)"
 	else
-		pair_with $SUDO "$BIN_DIR/openvibe-node"
+		pair_with $SUDO "$BIN_DIR/openvibe-link"
 	fi
 else
 	say "not paired yet: get a code on openvibe.bot and run: sudo openvibe-node pair <CODE>"
@@ -1235,7 +1245,7 @@ if [ "$CLAIM" = 1 ] && [ "$SERVICE" = 1 ]; then
 	say "checking the link, the driver and the camera (up to a minute)"
 	_status="" _i=0
 	while [ "$_i" -lt 30 ]; do
-		_status="$($SUDO "$BIN_DIR/openvibe-node" status --json 2>/dev/null || true)"
+		_status="$($SUDO "$BIN_DIR/openvibe-link" status --json 2>/dev/null || true)"
 		if printf '%s' "$_status" | grep -q '"connected":true' && printf '%s' "$_status" | grep -q '"state":"live"'; then break; fi
 		_i=$((_i + 1))
 		sleep 2
@@ -1258,5 +1268,5 @@ print("  camera   %s%s" % (v.get("state") or "off", (" (" + v["last_error"] + ")
 	[ "${LIVE:-0}" = 0 ] || say "its camera is on your OpenVibe.Live channel while it streams"
 fi
 
-say "done. Check it with: sudo openvibe-node status   Stop everything with: sudo openvibe-node stop"
-say "first run: sudo openvibe-node   (checks the link and reports this machine's first job on openvibe.bot/machines)"
+say "done. Check it with: sudo openvibe-link status   Stop everything with: sudo openvibe-link stop"
+say "first run: sudo openvibe-link   (checks the link and reports this machine's first job on openvibe.bot/machines)"

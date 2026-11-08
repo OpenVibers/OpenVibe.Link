@@ -5,12 +5,12 @@ OpenVibe.Codes keeps skills, rules and MCP server records per person and per pro
 tools already read, on this machine, inside one marked block.
 
 ```sh
-openvibe-node skills sync --tools claude-code,codex --project ~/code/my-project
-openvibe-node skills sync --tools claude-code --dry-run      # the diffs, nothing written
-openvibe-node skills sync --undo                             # take every block out again
+openvibe-link skills sync --tools claude-code,codex --project ~/code/my-project
+openvibe-link skills sync --tools claude-code --dry-run      # the diffs, nothing written
+openvibe-link skills sync --undo                             # take every block out again
 ```
 
-`OPENVIBE_TOKEN` must hold your OpenVibe access token (the same one `openvibe-node memory sync` uses). The sync asks
+`OPENVIBE_TOKEN` must hold your OpenVibe access token (the same one `openvibe-link memory sync` uses). The sync asks
 `GET /api/v1/me/skills` on openvibe.codes, with `?project=<slug>` for a project, so it only ever sees what you chose
 there.
 

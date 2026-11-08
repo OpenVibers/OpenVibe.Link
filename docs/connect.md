@@ -12,12 +12,12 @@ principal). On a share's page on connect.openvibe.website, pick it under "Or ser
 then on the computer:
 
 ```sh
-openvibe-node share 8790                          # serve the share this computer was picked for on that port
-openvibe-node share mine                          # the shares this computer was picked for
-openvibe-node share --share shr_…                 # serve one now, until Ctrl-C
-openvibe-node share --share shr_… --port 8790     # the same, with the port named
-sudo openvibe-node share add --share shr_…        # or keep it up with the Node service
-sudo openvibe-node share add 8790                 # the same, found by its local port
+openvibe-link share 8790                          # serve the share this computer was picked for on that port
+openvibe-link share mine                          # the shares this computer was picked for
+openvibe-link share --share shr_…                 # serve one now, until Ctrl-C
+openvibe-link share --share shr_… --port 8790     # the same, with the port named
+sudo openvibe-link share add --share shr_…        # or keep it up with the Node service
+sudo openvibe-link share add 8790                 # the same, found by its local port
 ```
 
 There is no key to copy or leak. Before every connection the Node buys its node token for OpenVibe Connect (audience
@@ -37,25 +37,25 @@ connect key once (`ovc_…`). Keep it like a password: it lets a computer serve 
 ## Serve it now
 
 ```sh
-openvibe-node share --key ovc_… --port 8790
+openvibe-link share --key ovc_… --port 8790
 ```
 
 It prints the address, then one line per request, until Ctrl-C. The key can also come from `OV_CONNECT_KEY`, which
 keeps it off the command line and out of your shell history:
 
 ```sh
-OV_CONNECT_KEY=ovc_… openvibe-node share --port 8790
+OV_CONNECT_KEY=ovc_… openvibe-link share --port 8790
 ```
 
 ## Keep it up with the Node service
 
 ```sh
-openvibe-node share add --key ovc_… --port 8790
-openvibe-node share list
-openvibe-node share remove 8790        # or the key, or the address
+openvibe-link share add --key ovc_… --port 8790
+openvibe-link share list
+openvibe-link share remove 8790        # or the key, or the address
 ```
 
-`openvibe-node status` lists every share the service keeps up: its local port, its address on Connect, whether the
+`openvibe-link status` lists every share the service keeps up: its local port, its address on Connect, whether the
 tunnel is connected (and why not), and how many requests the app has answered. A share with no address yet says so.
 
 The saved shares are in the Node's config directory, `connect-shares.json`, readable only by the Node's account

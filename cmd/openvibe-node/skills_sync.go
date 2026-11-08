@@ -17,10 +17,10 @@ import (
 	"github.com/OpenVibers/OpenVibe.Node/internal/skillsync"
 )
 
-// skillsSyncUsage is what "openvibe-node skills sync" prints.
-const skillsSyncUsage = "openvibe-node skills sync [--tools a,b] [--project DIR …] [--dry-run] [--yes]\n" +
-	"openvibe-node skills sync --disable a,b\n" +
-	"openvibe-node skills sync --undo\n" +
+// skillsSyncUsage is what "openvibe-link skills sync" prints.
+const skillsSyncUsage = "openvibe-link skills sync [--tools a,b] [--project DIR …] [--dry-run] [--yes]\n" +
+	"openvibe-link skills sync --disable a,b\n" +
+	"openvibe-link skills sync --undo\n" +
 	"\n" +
 	"  Writes the skills and rules you chose in the OpenVibe skills hub\n" +
 	"  (openvibe.codes/skills) into the folders each coding tool reads:\n" +

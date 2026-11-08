@@ -2,7 +2,7 @@
 
 If you already run a model at home (Ollama, LM Studio or llama.cpp's server on a gaming PC or a spare box with a GPU),
 OpenVibe can use it for your own work: Vibe's answers, an agent's thinking, a summary. It costs nothing, and the prompt
-never leaves your network. The machine opens no port: its OpenVibe Node already connects out to OpenVibe.Bot, and the
+never leaves your network. The machine opens no port: its OpenVibe Link already connects out to OpenVibe.Bot, and the
 request comes back over that connection.
 
 ## How it works
@@ -43,7 +43,7 @@ With nothing else set, it uses the first of these that answers:
 | LM Studio | `http://127.0.0.1:1234` |
 | llama.cpp's server | `http://127.0.0.1:8080` |
 
-It offers every model the server lists. Restart the Node (`openvibe-node restart`), then turn on **Let my AI use this
+It offers every model the server lists. Restart the Node (`openvibe-link restart`), then turn on **Let my AI use this
 computer's models** for the machine on openvibe.bot/machines.
 
 | key | default | meaning |

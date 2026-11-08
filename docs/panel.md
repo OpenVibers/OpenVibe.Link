@@ -7,7 +7,7 @@ keeps, and what happened. The design and the JSON it reads are in
 ## Opening it
 
 - The tray's **Open Link** (the first item) opens it. The first time the tray runs, it opens by itself.
-- `openvibe-node panel` prints its address for a terminal without a tray.
+- `openvibe-link panel` prints its address for a terminal without a tray.
 
 The address is `http://127.0.0.1:<port>/panel/#t=<token>`: the port is picked free at each start and the token is new
 for every run (32 random bytes). The token is in the fragment, so the browser never sends it in a request or in a
@@ -32,7 +32,7 @@ A restart makes a new port and a new token: an old link stops working.
 | Call | What it does | Today |
 |---|---|---|
 | `GET /panel/api/state` | Everything the page shows | Machine (with its paired id), running (waiting approvals, jobs, connected shares, desks), capabilities, shares, Codes (the agent CLIs here and the worker's tasks today), activity |
-| `POST /panel/api/pause` `{ "paused": true }` | The local kill switch, the same latch as `openvibe-node stop` / the tray | Real |
+| `POST /panel/api/pause` `{ "paused": true }` | The local kill switch, the same latch as `openvibe-link stop` / the tray | Real |
 | `POST /panel/api/running/:id/stop` | Stops one running thing | Waiting approvals (deny), jobs (cancel), shares (end) |
 | `POST /panel/api/codes/tasks/:id/stop` | Stops a local Codes task | Real: cancels the Run job in the worker, the same way Codes' own stop does; `409` when it is not running here |
 | `POST /panel/api/capabilities/:id` `{ "on": false }` | Turns a capability off here | Real; persisted in `<state>/panel.json` |

@@ -81,7 +81,7 @@ func TestFirstRunSuccessReportsOneEventPerStep(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d, out %s err %s", code, out, errOut)
 	}
-	for _, want := range []string{"OpenVibe Node first run", "Paired as", "Self-check: OpenVibe.Bot answers.",
+	for _, want := range []string{"OpenVibe Link first run", "Paired as", "Self-check: OpenVibe.Bot answers.",
 		"First job: this machine", "system   " + runtime.GOOS, "Reported this first run to OpenVibe.Bot.", "Next:", "docs/install.md"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in output:\n%s", want, out)
@@ -174,10 +174,10 @@ func TestParsePairingInput(t *testing.T) {
 		ok                            bool
 	}{
 		{"ABCD-1234", "ABCD-1234", "", "", "", true},
-		{"openvibe-node pair ABCD-1234", "ABCD-1234", "", "", "", true},
+		{"openvibe-link pair ABCD-1234", "ABCD-1234", "", "", "", true},
 		{"curl -fsSL https://openvibe.bot/install | sh -s -- --network https://openvibe.network --pairing pair_01J8Z4M2Q0R7T9YV3K6N8P1W2Y --code ABCD-1234 --worker",
 			"ABCD-1234", "https://openvibe.network", "pair_01J8Z4M2Q0R7T9YV3K6N8P1W2Y", "", true},
-		{"openvibe-node pair --code=ABCD-1234 --robot rob_01J8Z4M2Q0R7T9YV3K6N8P1W2X", "ABCD-1234", "", "", "rob_01J8Z4M2Q0R7T9YV3K6N8P1W2X", true},
+		{"openvibe-link pair --code=ABCD-1234 --robot rob_01J8Z4M2Q0R7T9YV3K6N8P1W2X", "ABCD-1234", "", "", "rob_01J8Z4M2Q0R7T9YV3K6N8P1W2X", true},
 		{"", "", "", "", "", false},
 		{"curl https://openvibe.bot/install | sh", "", "", "", "", false},
 	}

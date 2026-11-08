@@ -15,8 +15,8 @@ import (
 
 const (
 	Name        = "openvibe-node"
-	DisplayName = "OpenVibe Node"
-	Description = "Connects this device to OpenVibe (robots, cameras, computer control) over one outbound link."
+	DisplayName = "OpenVibe Link"
+	Description = "OpenVibe Link connects this machine to OpenVibe (your agents, robots, cameras, computer control) over one outbound link."
 )
 
 // Program is the body of the service: run until ctx ends.

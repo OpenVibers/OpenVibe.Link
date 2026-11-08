@@ -1,4 +1,4 @@
-"""OpenVibe Node ai plugin: the person's own models for their own OpenVibe work (contracts 0.219.0, kind ``ai``).
+"""OpenVibe Link ai plugin: the person's own models for their own OpenVibe work (contracts 0.219.0, kind ``ai``).
 
 Many people already run models at home (Ollama, llama.cpp's server, LM Studio). This plugin lets OpenVibe use them for
 their owner, for Vibe's answers or an agent's thinking, without the prompt leaving the machine's network and with no

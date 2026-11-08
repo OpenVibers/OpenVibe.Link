@@ -105,7 +105,7 @@ func RulesBlock(rules []string) string {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("<!-- Managed by OpenVibe Node from your OpenVibe skills hub. Edit the rules in OpenVibe, not in this block. -->\n")
+	b.WriteString("<!-- Managed by OpenVibe Link from your OpenVibe skills hub. Edit the rules in OpenVibe, not in this block. -->\n")
 	for _, rule := range clean {
 		b.WriteString("- " + rule + "\n")
 	}

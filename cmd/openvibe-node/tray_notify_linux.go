@@ -138,7 +138,7 @@ func (n *dbusNotifier) Ask(a node.Approval, again string) {
 	}
 	hints := map[string]dbus.Variant{"urgency": dbus.MakeVariant(byte(2)), "desktop-entry": dbus.MakeVariant("openvibe-node-tray")}
 	var nid uint32
-	err := n.obj.Call(notifyIface+".Notify", 0, "OpenVibe Node", replaces, "dialog-question", "OpenVibe: your agent asks",
+	err := n.obj.Call(notifyIface+".Notify", 0, "OpenVibe Link", replaces, "dialog-question", "OpenVibe: your agent asks",
 		n.text(body), actions, hints, expire).Store(&nid)
 	if err != nil {
 		n.log.Warn("tray: notification failed", "err", err)
@@ -165,7 +165,7 @@ func (n *dbusNotifier) Close(id string) {
 
 func (n *dbusNotifier) Info(title, body string) {
 	hints := map[string]dbus.Variant{"urgency": dbus.MakeVariant(byte(1))}
-	n.obj.Call(notifyIface+".Notify", 0, "OpenVibe Node", uint32(0), "dialog-information", title, n.text(body), []string{}, hints, int32(6000))
+	n.obj.Call(notifyIface+".Notify", 0, "OpenVibe Link", uint32(0), "dialog-information", title, n.text(body), []string{}, hints, int32(6000))
 }
 
 func (n *dbusNotifier) Answers() <-chan trayAnswer { return n.answers }

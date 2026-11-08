@@ -16,7 +16,7 @@ curtain, and measures the glass-to-glass latency with a QR probe. The design is
 
 The core mints the stream and its `wpt_…` ticket on Live with this machine's Network node token (audience
 `openvibe.live`, capability `live.agent-stream.publish`). **The plugin never sees the WHIP URL or the ticket**, and
-neither does a log line, an error, `openvibe-node status` or the command's ack. The ticket is a
+neither does a log line, an error, `openvibe-link status` or the command's ack. The ticket is a
 `credentials.Secret`.
 
 ## The command
@@ -91,7 +91,7 @@ seconds, so a restarted plugin's first "clear" cannot uncover the desk.
 
 ```
 # Live hands the desk a WHIP URL and a wpt_ ticket (create + state routes).
-OPENVIBE_STREAM_TICKET=wpt_… openvibe-node stream --probe \
+OPENVIBE_STREAM_TICKET=wpt_… openvibe-link stream --probe \
     --whip-url https://whip.openvibe.live/whip/agent/ags_… --seconds 60
 
 # The same ticket's view side, on a WHEP endpoint:

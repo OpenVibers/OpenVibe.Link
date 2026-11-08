@@ -1,4 +1,4 @@
-# LOOI on the OpenVibe Node
+# LOOI on the OpenVibe Link
 
 LOOI is the tracked desk robot whose face is a phone. Its base talks Bluetooth Low Energy, so it is a **bridge**
 robot: the Node runs on a computer next to it (Windows, macOS or Linux), and a driver plugin drives the base over
@@ -63,8 +63,8 @@ The driver should send telemetry with `battery` (`{"percent": 0..100}` or `{"vol
 - **A stop on the robot itself.** If the driver has its own stop (a button, a hotkey, a sensor it trusts), call
   `self.local_stop("reason")` (or send `{"op": "local_stop", "reason": "…"}`). Every actuator stops at once, the
   Node latches its **local** stop (persisted across restarts), and the panel shows the robot as stopped on the robot.
-  The owner's remote clear does not lift it: only `openvibe-node resume` on the bridge computer does, and then the
-  owner clears the panel's e-stop. Running `openvibe-node stop` does the same from a terminal.
+  The owner's remote clear does not lift it: only `openvibe-link resume` on the bridge computer does, and then the
+  owner clears the panel's e-stop. Running `openvibe-link stop` does the same from a terminal.
 
 ## Installing the driver
 
@@ -81,8 +81,8 @@ run the Node in your own session:
 
 ```bat
 set OVHOME=%LOCALAPPDATA%\OpenVibe Node
-openvibe-node pair XXXX-XXXX --robot rob_… --kind bridge --home "%OVHOME%"
-openvibe-node install --user-session --home "%OVHOME%"
+openvibe-link pair XXXX-XXXX --robot rob_… --kind bridge --home "%OVHOME%"
+openvibe-link install --user-session --home "%OVHOME%"
 ```
 
 `config.json` in that directory:
@@ -99,9 +99,9 @@ openvibe-node install --user-session --home "%OVHOME%"
 
 `install --user-session` starts the Node when you sign in, in a console window that shows its log (Windows keeps no
 service log yet). Closing the window stops the Node and every actuator; nothing restarts it until the next sign-in.
-`openvibe-node uninstall --user-session --home DIR` removes that directory's sign-in start (each Node directory has its own, since v0.37.2, so a test node never replaces a working one). On Windows a killed plugin takes the processes it
+`openvibe-link uninstall --user-session --home DIR` removes that directory's sign-in start (each Node directory has its own, since v0.37.2, so a test node never replaces a working one). On Windows a killed plugin takes the processes it
 started with it (a Job Object), as it does on Linux and macOS, so a bridge helper cannot keep the Bluetooth link open
 after the Node stops or restarts the plugin.
 
-Try the driver without the robot first: `openvibe-node plugins` asks each plugin to describe itself without touching
-hardware, and `openvibe-node run --dry-run` drives only the simulated plugin.
+Try the driver without the robot first: `openvibe-link plugins` asks each plugin to describe itself without touching
+hardware, and `openvibe-link run --dry-run` drives only the simulated plugin.

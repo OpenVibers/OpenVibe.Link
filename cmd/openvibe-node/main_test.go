@@ -47,7 +47,7 @@ func shortHome(t *testing.T) string {
 }
 
 func TestHelpAndVersion(t *testing.T) {
-	if out, _, code := cli(t, "help"); code != 0 || !strings.Contains(out, "openvibe-node pair <CODE>") {
+	if out, _, code := cli(t, "help"); code != 0 || !strings.Contains(out, "openvibe-link pair <CODE>") {
 		t.Fatalf("%d %s", code, out)
 	}
 	if out, _, code := cli(t, "version"); code != 0 || !strings.Contains(out, runtime.GOOS) {

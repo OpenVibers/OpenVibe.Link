@@ -18,10 +18,10 @@ import (
 	"github.com/OpenVibers/OpenVibe.Node/internal/memoryupload"
 )
 
-// memorySyncUsage is what "openvibe-node memory sync" prints.
-const memorySyncUsage = "openvibe-node memory sync [--tools a,b] [--project DIR …] [--dry-run] [--yes]\n" +
-	"openvibe-node memory sync --disable a,b\n" +
-	"openvibe-node memory sync --undo\n" +
+// memorySyncUsage is what "openvibe-link memory sync" prints.
+const memorySyncUsage = "openvibe-link memory sync [--tools a,b] [--project DIR …] [--dry-run] [--yes]\n" +
+	"openvibe-link memory sync --disable a,b\n" +
+	"openvibe-link memory sync --undo\n" +
 	"\n" +
 	"  Writes your OpenVibe Memory profile and this project's rules into the\n" +
 	"  places the coding tools read them: AGENTS.md (Codex and friends), a thin\n" +

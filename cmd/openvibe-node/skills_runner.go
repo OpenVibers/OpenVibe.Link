@@ -10,10 +10,10 @@ import (
 	"github.com/OpenVibers/OpenVibe.Node/internal/skills"
 )
 
-// skillsRunnerUsage is what "openvibe-node skills on|off|status" prints.
-var skillsRunnerUsage = "openvibe-node skills on [--dir DIR] [--node PATH]\n" +
-	"openvibe-node skills off\n" +
-	"openvibe-node skills status [--json]\n" +
+// skillsRunnerUsage is what "openvibe-link skills on|off|status" prints.
+var skillsRunnerUsage = "openvibe-link skills on [--dir DIR] [--node PATH]\n" +
+	"openvibe-link skills off\n" +
+	"openvibe-link skills status [--json]\n" +
 	"\n" +
 	"  Runs one tool of a declared skill as a sandboxed function job on this\n" +
 	"  machine (artifact openvibe-skill-runner@1.0.0, docs/worker.md). The job's\n" +
@@ -106,7 +106,7 @@ func cmdSkillsRunner(args []string, stdout, stderr io.Writer) int {
 		if !s.On {
 			fmt.Fprintln(stdout, "skill runner: off")
 			fmt.Fprintf(stdout, "  The job worker is %s.\n", onOff(s.WorkerEnabled))
-			fmt.Fprintln(stdout, "  Turn it on: openvibe-node skills on   (then restart the Node)")
+			fmt.Fprintln(stdout, "  Turn it on: openvibe-link skills on   (then restart the Node)")
 			break
 		}
 		fmt.Fprintf(stdout, "skill runner: on (%s@%s, %s)\n", s.Name, s.Version, s.Class)

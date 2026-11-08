@@ -20,7 +20,7 @@ type listFlag []string
 func (l *listFlag) String() string     { return strings.Join(*l, ",") }
 func (l *listFlag) Set(v string) error { *l = append(*l, v); return nil }
 
-const deskSandboxUsage = `usage: openvibe-node desk-sandbox [--home DIR] [--memory-mb N] [--cpu-millis N] [--disk-mb N] [--pids N]
+const deskSandboxUsage = `usage: openvibe-link desk-sandbox [--home DIR] [--memory-mb N] [--cpu-millis N] [--disk-mb N] [--pids N]
          [--bind PATH]... [--setenv NAME=VALUE]... [--egress public] -- PROGRAM [ARG]...
 
 Runs one desk's program (its browser) confined, for a desk host that serves people other than its owner: in the
@@ -33,7 +33,7 @@ program's code; 125 when the sandbox could not be set up.
 // deskPipe answers the desk's two pipe ends (its fds 3 and 4); tests replace it.
 var deskPipe = inheritedDeskPipe
 
-// cmdDeskSandbox is `openvibe-node desk-sandbox`; it parses its own flags, up to "--", so the program's flags (a
+// cmdDeskSandbox is `openvibe-link desk-sandbox`; it parses its own flags, up to "--", so the program's flags (a
 // browser's) are never read as the Node's.
 func cmdDeskSandbox(args []string, stderr io.Writer) int {
 	fs := flag.NewFlagSet("desk-sandbox", flag.ContinueOnError)

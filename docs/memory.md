@@ -21,12 +21,12 @@ memory comes later.
 ## The commands
 
 ```sh
-openvibe-node memory scan [--tools a,b] [--project DIR …] [--json]
-openvibe-node memory upload [--tools a,b] [--project DIR …] [--dry-run] [--yes]
-openvibe-node memory status [--show]
-openvibe-node memory sync [--tools a,b] [--project DIR …] [--dry-run] [--yes]
-openvibe-node memory export [--out FILE] [--scope SCOPE] [--force]
-openvibe-node memory import --file FILE [--dry-run] [--yes]
+openvibe-link memory scan [--tools a,b] [--project DIR …] [--json]
+openvibe-link memory upload [--tools a,b] [--project DIR …] [--dry-run] [--yes]
+openvibe-link memory status [--show]
+openvibe-link memory sync [--tools a,b] [--project DIR …] [--dry-run] [--yes]
+openvibe-link memory export [--out FILE] [--scope SCOPE] [--force]
+openvibe-link memory import --file FILE [--dry-run] [--yes]
 ```
 
 | Flag | What it does |
@@ -180,7 +180,7 @@ with no END line, and an `.env` block.
 ## The upload
 
 ```sh
-openvibe-node memory upload [--tools a,b] [--project DIR …] [--dry-run] [--yes]
+openvibe-link memory upload [--tools a,b] [--project DIR …] [--dry-run] [--yes]
 ```
 
 The upload runs the same scan as `memory scan` — the same adapters, the same
@@ -253,7 +253,7 @@ batch is sent again: nothing is dropped without being said.
 ## The status
 
 ```sh
-openvibe-node memory status [--show]
+openvibe-link memory status [--show]
 ```
 
 It shows what your own store holds: how many items there are, per source and
@@ -362,9 +362,9 @@ upload:
 ## The sync: back into the tools
 
 ```sh
-openvibe-node memory sync [--tools a,b] [--project DIR …] [--dry-run] [--yes]
-openvibe-node memory sync --disable a,b
-openvibe-node memory sync --undo
+openvibe-link memory sync [--tools a,b] [--project DIR …] [--dry-run] [--yes]
+openvibe-link memory sync --disable a,b
+openvibe-link memory sync --undo
 ```
 
 The sync is the other direction: it writes **your own** profile and the
@@ -389,7 +389,7 @@ Every write is inside one block, and the text outside it is not touched:
 
 ```markdown
 <!-- openvibe-memory:start -->
-<!-- Managed by OpenVibe Node from your OpenVibe Memory. … -->
+<!-- Managed by OpenVibe Link from your OpenVibe Memory. … -->
 ## About you
 
 …the cached profile…
@@ -441,8 +441,8 @@ the memory text.
 ## The portable file
 
 ```sh
-openvibe-node memory export [--out FILE] [--scope SCOPE] [--force]
-openvibe-node memory import --file FILE [--dry-run] [--yes]
+openvibe-link memory export [--out FILE] [--scope SCOPE] [--force]
+openvibe-link memory import --file FILE [--dry-run] [--yes]
 ```
 
 `memory export` writes the store's one portable file, `openvibe.memory-export@1`

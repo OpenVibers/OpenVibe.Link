@@ -1,4 +1,4 @@
-"""OpenVibe Node plugin runtime.
+"""OpenVibe Link plugin runtime.
 
 A plugin is an executable the Node core starts. It reads JSON lines from stdin and writes JSON lines to stdout (one
 object per line; logs go to stderr). This module implements the parts every driver must get right, so a driver only
