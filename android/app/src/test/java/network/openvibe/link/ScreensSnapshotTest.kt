@@ -48,6 +48,12 @@ class ScreensSnapshotTest {
     @Test fun approvalsDark() = shot(true) { ApprovalsScreen(preview = PreviewActivity.SAMPLE_APPROVALS) }
     @Test fun approvalsLight() = shot(false) { ApprovalsScreen(preview = PreviewActivity.SAMPLE_APPROVALS) }
     @Test fun approvalsEmptyDark() = shot(true) { ApprovalsScreen(preview = emptyList()) }
+    @Test fun cameraDark() = shot(true) { ApprovalsScreen(preview = PreviewActivity.SAMPLE_CAMERA) }
+    @Test fun cameraLight() = shot(false) { ApprovalsScreen(preview = PreviewActivity.SAMPLE_CAMERA) }
+    @Test fun locationDark() = shot(true) { ApprovalsScreen(preview = PreviewActivity.SAMPLE_LOCATION) }
+    @Test fun locationLight() = shot(false) { ApprovalsScreen(preview = PreviewActivity.SAMPLE_LOCATION) }
+    @Test fun notifyDark() = shot(true) { ActivityScreen(preview = PreviewActivity.SAMPLE_NOTIFY) }
+    @Test fun notifyLight() = shot(false) { ActivityScreen(preview = PreviewActivity.SAMPLE_NOTIFY) }
     @Test fun activityDark() = shot(true) { ActivityScreen(preview = PreviewActivity.SAMPLE_ACTIVITY) }
     @Test fun activityLight() = shot(false) { ActivityScreen(preview = PreviewActivity.SAMPLE_ACTIVITY) }
     @Test fun phoneDark() = shot(true) { PhoneScreen(previewInfo = PreviewActivity.SAMPLE_DEVICE, preview = true) }

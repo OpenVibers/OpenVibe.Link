@@ -43,6 +43,15 @@ jobs:
       - name: The generated design files are current
         run: sh android/scripts/gen-design.sh --check
 
+      - name: Record HO12 Paparazzi baselines
+        run: gradle -p android :app:recordPaparazziDebug
+
+      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        if: always()
+        with:
+          name: ho12-paparazzi
+          path: android/app/src/test/snapshots/images/
+
       - name: Unit tests
         run: gradle -p android :app:testDebugUnitTest
 
