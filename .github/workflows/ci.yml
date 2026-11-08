@@ -219,6 +219,13 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: Cache pinned ArduinoJson header
+        run: |
+          mkdir -p esp32/test/.deps
+          curl -fL --retry 3 -H 'Accept: application/octet-stream' \
+            https://api.github.com/repos/bblanchon/ArduinoJson/releases/assets/265662161 \
+            -o esp32/test/.deps/ArduinoJson.h
+          echo 'a05ac98f4481d2398c103ca5ffcce8e2fcd7fa2fa1d8d9f38d5757454f448d97  esp32/test/.deps/ArduinoJson.h' | sha256sum -c -
       - run: sh esp32/test/run.sh
 
   esp32-compile:
@@ -232,6 +239,11 @@ jobs:
           arduino-cli config init
           arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
           arduino-cli core update-index
+          mkdir -p "$HOME/.arduino15/staging/packages"
+          curl -fL --retry 3 -H 'Accept: application/octet-stream' \
+            https://api.github.com/repos/espressif/esp32-arduino-lib-builder/releases/assets/218373742 \
+            -o "$HOME/.arduino15/staging/packages/esp32-arduino-libs-idf-release_v5.3-cfea4f7c-v1.zip"
+          echo '1099291229a9be453c771c5867b8487a0266db9246b672417337b8f511d7f820  '"$HOME/.arduino15/staging/packages/esp32-arduino-libs-idf-release_v5.3-cfea4f7c-v1.zip" | sha256sum -c -
           arduino-cli core install esp32:esp32@3.1.1
           arduino-cli lib install "ArduinoJson@7.4.2"
           arduino-cli lib install "WebSockets@2.6.1"
