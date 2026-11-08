@@ -18,6 +18,9 @@ import network.openvibe.link.ui.ApprovalsScreen
 import network.openvibe.link.ui.LinkTheme
 import network.openvibe.link.ui.PairScreen
 import network.openvibe.link.ui.PhoneScreen
+import java.util.TimeZone
+import org.junit.After
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 
@@ -29,6 +32,16 @@ import org.junit.Test
 class ScreensSnapshotTest {
     @get:Rule
     val paparazzi = Paparazzi(deviceConfig = DeviceConfig.PIXEL_5, theme = "android:Theme.Material.NoActionBar")
+    private lateinit var previousTimeZone: TimeZone
+
+    @Before fun useSnapshotTimeZone() {
+        previousTimeZone = TimeZone.getDefault()
+        TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"))
+    }
+
+    @After fun restoreTimeZone() {
+        TimeZone.setDefault(previousTimeZone)
+    }
 
     /** The pair screen asks for a scanner result; under Paparazzi there is no activity, so a registry that never launches. */
     private val noResults = object : ActivityResultRegistryOwner {
