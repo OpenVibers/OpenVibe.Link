@@ -34,7 +34,9 @@ const (
 	CmdFirstRun = "first_run"
 	// CmdPanel answers where OpenVibe Link's own window is: its loopback URL with the per-run token in the fragment.
 	// It goes to the tray (or `openvibe-node panel`), which runs as the Node's owner, never into a status line.
-	CmdPanel = "panel"
+	CmdPanel     = "panel"
+	CmdPartyHost = "party_host"
+	CmdPartyStop = "party_stop"
 )
 
 type Request struct {

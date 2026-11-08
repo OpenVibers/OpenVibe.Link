@@ -101,8 +101,11 @@ type Node struct {
 	quit     context.CancelFunc
 	quitting atomic.Bool
 
-	mu     sync.Mutex
-	limits safety.Limits
+	mu          sync.Mutex
+	partyID     string
+	partyCancel context.CancelFunc
+	partyDone   chan struct{}
+	limits      safety.Limits
 	// haltEpochs: per robot, the newest turn_epoch a halt carried (noteHaltEpoch); older commands are refused.
 	haltEpochs map[string]int64
 	allowed    map[string]bool
@@ -349,6 +352,16 @@ func (n *Node) Run(parent context.Context) error {
 		n.log.Warn("not paired: running local only (run `openvibe-node pair <CODE>`)")
 	}
 	<-ctx.Done()
+	n.mu.Lock()
+	partyDone := n.partyDone
+	n.mu.Unlock()
+	if partyDone != nil {
+		select {
+		case <-partyDone:
+		case <-time.After(55 * time.Second):
+			n.log.Warn("party desktop cleanup timed out")
+		}
+	}
 	n.log.Info("shutting down: stopping every actuator")
 	n.stopDeskStream(false)
 	n.mgr.StopAll(plugins.StopShutdown)
@@ -1524,6 +1537,16 @@ func (n *Node) control(r localctl.Request) localctl.Response {
 		return localctl.Response{OK: true}
 	case localctl.CmdTray:
 		n.tellTray(r.On)
+		return localctl.Response{OK: true}
+	case localctl.CmdPartyHost:
+		if err := n.startParty(r.ID); err != nil {
+			return localctl.Response{Error: err.Error()}
+		}
+		return localctl.Response{OK: true}
+	case localctl.CmdPartyStop:
+		if err := n.stopParty(r.ID); err != nil {
+			return localctl.Response{Error: err.Error()}
+		}
 		return localctl.Response{OK: true}
 	case localctl.CmdFirstRun:
 		// The guided first run's one event per step, sent on this connection (the installer starts the service before
