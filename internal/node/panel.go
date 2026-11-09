@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/OpenVibers/OpenVibe.Node/internal/egress"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -189,6 +190,9 @@ func savePanel(dir string, off map[string]bool, first *panelFirstRun) error {
 
 // startPanel serves Link's window until ctx ends. A failure leaves the Node running without it.
 func (n *Node) startPanel(ctx context.Context) {
+	if !n.opt.NoShares {
+		go egress.Run(ctx, n.opt.Creds, n.opt.Paths.StateDir)
+	}
 	token, err := panel.NewToken()
 	if err != nil {
 		n.log.Warn("Link's window off: no token", "err", err)

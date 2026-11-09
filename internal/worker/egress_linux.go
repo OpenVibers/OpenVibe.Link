@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"net"
 	"net/netip"
 	"os"
 	"os/exec"
@@ -114,7 +115,10 @@ func newEgress(cfg config.WorkerConfig) (*egressNet, error) {
 	e := &egressNet{tools: t, n: -1}
 	vethMu.Lock()
 	for i := range vethMax {
-		if n := (vethNext + i) % vethMax; !vethUsed[n] {
+		if n := (vethNext + i + os.Getpid()) % vethMax; !vethUsed[n] {
+			if _, e := net.InterfaceByName(vethPrefix + strconv.Itoa(n)); e == nil {
+				continue
+			}
 			e.n, vethUsed[n], vethNext = n, true, n+1
 			break
 		}
@@ -264,6 +268,7 @@ func ruleset(cfg config.WorkerConfig, uplinks []string) string {
 	w("\t}")
 	w("\tchain input {")
 	w("\t\ttype filter hook input priority -10; policy accept;")
+	w("\t\tmeta mark 0x4f564547 accept")
 	w("\t\tiifname \"%s*\" goto refuse", vethPrefix)
 	w("\t}")
 	w("\tchain postrouting {")

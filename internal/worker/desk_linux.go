@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	"github.com/OpenVibers/OpenVibe.Node/internal/config"
+	"github.com/OpenVibers/OpenVibe.Node/internal/egress"
 	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
 )
 
@@ -21,8 +22,10 @@ import (
 // namespaces, as worker.run_as, inside its own cgroup with its own memory, CPU and process limits, seeing only the
 // system paths, its own /tmp (its profile) and the read-only Binds it names, and reaching only the public internet.
 type DeskSpec struct {
-	Argv []string
-	Env  []string
+	// Proxy starts the authenticated bridge on this desk's isolated gateway.
+	Proxy func(string) (string, func(), error)
+	Argv  []string
+	Env   []string
 	// Binds are host paths the program needs beyond the system paths: the browser's install directory, /etc/fonts.
 	// Read-only, and only under deskBindRoots (CheckDeskBinds).
 	Binds     []string
@@ -123,10 +126,32 @@ func RunDesk(ctx context.Context, cfg config.WorkerConfig, d DeskSpec) (int, err
 	sb.goW, sb.child = gw, append(sb.child, gr)
 	// A browser keeps hundreds of files open and maps tens of GB of address space it never uses: no RLIMIT_AS (the
 	// cgroup's memory.max is the limit) and no RLIMIT_CPU (cpu.max is: a desk lives for hours).
+	if d.Egress != "" {
+		if sb.egress, err = newEgress(cfg); err != nil {
+			return 0, fmt.Errorf("desk egress: %w", err)
+		}
+	}
+	if d.Proxy != nil {
+		if sb.egress == nil {
+			return 0, errors.New("a Link desk requires its private connection")
+		}
+		address, closeProxy, err := d.Proxy(sb.egress.host.String())
+		if err != nil {
+			return 0, err
+		}
+		defer closeProxy()
+		closeRules, err := sb.egress.allowProxy(address)
+		if err != nil {
+			return 0, err
+		}
+		defer closeRules()
+		// These mandatory flags are last: no caller-supplied flag can override the proxy or leak protection.
+		d.Argv = append(d.Argv, egress.BrowserArgs(address)...)
+	}
 	spec := sandboxSpec{Root: root, Work: "/tmp/desk", Disk: d.DiskBytes, Links: links, Argv: d.Argv, Env: d.Env, Pipe: true,
 		Limits: []rlimit{{rlimitCORE, 0, 0}, {rlimitNOFILE, 8192, 8192}, {rlimitNPROC, uint64(d.Pids), uint64(d.Pids)},
 			{rlimitFSIZE, uint64(d.DiskBytes), uint64(d.DiskBytes)}}}
-	if d.Egress != "" {
+	if d.Egress != "" && d.Proxy == nil {
 		spec.Resolvers = cfg.DNS
 	}
 	for _, b := range binds {
@@ -140,11 +165,6 @@ func RunDesk(ctx context.Context, cfg config.WorkerConfig, d DeskSpec) (int, err
 		return 0, err
 	}
 	sb.child = append(sb.child, sf)
-	if d.Egress != "" {
-		if sb.egress, err = newEgress(cfg); err != nil {
-			return 0, fmt.Errorf("desk egress: %w", err)
-		}
-	}
 	if sb.cg, err = newJobCgroup(caps, protocol.JobLimits{MemBytes: d.MemBytes}); err != nil {
 		// Its cgroup is made beside the Node's own leaf, which the Node sets up when its worker is on (the probe);
 		// a desk started by a plugin cannot rearrange the Node's cgroup itself.
