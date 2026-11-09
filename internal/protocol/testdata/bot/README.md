@@ -21,7 +21,7 @@ The REST pairing answer has no example in the doc; tests derive it from `paired.
 
 Used by `internal/protocol` (every frame decodes, with the fields the Link reads), `internal/link`
 (`TestBotFixturesEndToEnd`: pair → hello + config → command → ack → reconnect through `internal/fakebot`) and
-`internal/node` (`TestBotFramesDriveAndAck`, `TestExpiredDriveNeverReachesPlugin`). The command examples carry a
+`internal/agent` (`TestBotFramesDriveAndAck`, `TestExpiredDriveNeverReachesPlugin`). The command examples carry a
 2025 deadline: replayed as recorded they are expired, and the node tests move `ts`/`deadline_ms` to now (keeping the
 300 ms window) to drive the robot. When Bot's contract changes, copy the new examples here, update the SHA above, and
 let the tests say what moved.

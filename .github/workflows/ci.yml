@@ -51,7 +51,7 @@ jobs:
       - name: worker sandbox tests (root)
         run: |
           d=$(mktemp -d) && chmod 755 "$d"
-          for t in 'worker .' 'node ^(TestJobRunsOverTheLink|TestLocalStopEndsJobs)$'; do
+          for t in 'worker .' 'agent ^(TestJobRunsOverTheLink|TestLocalStopEndsJobs)$'; do
             set -- $t
             mkdir -m 755 "$d/$1"
             go test -race -c -o "$d/$1/$1.test" ./internal/$1
