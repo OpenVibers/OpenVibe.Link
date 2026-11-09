@@ -59,7 +59,7 @@ func TestPairNetwork(t *testing.T) {
 	b, _ := os.ReadFile(path)
 	var raw map[string]any
 	_ = json.Unmarshal(b, &raw)
-	if raw["principal"] != fakenetwork.Principal || raw["node_credential"] != net.Credential() || raw["network"] != net.URL() ||
+	if raw["principal"] != fakenetwork.Principal || raw["link_credential"] != net.Credential() || raw["network"] != net.URL() ||
 		raw["paired_for"] == nil || raw["device_id"] != fakenetwork.DeviceID || raw["publish_key"] == "" || raw["server"] != bot.URL() {
 		t.Fatalf("credential file: %s", b)
 	}
@@ -128,7 +128,7 @@ func TestBindOnStartWhenDeviceMissing(t *testing.T) {
 
 // A revoked node credential stops `run` at once with the re-pair message and the exit status the service unit does
 // not restart.
-func TestRunStopsWhenNodeCredentialRevoked(t *testing.T) {
+func TestRunStopsWhenLinkCredentialRevoked(t *testing.T) {
 	bot, net := fakes(t)
 	home := shortHome(t)
 	bot.RefuseBind(http.StatusServiceUnavailable, "bot.unavailable", "try later")

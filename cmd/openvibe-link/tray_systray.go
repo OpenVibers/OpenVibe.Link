@@ -59,7 +59,7 @@ func (u *systrayUI) build() {
 	u.panel = systray.AddMenuItem("Open my machines page", "This machine on openvibe.bot")
 	u.panel.Hide()
 	systray.AddSeparator()
-	u.quit = systray.AddMenuItem("Quit the tray", "The Node keeps running; requests wait for `openvibe-link approve`")
+	u.quit = systray.AddMenuItem("Quit the tray", "The Link keeps running; requests wait for `openvibe-link approve`")
 }
 
 func (u *systrayUI) SetIcon(state string) {
@@ -244,7 +244,7 @@ func trayLoop(core *trayCore, ui *systrayUI, stopSig <-chan os.Signal, g *global
 	}
 }
 
-// openPanel opens Link's own window: the Node's loopback URL, with this run's token in the fragment.
+// openPanel opens Link's own window: the Link's loopback URL, with this run's token in the fragment.
 func (t *trayCore) openPanel() error {
 	resp, err := t.call(localctl.Request{Cmd: localctl.CmdPanel})
 	if err != nil {

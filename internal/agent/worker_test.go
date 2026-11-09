@@ -1,6 +1,6 @@
 //go:build linux
 
-package node
+package agent
 
 import (
 	"context"
@@ -52,7 +52,7 @@ func TestWorkerHelperProcess(t *testing.T) {
 	os.Exit(0)
 }
 
-// startWorkerNode pairs a Node with no plugin and no video whose worker runs the `hello` function, and waits for the
+// startWorkerNode pairs a Agent with no plugin and no video whose worker runs the `hello` function, and waits for the
 // status that advertises it. It is skipped where the kernel does not let this user create the job namespaces.
 func startWorkerNode(t *testing.T) *env {
 	t.Helper()
@@ -78,7 +78,7 @@ func helloWorker(t *testing.T) config.WorkerConfig {
 	return cfg
 }
 
-// startHelloNode starts a worker Node with cfg and checks its status advertises the classes its entries implement.
+// startHelloNode starts a worker Agent with cfg and checks its status advertises the classes its entries implement.
 func startHelloNode(t *testing.T, cfg config.WorkerConfig) *env {
 	t.Helper()
 	e, status := startWorkerNodeWith(t, cfg, true)
@@ -232,7 +232,7 @@ func TestCodeJobRefusedByFunctionWorker(t *testing.T) {
 }
 
 // TestJobWithInputsRefusedOverTheLink: a well formed job carrying inputs reaches the worker and is nacked job inputs
-// not supported: the Node cannot stage them yet, and it never acks a job whose files it would silently drop.
+// not supported: the Agent cannot stage them yet, and it never acks a job whose files it would silently drop.
 func TestJobWithInputsRefusedOverTheLink(t *testing.T) {
 	e := startWorkerNode(t)
 	j := testJob(jobID(1))
@@ -341,9 +341,9 @@ func TestJobRunsOverTheLink(t *testing.T) {
 	if started != 1 {
 		t.Fatalf("the function started %d times, want once", started)
 	}
-	// The marker lies in the Node's state directory, which the job cannot see.
+	// The marker lies in the Agent's state directory, which the job cannot see.
 	if _, err := os.Stat(marker); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("the job wrote into the Node's state directory: %v", err)
+		t.Fatalf("the job wrote into the Agent's state directory: %v", err)
 	}
 }
 

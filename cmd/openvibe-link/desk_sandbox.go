@@ -37,7 +37,7 @@ program's code; 125 when the sandbox could not be set up.
 var deskPipe = inheritedDeskPipe
 
 // cmdDeskSandbox is `openvibe-link desk-sandbox`; it parses its own flags, up to "--", so the program's flags (a
-// browser's) are never read as the Node's.
+// browser's) are never read as the Link's.
 func cmdDeskSandbox(args []string, stderr io.Writer) int {
 	fs := flag.NewFlagSet("desk-sandbox", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -60,7 +60,7 @@ func cmdDeskSandbox(args []string, stderr io.Writer) int {
 		fs.Usage()
 		return 2
 	}
-	// Started by a plugin, it reads the config of the Node that started it (which names the plugin's environment).
+	// Started by a plugin, it reads the config of the Link that started it (which names the plugin's environment).
 	paths := config.DefaultPaths(*home)
 	if c, st := os.Getenv(config.EnvConfigDir), os.Getenv(config.EnvStateDir); *home == "" && c != "" && st != "" {
 		paths = config.Paths{ConfigDir: c, StateDir: st}
@@ -71,7 +71,7 @@ func cmdDeskSandbox(args []string, stderr io.Writer) int {
 		return 125
 	}
 	wcfg := cfg.Worker
-	wcfg.NodeDirs = []string{paths.ConfigDir, paths.StateDir} // as the Node's own jobs: no desk sees them
+	wcfg.LinkDirs = []string{paths.ConfigDir, paths.StateDir} // as the Link's own jobs: no desk sees them
 	in, out, err := deskPipe()
 	if err != nil {
 		fmt.Fprintln(stderr, "desk-sandbox:", err)

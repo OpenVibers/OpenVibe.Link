@@ -44,12 +44,12 @@ func TestBridgeThroughNodeAndCapClosesTheTunnel(t *testing.T) {
 			w.WriteHeader(403)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(Grant{Session: "s", Node: "n", Enabled: true, Cap: 4, Expires: time.Now().Add(time.Minute).UnixMilli()})
+		_ = json.NewEncoder(w).Encode(Grant{Session: "s", Link: "n", Enabled: true, Cap: 4, Expires: time.Now().Add(time.Minute).UnixMilli()})
 	}))
 	defer network.Close()
 	budget, _ := NewBudget(filepath.Join(t.TempDir(), "usage"))
 	targets := make(chan string, 1)
-	endpoint := httptest.NewServer(&Endpoint{Client: &Client{Base: network.URL}, Node: "n", Budget: budget, Pause: func() bool { return false }, Dial: func(ctx context.Context, s string) (net.Conn, error) { targets <- s; return echoDial(ctx, s) }})
+	endpoint := httptest.NewServer(&Endpoint{Client: &Client{Base: network.URL}, Link: "n", Budget: budget, Pause: func() bool { return false }, Dial: func(ctx context.Context, s string) (net.Conn, error) { targets <- s; return echoDial(ctx, s) }})
 	defer endpoint.Close()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -65,7 +65,7 @@ func TestBridgeThroughNodeAndCapClosesTheTunnel(t *testing.T) {
 		t.Fatal("bridge failed")
 	}
 	if <-targets != "web.example:443" {
-		t.Fatal("destination was resolved before reaching Node")
+		t.Fatal("destination was resolved before reaching Link")
 	}
 	_, _ = conn.Write([]byte("ab"))
 	echo := make([]byte, 2)

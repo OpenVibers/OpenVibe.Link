@@ -99,12 +99,12 @@ func TestAuthenticatedCONNECTAndSOCKSWithRemoteDNS(t *testing.T) {
 			return
 		}
 		checks.Add(1)
-		_ = json.NewEncoder(w).Encode(Grant{Session: session, Node: "lnk_test", Enabled: true, Cap: 100000, Expires: time.Now().Add(time.Minute).UnixMilli()})
+		_ = json.NewEncoder(w).Encode(Grant{Session: session, Link: "lnk_test", Enabled: true, Cap: 100000, Expires: time.Now().Add(time.Minute).UnixMilli()})
 	}))
 	defer network.Close()
 	budget, _ := NewBudget(filepath.Join(t.TempDir(), "usage"))
 	targets := make(chan string, 4)
-	endpoint := &Endpoint{Client: &Client{Base: network.URL}, Node: "lnk_test", Budget: budget, Pause: func() bool { return false }, Dial: func(_ context.Context, address string) (net.Conn, error) {
+	endpoint := &Endpoint{Client: &Client{Base: network.URL}, Link: "lnk_test", Budget: budget, Pause: func() bool { return false }, Dial: func(_ context.Context, address string) (net.Conn, error) {
 		targets <- address
 		a, b := net.Pipe()
 		go func() { defer b.Close(); _, _ = io.Copy(b, b) }()
@@ -139,7 +139,7 @@ func TestAuthenticatedCONNECTAndSOCKSWithRemoteDNS(t *testing.T) {
 	}
 	c.Close()
 	if <-targets != "site.example:443" {
-		t.Fatal("resolved before reaching Node")
+		t.Fatal("resolved before reaching Link")
 	}
 	c, _, err = connect(credential)
 	if err != nil {
@@ -169,7 +169,7 @@ func TestAuthenticatedCONNECTAndSOCKSWithRemoteDNS(t *testing.T) {
 	}
 	c.Close()
 	if <-targets != "site.example:443" {
-		t.Fatal("SOCKS DNS not left to Node")
+		t.Fatal("SOCKS DNS not left to Link")
 	}
 	if checks.Load() != 2 {
 		t.Fatalf("every open must check Network, got %d", checks.Load())
@@ -178,7 +178,7 @@ func TestAuthenticatedCONNECTAndSOCKSWithRemoteDNS(t *testing.T) {
 
 func TestCapAndPowerRefuseTunnel(t *testing.T) {
 	network := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(Grant{Session: "s", Node: "n", Enabled: true, Cap: 10, Expires: time.Now().Add(time.Minute).UnixMilli()})
+		_ = json.NewEncoder(w).Encode(Grant{Session: "s", Link: "n", Enabled: true, Cap: 10, Expires: time.Now().Add(time.Minute).UnixMilli()})
 	}))
 	defer network.Close()
 	b, _ := NewBudget(filepath.Join(t.TempDir(), "usage"))
@@ -189,7 +189,7 @@ func TestCapAndPowerRefuseTunnel(t *testing.T) {
 	if b.Reserve(1, 10) == nil {
 		t.Fatal("cap did not stop bytes")
 	}
-	e := &Endpoint{Client: &Client{Base: network.URL}, Node: "n", Budget: b, Pause: func() bool { return true }}
+	e := &Endpoint{Client: &Client{Base: network.URL}, Link: "n", Budget: b, Pause: func() bool { return true }}
 	r := httptest.NewRequest("GET", "http://local/__ov_egress", nil)
 	r.Header.Set("X-OV-Session", "s")
 	r.Header.Set("X-OV-Egress", "test")

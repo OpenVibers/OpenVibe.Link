@@ -1,4 +1,4 @@
-// Package stream is Node's part of Agent Streams S1: the desk stream. It publishes a desk's screen to OpenVibe.Live
+// Package stream is Link's part of Agent Streams S1: the desk stream. It publishes a desk's screen to OpenVibe.Live
 // over WHIP with a publish ticket (wpt_…), polls the stream's state, sends snapshots while nobody watches, renews the
 // ticket at three hours, blanks the picture behind the curtain, and measures glass-to-glass latency with a QR probe.
 //
@@ -56,7 +56,7 @@ type CreateRequest struct {
 	AllowSites []string `json:"allow_sites,omitempty"`
 }
 
-// Stream is live.agent-stream@1, the fields Node needs.
+// Stream is live.agent-stream@1, the fields Link needs.
 type Stream struct {
 	ID            string  `json:"id"`
 	Owner         string  `json:"owner"`

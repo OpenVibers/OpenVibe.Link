@@ -9,7 +9,7 @@ import (
 
 	"github.com/godbus/dbus/v5"
 
-	"github.com/OpenVibers/OpenVibe.Link/internal/node"
+	"github.com/OpenVibers/OpenVibe.Link/internal/agent"
 	"github.com/OpenVibers/OpenVibe.Link/internal/safety"
 )
 
@@ -118,7 +118,7 @@ func (n *dbusNotifier) text(s string) string {
 	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(s)
 }
 
-func (n *dbusNotifier) Ask(a node.Approval, again string) {
+func (n *dbusNotifier) Ask(a agent.Approval, again string) {
 	body := safety.DisplayText(a.Summary)
 	if again != "" {
 		body = again + "\n" + body

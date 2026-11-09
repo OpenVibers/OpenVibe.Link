@@ -1,6 +1,6 @@
 //go:build !windows
 
-package node
+package agent
 
 import (
 	"encoding/json"
@@ -13,7 +13,7 @@ import (
 	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
-// The running Node takes the guide's events on the local socket and sends them on the device link it already has:
+// The running Agent takes the guide's events on the local socket and sends them on the device link it already has:
 // one telemetry frame per step, so the installer's service is not replaced by a second connection.
 func TestFirstRunEventsGoOnTheExistingLink(t *testing.T) {
 	e := start(t)
@@ -35,7 +35,7 @@ func TestFirstRunEventsGoOnTheExistingLink(t *testing.T) {
 	}
 }
 
-// The window's answer goes to Bot as one node.first_run event with the uses, on the link the Node already has.
+// The window's answer goes to Bot as one link.first_run event with the uses, on the link the Agent already has.
 func TestFirstRunAnswerIsOneEventWithTheUses(t *testing.T) {
 	e := start(t)
 	if !e.node.panelState().FirstRun {

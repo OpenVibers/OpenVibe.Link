@@ -1,4 +1,4 @@
-package node
+package agent
 
 import (
 	"context"
@@ -29,7 +29,7 @@ func (watchFakeLive) PostFrame(context.Context, string, credentials.Secret, []by
 func (watchFakeLive) End(context.Context, string, credentials.Secret) error               { return nil }
 func (watchFakeLive) Revoke(context.Context, string, credentials.Secret) error            { return nil }
 
-func newWatchAgent(t *testing.T) (*Node, *stream.Agent) {
+func newWatchAgent(t *testing.T) (*Agent, *stream.Agent) {
 	t.Helper()
 	a, err := stream.NewAgent(stream.AgentOptions{Client: watchFakeLive{}, ID: "ags_01J8Z4M2Q0R7T9YV3K6N8P1W2X",
 		Publish: stream.Publish{WHIPURL: "https://whip.example/whip/agent/ags_01J8Z4M2Q0R7T9YV3K6N8P1W2X",
@@ -39,7 +39,7 @@ func newWatchAgent(t *testing.T) (*Node, *stream.Agent) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	n := &Node{}
+	n := &Agent{}
 	n.deskStream = a
 	return n, a
 }

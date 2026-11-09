@@ -17,7 +17,7 @@ func (s staticToken) Token(context.Context) (credentials.Secret, error) {
 }
 func (staticToken) Invalidate() {}
 
-func TestClientUsesNodeTokenAndOnlyPublishesPublicReceiveKey(t *testing.T) {
+func TestClientUsesLinkTokenAndOnlyPublishesPublicReceiveKey(t *testing.T) {
 	var calls int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
@@ -37,7 +37,7 @@ func TestClientUsesNodeTokenAndOnlyPublishesPublicReceiveKey(t *testing.T) {
 			t.Errorf("registered key includes private data or is empty: %#v", body.PublicKey)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"node_id":"lnk_test","key_thumbprint":"thumb"}`))
+		_, _ = w.Write([]byte(`{"link_id":"lnk_test","key_thumbprint":"thumb"}`))
 	}))
 	defer server.Close()
 	key, err := LoadOrCreate(t.TempDir())

@@ -9,7 +9,7 @@ curtain, and measures the glass-to-glass latency with a QR probe. The design is
 
 | Piece | Where |
 |---|---|
-| The stream, its ticket, the state poll, snapshots, renewal | the core (`internal/stream`, `internal/node/stream.go`) |
+| The stream, its ticket, the state poll, snapshots, renewal | the core (`internal/stream`, `internal/agent/stream.go`) |
 | Capture selection, the browser desk's page capture, the curtain detectors, the hotkey | the computer plugin (`desk.stream`, `plugins/computer/openvibe_computer/stream.py` and `curtain.py`) |
 | Encoding | ffmpeg (`libx264`), started by the core |
 | Publishing | WHIP with pion (`internal/video`), video + a silent Opus track |

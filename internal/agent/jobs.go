@@ -1,4 +1,4 @@
-package node
+package agent
 
 import (
 	"sync"
@@ -7,14 +7,14 @@ import (
 	"github.com/OpenVibers/OpenVibe.Link/internal/safety"
 )
 
-// jobSeenMax bounds how many job ids the Node remembers answers for.
+// jobSeenMax bounds how many job ids the Agent remembers answers for.
 const jobSeenMax = 1024
 
 // jobs answers job frames: a job is refused unless its class is advertised and admit (the worker) takes it. Running
 // jobs live in the worker's own table, not here.
 type jobs struct {
 	mu      sync.Mutex
-	classes []string                    // runtime classes this Node runs and advertises; empty: none
+	classes []string                    // runtime classes this Agent runs and advertises; empty: none
 	answers map[string]protocol.Message // job id → the ack or nack it got, or its job_exit once it ended
 	order   []string                    // ids in answers, oldest first
 	// admit reserves an accepted job in the worker or returns the fault and reason to nack it with; nil accepts.
@@ -80,7 +80,7 @@ func (j *jobs) accepted(id string) bool {
 
 // job answers a job frame with ack or nack, keyed by the job id, and runs an accepted job. A job the worker holds is
 // answered from it (an ack while it runs, its job_exit once it ended) and never started twice.
-func (n *Node) job(r protocol.JobRequest) {
+func (n *Agent) job(r protocol.JobRequest) {
 	if n.worker != nil {
 		if m, ok := n.worker.Known(r.Job.ID); ok {
 			n.send(m)
@@ -105,7 +105,7 @@ func (n *Node) job(r protocol.JobRequest) {
 }
 
 // sendJobFrame sends a worker frame; a job_exit also becomes the answer to a resent job frame.
-func (n *Node) sendJobFrame(m protocol.Message) {
+func (n *Agent) sendJobFrame(m protocol.Message) {
 	if e, ok := m.(protocol.JobExit); ok {
 		n.jobs.ended(e)
 		if n.codes != nil {
@@ -120,7 +120,7 @@ func (n *Node) sendJobFrame(m protocol.Message) {
 
 // jobCancel stops an accepted job. An unknown, refused or ended id is ignored, as platform.job-frame@1 says, and no
 // frame answers it: an ack keyed by a job id means the job was accepted. An ended job's unacked job_exit is resent.
-func (n *Node) jobCancel(c protocol.JobCancel) {
+func (n *Agent) jobCancel(c protocol.JobCancel) {
 	if n.worker != nil {
 		if !n.worker.Cancel(c.ID) {
 			n.log.Debug("job_cancel for a job that is not running ignored", "id", c.ID)
@@ -131,7 +131,7 @@ func (n *Node) jobCancel(c protocol.JobCancel) {
 		n.log.Debug("job_cancel for a job that is not running ignored", "id", c.ID)
 		return
 	}
-	n.log.Warn("job_cancel: no worker runs jobs on this Node, nothing to stop", "id", c.ID)
+	n.log.Warn("job_cancel: no worker runs jobs on this Agent, nothing to stop", "id", c.ID)
 }
 
 // stopFault is the fault a job is refused with while the stop latch is set; "" when it is clear.

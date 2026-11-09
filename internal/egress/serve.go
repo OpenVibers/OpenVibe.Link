@@ -33,7 +33,7 @@ func Serve(ctx context.Context, creds *credentials.Credentials, stateDir string)
 	}
 	defer listener.Close()
 	client := NewClient(creds)
-	server := &http.Server{Handler: &Endpoint{Client: client, Node: creds.Principal, Budget: budget, Pause: Paused}, ReadHeaderTimeout: 10 * time.Second, MaxHeaderBytes: 8 << 10}
+	server := &http.Server{Handler: &Endpoint{Client: client, Link: creds.Principal, Budget: budget, Pause: Paused}, ReadHeaderTimeout: 10 * time.Second, MaxHeaderBytes: 8 << 10}
 	go server.Serve(listener)
 	defer server.Close()
 	networkToken, err := client.Tokens.Token(ctx)
@@ -58,7 +58,7 @@ func Serve(ctx context.Context, creds *credentials.Credentials, stateDir string)
 		return errors.New("Link connection refused")
 	}
 	var result struct {
-		Share connect.NodeShare `json:"share"`
+		Share connect.LinkShare `json:"share"`
 	}
 	if err = json.NewDecoder(io.LimitReader(resp.Body, 16<<10)).Decode(&result); err != nil {
 		return errors.New("invalid Link connection")
@@ -84,12 +84,12 @@ func Serve(ctx context.Context, creds *credentials.Credentials, stateDir string)
 		}
 	}()
 	return connect.Run(ctx, connect.Share{ID: result.Share.ID, Port: listener.Addr().(*net.TCPAddr).Port}, connect.Options{
-		LocalHost: "127.0.0.1", NodeToken: func(ctx context.Context) (string, error) { t, e := connectTokens.Token(ctx); return t.Reveal(), e },
+		LocalHost: "127.0.0.1", LinkToken: func(ctx context.Context) (string, error) { t, e := connectTokens.Token(ctx); return t.Reveal(), e },
 		OnReady: func(connect.Ready) { online.Store(true); go heartbeat() }, OnDisconnect: func() { online.Store(false) },
 	})
 }
 
-// A transient service failure retries without taking down the person's Node. Errors contain no response bodies.
+// A transient service failure retries without taking down the person's Link. Errors contain no response bodies.
 func Run(ctx context.Context, creds *credentials.Credentials, stateDir string) {
 	for {
 		_ = Serve(ctx, creds, stateDir)

@@ -35,7 +35,7 @@ func readUserSession(name string) (string, bool) {
 	return parseRegQuery(string(out), name)
 }
 
-// startUserSession starts the Node now in a window of its own, as the Run key will at the next sign-in.
+// startUserSession starts the Link now in a window of its own, as the Run key will at the next sign-in.
 func startUserSession(exe, home, logLevel string) error {
 	args := []string{"/c", "start", "OpenVibe Link", exe, "run", "--home", home}
 	if logLevel != "" && logLevel != "info" {

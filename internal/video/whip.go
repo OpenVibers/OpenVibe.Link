@@ -40,7 +40,7 @@ type Options struct {
 	// Audio adds a silent Opus track (Agent Streams S1): S4's voice then needs no renegotiation. The packets are the
 	// 20 ms silence frame from pion's own e2e test, sent whether or not video is flowing.
 	Audio bool
-	// UserAgent names the Node on the WHIP request.
+	// UserAgent names the Link on the WHIP request.
 	UserAgent string
 }
 

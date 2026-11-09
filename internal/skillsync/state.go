@@ -24,20 +24,20 @@ type ToolState struct {
 	Files map[string]*FileState `json:"files,omitempty"`
 }
 
-// FileState is what the Node needs to undo one file.
+// FileState is what the Link needs to undo one file.
 type FileState struct {
 	// Confirmed is true once the person has seen the diff and said yes.
 	Confirmed bool `json:"confirmed,omitempty"`
-	// Created is true when the Node created the file.
+	// Created is true when the Link created the file.
 	Created bool `json:"created,omitempty"`
-	// Sep is the separator the Node added before a block in a file that
+	// Sep is the separator the Link added before a block in a file that
 	// already had text (or "" when it added none). Undo removes exactly it.
 	Sep string `json:"sep,omitempty"`
 	// Kind is "skill" or "rules".
 	Kind string `json:"kind,omitempty"`
 	// Slug is the skill's folder name for a skill file.
 	Slug string `json:"slug,omitempty"`
-	// Frontmatter is the header the Node wrote when it created a skill file;
+	// Frontmatter is the header the Link wrote when it created a skill file;
 	// undo uses it to tell a file that held only our content from one that did
 	// not.
 	Frontmatter string `json:"frontmatter,omitempty"`

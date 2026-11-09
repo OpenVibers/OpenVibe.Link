@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OpenVibers/OpenVibe.Link/internal/agent"
 	"github.com/OpenVibers/OpenVibe.Link/internal/config"
 	"github.com/OpenVibers/OpenVibe.Link/internal/localctl"
-	"github.com/OpenVibers/OpenVibe.Link/internal/node"
 )
 
 func reviewSocket(t *testing.T, h localctl.Handler) *globals {
@@ -49,9 +49,9 @@ func TestStopReportsPersistenceFailure(t *testing.T) {
 
 func TestApprovalDisplaysEscapeControls(t *testing.T) {
 	hostile := "x\n\r\x1b[2J\u202ey\u2066z\u0085"
-	a := node.Approval{ID: hostile, Kind: hostile, Summary: hostile}
+	a := agent.Approval{ID: hostile, Kind: hostile, Summary: hostile}
 	g := reviewSocket(t, func(localctl.Request) localctl.Response {
-		b, _ := json.Marshal([]node.Approval{a})
+		b, _ := json.Marshal([]agent.Approval{a})
 		return localctl.Response{OK: true, Data: b}
 	})
 	var out bytes.Buffer

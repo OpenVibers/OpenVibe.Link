@@ -1,4 +1,4 @@
-package node
+package agent
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
-// A Network-paired Node connects with node tokens and stops on its own, with link.ErrNodeRevoked, once Network
+// A Network-paired Agent connects with node tokens and stops on its own, with link.ErrLinkRevoked, once Network
 // refuses its credential: no retry loop.
 func TestNetworkPairedNodeStopsWhenRevoked(t *testing.T) {
 	home, err := os.MkdirTemp("", "ovn")
@@ -29,7 +29,7 @@ func TestNetworkPairedNodeStopsWhenRevoked(t *testing.T) {
 	net := fakenetwork.New(bot)
 	t.Cleanup(net.Close)
 	net.AddCode("TEST2345")
-	creds, err := link.PairNetwork(context.Background(), nil, net.URL(), protocol.NodePairingRequest{Code: "TEST2345"}, "t")
+	creds, err := link.PairNetwork(context.Background(), nil, net.URL(), protocol.LinkPairingRequest{Code: "TEST2345"}, "t")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestNetworkPairedNodeStopsWhenRevoked(t *testing.T) {
 	net.Revoke()
 	select {
 	case err := <-done:
-		if !errors.Is(err, link.ErrNodeRevoked) {
+		if !errors.Is(err, link.ErrLinkRevoked) {
 			t.Fatalf("Run returned %v", err)
 		}
 	case <-time.After(10 * time.Second):

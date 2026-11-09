@@ -1,4 +1,4 @@
-package node
+package agent
 
 import (
 	"bytes"
@@ -44,7 +44,7 @@ type deskStreamValue struct {
 
 // deskStreamCommand answers one desk.stream command. start creates the stream on Live and publishes; stop ends it;
 // curtain blanks it; status reads it. None of them ever carries the ticket.
-func (n *Node) deskStreamCommand(c protocol.Command, entry *safety.Entry, received mono.Instant, nack func(code, msg string)) {
+func (n *Agent) deskStreamCommand(c protocol.Command, entry *safety.Entry, received mono.Instant, nack func(code, msg string)) {
 	var v deskStreamValue
 	if err := json.Unmarshal(c.Value, &v); err != nil {
 		nack(protocol.FaultBadValue, "value must be {action, …}")
@@ -225,7 +225,7 @@ func (n *Node) deskStreamCommand(c protocol.Command, entry *safety.Entry, receiv
 
 // stopDeskStream ends the running desk stream, if any → whether one ran. revoke is the kill switch: Live ends the WHIP
 // session at once. Otherwise the stream ends and its card stays.
-func (n *Node) stopDeskStream(revoke bool) bool {
+func (n *Agent) stopDeskStream(revoke bool) bool {
 	n.deskMu.Lock()
 	a := n.deskStream
 	n.deskStream = nil
@@ -241,7 +241,7 @@ func (n *Node) stopDeskStream(revoke bool) bool {
 	return true
 }
 
-func (n *Node) deskStreamStatus() *stream.Status {
+func (n *Agent) deskStreamStatus() *stream.Status {
 	n.deskMu.Lock()
 	a := n.deskStream
 	n.deskMu.Unlock()
@@ -254,7 +254,7 @@ func (n *Node) deskStreamStatus() *stream.Status {
 
 // deskSnapshotFunc takes a picture for the card while nobody watches: the computer plugin's own screen command, which
 // works the same for a desk's display and a browser desk's page (and never touches the owner's screen).
-func (n *Node) deskSnapshotFunc(p *plugins.Plugin, desk string) func(context.Context) ([]byte, error) {
+func (n *Agent) deskSnapshotFunc(p *plugins.Plugin, desk string) func(context.Context) ([]byte, error) {
 	return func(ctx context.Context) ([]byte, error) {
 		value := map[string]any{"max_width": 1280}
 		if desk != "" {
@@ -318,7 +318,7 @@ func pngToJPEG(raw []byte) ([]byte, error) {
 
 // deskCurtainEvent is the computer plugin's own curtain (detectors, hotkey, Curtain now): the desk reports it to Live
 // and blanks the picture. A detector that failed already raised it in the plugin.
-func (n *Node) deskCurtainEvent(plugin string, data map[string]any) {
+func (n *Agent) deskCurtainEvent(plugin string, data map[string]any) {
 	n.deskMu.Lock()
 	a := n.deskStream
 	n.deskMu.Unlock()
@@ -335,7 +335,7 @@ func (n *Node) deskCurtainEvent(plugin string, data map[string]any) {
 
 // deskPluginState is the supervisor's state for the plugin that owns the desk's detectors: anything but ready is a
 // lost plugin, so the curtain goes up and the audio mutes at once (fail closed).
-func (n *Node) deskPluginState(o plugins.Output) {
+func (n *Agent) deskPluginState(o plugins.Output) {
 	a := n.currentDeskStream()
 	if a == nil || a.PluginName() == "" || a.PluginName() != o.Plugin {
 		return
@@ -349,7 +349,7 @@ func (n *Node) deskPluginState(o plugins.Output) {
 }
 
 // deskPluginFault is the plugin going down between state reports (plugin_down): the same fail-closed curtain.
-func (n *Node) deskPluginFault(o plugins.Output) {
+func (n *Agent) deskPluginFault(o plugins.Output) {
 	a := n.currentDeskStream()
 	if a == nil || a.PluginName() != o.Plugin {
 		return
@@ -359,7 +359,7 @@ func (n *Node) deskPluginFault(o plugins.Output) {
 	}
 }
 
-func (n *Node) currentDeskStream() *stream.Agent {
+func (n *Agent) currentDeskStream() *stream.Agent {
 	n.deskMu.Lock()
 	defer n.deskMu.Unlock()
 	return n.deskStream
@@ -368,7 +368,7 @@ func (n *Node) currentDeskStream() *stream.Agent {
 // deskVoice returns the desk's voice (Agent Streams S4): the player that asks Chat for the sound of a line with
 // the person's own token and plays it into the stream's Opus track. Nil when the machine has no Chat token (the
 // desk stays silent, which is the S1 behaviour).
-func (n *Node) deskVoice() *voice.Player {
+func (n *Agent) deskVoice() *voice.Player {
 	if n.chatTokens == nil {
 		return nil
 	}
@@ -383,7 +383,7 @@ func (n *Node) deskVoice() *voice.Player {
 }
 
 // chatToken is the person's own node token for Chat.
-func (n *Node) chatToken(ctx context.Context) (string, error) {
+func (n *Agent) chatToken(ctx context.Context) (string, error) {
 	tok, err := n.chatTokens.Token(ctx)
 	if err != nil {
 		return "", err

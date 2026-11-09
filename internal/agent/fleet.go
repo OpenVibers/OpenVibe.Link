@@ -1,10 +1,10 @@
-package node
+package agent
 
 import "github.com/OpenVibers/OpenVibe.Link/internal/config"
 
 // codesProbeCommand builds the fleet probe (Codes C9c) from the worker's declared OpenVibe.Codes entry: the same
 // interpreter and script the jobs run, asked for `logins --json` instead of `job`. Nil when the machine has no such
-// entry — a Node that never installed the Codes runner has no coding agents to report.
+// entry — a Agent that never installed the Codes runner has no coding agents to report.
 func codesProbeCommand(fns []config.FunctionConfig) []string {
 	for _, f := range fns {
 		if f.Name != "openvibe-codes" || f.EffectiveClass() != config.ClassCode || len(f.Command) == 0 {

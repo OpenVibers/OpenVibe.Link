@@ -1,4 +1,4 @@
-package node
+package agent
 
 import (
 	"encoding/json"
@@ -163,13 +163,13 @@ func TestCodesTaskEndStatesAndJobFilter(t *testing.T) {
 }
 
 func TestStopCodesTaskRefusesWhatIsNotRunningHere(t *testing.T) {
-	if err := (&Node{}).panelStopCodesTask("tsk_01M6Q1Z8V4T7R2N5K3B9C6D0EF"); err == nil {
+	if err := (&Agent{}).panelStopCodesTask("tsk_01M6Q1Z8V4T7R2N5K3B9C6D0EF"); err == nil {
 		t.Fatal("a task was stopped with no worker")
 	}
 	s := loadCodesTasks(t.TempDir(), "/home/alex", nil)
 	args, _ := json.Marshal(map[string]any{"task_id": "tsk_01M6Q1Z8V4T7R2N5K3B9C6D0EF", "prompt": "x"})
 	s.accepted(protocol.Job{ID: "job_1", Artifact: &protocol.Artifact{Name: codesArtifact}, Args: args})
-	n := &Node{codes: s}
+	n := &Agent{codes: s}
 	if err := n.panelStopCodesTask("tsk_01M6Q1Z8V4T7R2N5K3B9C6D0EF"); err == nil {
 		t.Fatal("a task was stopped with no worker")
 	}

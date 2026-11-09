@@ -41,7 +41,6 @@ for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
 	mkdir -p "$root"
 	# The installer's --local layout: the OS-specific binary name and the plugin bundle beside install.sh.
 	cp "$bin" "$root/openvibe-link-$os-$arch"
-	cp "$bin" "$root/openvibe-link-$os-$arch"
 	cp dist/openvibe-link-plugins.tar.gz "$root/"
 	cp install/install.sh "$root/install.sh"
 	docs "$root"

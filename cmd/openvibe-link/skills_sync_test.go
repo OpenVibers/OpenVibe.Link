@@ -148,7 +148,7 @@ func TestSkillsSyncDryRunWriteAndUndo(t *testing.T) {
 		t.Fatalf("the stale skill folder is still there: %v\nout: %s\nerr: %s", err, out.String(), errOut.String())
 	}
 
-	// Undo puts the person's file back exactly and removes what the Node made.
+	// Undo puts the person's file back exactly and removes what the Link made.
 	out.Reset()
 	errOut.Reset()
 	if code := cmdSkillsSync([]string{"--undo", "--user-home", home, "--project", project, "--state", state}, strings.NewReader(""), &out, &errOut); code != 0 {

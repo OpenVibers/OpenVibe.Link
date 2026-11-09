@@ -43,7 +43,7 @@ func checkedDial(ctx context.Context, address string, resolve func(context.Conte
 	if err != nil || (p != 80 && p != 443) {
 		return nil, errors.New("only web ports are allowed")
 	}
-	// Resolve on the person's Node and pin the checked address for the actual dial.
+	// Resolve on the person's Link and pin the checked address for the actual dial.
 	ips, err := resolve(ctx, host)
 	if err != nil || len(ips) == 0 {
 		return nil, errors.New("site address unavailable")

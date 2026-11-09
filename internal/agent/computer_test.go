@@ -1,6 +1,6 @@
 //go:build !windows
 
-package node
+package agent
 
 import (
 	"context"
@@ -25,14 +25,14 @@ import (
 	"github.com/OpenVibers/OpenVibe.Link/internal/safety"
 )
 
-// startComputer runs a Node with only the real Python computer plugin at the given control level, its roots the one
+// startComputer runs a Agent with only the real Python computer plugin at the given control level, its roots the one
 // folder it returns, against the fake Bot.
 func startComputer(t *testing.T, level string) (*env, string) {
 	t.Helper()
 	return startComputerWith(t, level, nil)
 }
 
-// startComputerWith is startComputer with tweak applied to the plugin's config and the Node's options before it starts.
+// startComputerWith is startComputer with tweak applied to the plugin's config and the Agent's options before it starts.
 func startComputerWith(t *testing.T, level string, tweak func(*config.PluginConfig, *Options)) (*env, string) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -362,7 +362,7 @@ func TestComputerRemoteStopRequiresLocalResume(t *testing.T) {
 			e.conn.Close()
 			e.conn = e.nextConn()
 			e.stop()
-			// Reopen exactly the same local config and persisted latch after a Node restart.
+			// Reopen exactly the same local config and persisted latch after a Agent restart.
 			n, err := New(e.node.opt)
 			if err != nil {
 				t.Fatal(err)

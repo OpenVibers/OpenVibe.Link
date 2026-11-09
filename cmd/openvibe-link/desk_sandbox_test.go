@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// desk-sandbox reads its own flags up to "--" (a browser's flags after it are never the Node's), shows its usage
+// desk-sandbox reads its own flags up to "--" (a browser's flags after it are never the Link's), shows its usage
 // without a program, and refuses (125, never running the program unconfined) where desks cannot be sandboxed: here a
 // config with no worker.run_as.
 func TestDeskSandboxCommand(t *testing.T) {

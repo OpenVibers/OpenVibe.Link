@@ -24,7 +24,7 @@ var skillsRunnerUsage = "openvibe-link skills on [--dir DIR] [--node PATH]\n" +
 	"\n" +
 	"  The runner is OFF until `skills on`: that writes the runner and declares\n" +
 	"  it in worker.functions. It does not turn the job worker on by itself (the\n" +
-	"  installer's --worker does), and the Node must be restarted to load it.\n" +
+	"  installer's --worker does), and the Link must be restarted to load it.\n" +
 	"\n" +
 	"  --dir DIR    where the runner lives (default " + skills.DefaultDir() + ")\n" +
 	"  --node PATH  the Node.js 22.13+ binary the tool runs with (default: /usr/bin/node,\n" +
@@ -84,7 +84,7 @@ func cmdSkillsRunner(args []string, stdout, stderr io.Writer) int {
 		if !cfg.Worker.Enabled {
 			fmt.Fprintln(stdout, "The job worker is off: jobs run only once worker.enabled is true (install.sh --worker sets it).")
 		}
-		fmt.Fprintln(stdout, "Restart the Node to load it.")
+		fmt.Fprintln(stdout, "Restart the Link to load it.")
 	case "off":
 		if !skills.Off(cfg) {
 			fmt.Fprintf(stdout, "Skill runner is already off (%s).\n", paths.ConfigFile())
@@ -95,7 +95,7 @@ func cmdSkillsRunner(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 		fmt.Fprintf(stdout, "Skill runner off: removed %s from worker.functions in %s\n", skills.Name, paths.ConfigFile())
-		fmt.Fprintln(stdout, "Restart the Node to unload it.")
+		fmt.Fprintln(stdout, "Restart the Link to unload it.")
 	case "status":
 		s := skills.StatusOf(cfg)
 		if *asJSON {
@@ -106,7 +106,7 @@ func cmdSkillsRunner(args []string, stdout, stderr io.Writer) int {
 		if !s.On {
 			fmt.Fprintln(stdout, "skill runner: off")
 			fmt.Fprintf(stdout, "  The job worker is %s.\n", onOff(s.WorkerEnabled))
-			fmt.Fprintln(stdout, "  Turn it on: openvibe-link skills on   (then restart the Node)")
+			fmt.Fprintln(stdout, "  Turn it on: openvibe-link skills on   (then restart the Link)")
 			break
 		}
 		fmt.Fprintf(stdout, "skill runner: on (%s@%s, %s)\n", s.Name, s.Version, s.Class)

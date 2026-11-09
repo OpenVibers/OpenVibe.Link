@@ -44,10 +44,10 @@ type DeskSpec struct {
 
 // deskBindRoots are where a desk's extra read-only binds may come from: an install directory (a browser in /opt, a
 // /usr/local build) and the fonts' configuration. Never /home, /root, /var, /run, the rest of /etc, nor anything that
-// is, holds or lies in a Node directory or hiddenPaths (rootPlan's rule).
+// is, holds or lies in a Link directory or hiddenPaths (rootPlan's rule).
 var deskBindRoots = []string{"/opt", "/usr/local", "/etc/fonts"}
 
-// CheckDeskBinds refuses a bind outside deskBindRoots, a missing one, and one that would show a Node directory or a
+// CheckDeskBinds refuses a bind outside deskBindRoots, a missing one, and one that would show a Link directory or a
 // hidden host path; it answers each bind cleaned.
 func CheckDeskBinds(nodeDirs, binds []string) ([]string, error) {
 	out := make([]string, 0, len(binds))
@@ -64,7 +64,7 @@ func CheckDeskBinds(nodeDirs, binds []string) ([]string, error) {
 		}
 		for _, r := range resolved(p) {
 			if d, ok := overlaps(r, nodeDirs); ok {
-				return nil, fmt.Errorf("desk bind %s would expose the Node's directory %s", b, d)
+				return nil, fmt.Errorf("desk bind %s would expose the Link's directory %s", b, d)
 			}
 			if d, ok := overlaps(r, hiddenPaths); ok {
 				return nil, fmt.Errorf("desk bind %s would expose the host's %s", b, d)
@@ -94,11 +94,11 @@ func RunDesk(ctx context.Context, cfg config.WorkerConfig, d DeskSpec) (int, err
 	if err != nil {
 		return 0, err
 	}
-	extra, err := CheckDeskBinds(cfg.NodeDirs, d.Binds)
+	extra, err := CheckDeskBinds(cfg.LinkDirs, d.Binds)
 	if err != nil {
 		return 0, err
 	}
-	binds, links, err := rootPlan(cfg.NodeDirs)
+	binds, links, err := rootPlan(cfg.LinkDirs)
 	if err != nil {
 		return 0, err
 	}
@@ -166,9 +166,9 @@ func RunDesk(ctx context.Context, cfg config.WorkerConfig, d DeskSpec) (int, err
 	}
 	sb.child = append(sb.child, sf)
 	if sb.cg, err = newJobCgroup(caps, protocol.JobLimits{MemBytes: d.MemBytes}); err != nil {
-		// Its cgroup is made beside the Node's own leaf, which the Node sets up when its worker is on (the probe);
-		// a desk started by a plugin cannot rearrange the Node's cgroup itself.
-		return 0, fmt.Errorf("desk cgroup: %w (a desk host runs its Node with worker.enabled, so the cgroup is set up first)", err)
+		// Its cgroup is made beside the Link's own leaf, which the Link sets up when its worker is on (the probe);
+		// a desk started by a plugin cannot rearrange the Link's cgroup itself.
+		return 0, fmt.Errorf("desk cgroup: %w (a desk host runs its Link with worker.enabled, so the cgroup is set up first)", err)
 	}
 	attr.UseCgroupFD, attr.CgroupFD = true, sb.cg.fd
 	cmd := &exec.Cmd{Path: "/proc/self/exe", Args: []string{sandboxArg0}, Env: []string{}, Dir: "/", Stderr: d.Stderr,

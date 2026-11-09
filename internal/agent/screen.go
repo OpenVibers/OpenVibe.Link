@@ -1,4 +1,4 @@
-package node
+package agent
 
 import (
 	"context"
@@ -67,7 +67,7 @@ type screenValue struct {
 
 // screenCommand answers screen_stream: the plugin is asked first (it applies the owner's level and has the capture
 // tool), and only once it said yes does the core publish.
-func (n *Node) screenCommand(c protocol.Command, entry *safety.Entry, received mono.Instant, nack func(code, msg string)) {
+func (n *Agent) screenCommand(c protocol.Command, entry *safety.Entry, received mono.Instant, nack func(code, msg string)) {
 	var v screenValue
 	if err := json.Unmarshal(c.Value, &v); err != nil {
 		nack(protocol.FaultBadValue, "value must be {action, …}")
@@ -144,7 +144,7 @@ func (n *Node) screenCommand(c protocol.Command, entry *safety.Entry, received m
 }
 
 // checkScreenURL accepts an https WHIP endpoint with no credentials in it (http only to loopback, for tests).
-func (n *Node) checkScreenURL(raw string) error {
+func (n *Agent) checkScreenURL(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" || u.User != nil || len(raw) > 2048 {
 		return fmt.Errorf("whip_url must be an https URL")
@@ -161,7 +161,7 @@ func (n *Node) checkScreenURL(raw string) error {
 }
 
 // startScreen publishes the plugin's screen frames until the time is up (replacing a stream that runs) → the end.
-func (n *Node) startScreen(whip string, key credentials.Secret, seconds, fps int, from, sid string) time.Time {
+func (n *Agent) startScreen(whip string, key credentials.Secret, seconds, fps int, from, sid string) time.Time {
 	n.stopScreen("replaced")
 	ctx, cancel := context.WithCancel(n.ctx)
 	until := time.Now().Add(time.Duration(seconds) * time.Second)
@@ -199,7 +199,7 @@ func (n *Node) startScreen(whip string, key credentials.Secret, seconds, fps int
 	return until
 }
 
-func (n *Node) screenICE() []protocol.ICEServer {
+func (n *Agent) screenICE() []protocol.ICEServer {
 	if n.opt.Creds == nil {
 		return nil
 	}
@@ -207,7 +207,7 @@ func (n *Node) screenICE() []protocol.ICEServer {
 }
 
 // endScreen ends s if it is still the running stream.
-func (n *Node) endScreen(s *screenStream, why string) {
+func (n *Agent) endScreen(s *screenStream, why string) {
 	n.screen.mu.Lock()
 	if n.screen.cur != s {
 		n.screen.mu.Unlock()
@@ -220,7 +220,7 @@ func (n *Node) endScreen(s *screenStream, why string) {
 }
 
 // stopScreen ends the running stream, if any → whether one ran.
-func (n *Node) stopScreen(why string) bool {
+func (n *Agent) stopScreen(why string) bool {
 	n.screen.mu.Lock()
 	s := n.screen.cur
 	n.screen.mu.Unlock()
@@ -232,7 +232,7 @@ func (n *Node) stopScreen(why string) bool {
 }
 
 // screenEnded ends the stream the plugin says it ended (by its id), never a newer one.
-func (n *Node) screenEnded(plugin, sid string) {
+func (n *Agent) screenEnded(plugin, sid string) {
 	n.screen.mu.Lock()
 	s := n.screen.cur
 	n.screen.mu.Unlock()
@@ -242,7 +242,7 @@ func (n *Node) screenEnded(plugin, sid string) {
 }
 
 // screenFrame passes a plugin's screen frame to the running stream (frames from any other plugin are dropped).
-func (n *Node) screenFrame(o plugins.Output) {
+func (n *Agent) screenFrame(o plugins.Output) {
 	n.screen.mu.Lock()
 	s := n.screen.cur
 	n.screen.mu.Unlock()
@@ -254,7 +254,7 @@ func (n *Node) screenFrame(o plugins.Output) {
 	}
 }
 
-func (n *Node) screenStatus() ScreenStatus {
+func (n *Agent) screenStatus() ScreenStatus {
 	n.screen.mu.Lock()
 	s := n.screen.cur
 	n.screen.mu.Unlock()

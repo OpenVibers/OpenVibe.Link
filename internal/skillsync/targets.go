@@ -10,10 +10,10 @@
 //	<!-- openvibe-skills:end -->
 //
 // A skill's SKILL.md keeps its frontmatter above the block, because the tools
-// read it there; the frontmatter is only written when the Node creates the
+// read it there; the frontmatter is only written when the Link creates the
 // file, and never replaced in a file the person already had. Every file is
 // opt-in per tool, the first write shows a diff and asks, and undo puts the
-// file back the way it was (or removes it when it held only the Node's block).
+// file back the way it was (or removes it when it held only the Link's block).
 package skillsync
 
 import (

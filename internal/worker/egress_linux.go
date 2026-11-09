@@ -44,7 +44,7 @@ var nonPublic = []string{"0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/
 	"192.0.0.0/24", "192.0.2.0/24", "192.88.99.0/24", "192.168.0.0/16", "198.18.0.0/15", "198.51.100.0/24",
 	"203.0.113.0/24", "224.0.0.0/4", "240.0.0.0/4"}
 
-// egressToolDirs is where the Node finds ip, nsenter and nft, which it runs as root (not from $PATH); tests change it.
+// egressToolDirs is where the Link finds ip, nsenter and nft, which it runs as root (not from $PATH); tests change it.
 var egressToolDirs = []string{"/usr/sbin", "/sbin", "/usr/bin", "/bin"}
 
 // errEgressTool: a program the egress policies need is not installed.
@@ -58,12 +58,12 @@ var (
 
 type egressTools struct{ ip, nsenter, nft string }
 
-// egressReady refuses an egress policy the host cannot enforce: the Node must run as root, find ip, nsenter and nft,
-// and the host must forward IPv4 (net.ipv4.ip_forward=1, which the Node does not set: it is the owner's choice).
+// egressReady refuses an egress policy the host cannot enforce: the Link must run as root, find ip, nsenter and nft,
+// and the host must forward IPv4 (net.ipv4.ip_forward=1, which the Link does not set: it is the owner's choice).
 func egressReady() (egressTools, error) {
 	var t egressTools
 	if os.Geteuid() != 0 {
-		return t, errors.New("needs the Node to run as root (worker.run_as)")
+		return t, errors.New("needs the Link to run as root (worker.run_as)")
 	}
 	for _, x := range []struct {
 		name string
@@ -91,7 +91,7 @@ func egressReady() (egressTools, error) {
 type egressNet struct {
 	tools     egressTools
 	n         int  // ovw<n>; -1 once released
-	made      bool // the pair exists (this Node made it)
+	made      bool // the pair exists (this Link made it)
 	host, job netip.Addr
 }
 

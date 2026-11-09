@@ -40,7 +40,7 @@ const memorySyncUsage = "openvibe-link memory sync [--tools a,b] [--project DIR 
 	"  --project DIR     write this project's files as well; may be given more than once\n" +
 	"  --dry-run         show the diffs and write nothing\n" +
 	"  --yes             do not ask on the first write\n" +
-	"  --state FILE      the opt-in file (default: the Node's state directory)\n" +
+	"  --state FILE      the opt-in file (default: the Link's state directory)\n" +
 	"  --endpoint URL    the memory store (default " + memorystore.DefaultBaseURL + ")\n" +
 	"  --token-env NAME  the variable the access token is read from (default " + memorystore.DefaultTokenEnv + ")\n" +
 	"  --user-home DIR   use this directory as the person's home (default: yours)\n"
@@ -429,7 +429,7 @@ func syncRemove(home string, projects []string, state *memorysync.State, statePa
 					failed++
 					continue
 				}
-				fmt.Fprintf(stdout, "%s: removed (the Node created it)\n", displayPath(home, path))
+				fmt.Fprintf(stdout, "%s: removed (the Link created it)\n", displayPath(home, path))
 			} else if err := writeFile(path, next); err != nil {
 				fmt.Fprintf(stderr, "error: %v\n", err)
 				failed++

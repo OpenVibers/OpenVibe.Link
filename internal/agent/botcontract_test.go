@@ -1,6 +1,6 @@
 //go:build !windows
 
-package node
+package agent
 
 import (
 	"bytes"
@@ -17,7 +17,7 @@ import (
 	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
-// These tests drive the Node with the frames OpenVibe.Bot sends, recorded from its docs/protocol.md into
+// These tests drive the Agent with the frames OpenVibe.Bot sends, recorded from its docs/protocol.md into
 // internal/protocol/testdata/bot (see its README for the Bot commit).
 
 func botFrame(t *testing.T, name string) []byte {

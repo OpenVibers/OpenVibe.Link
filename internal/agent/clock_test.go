@@ -1,4 +1,4 @@
-package node
+package agent
 
 import (
 	"github.com/OpenVibers/OpenVibe.Link/internal/mono"
@@ -41,7 +41,7 @@ func TestCeilMSRoundsUpFromNanoseconds(t *testing.T) {
 // Without a link (local commands) the frame's own ts is the server's clock, and the time left is exact: nothing rounds
 // a deadline later. (The link's estimate keeps nanoseconds: link.TestServerNowKeepsNanoseconds.)
 func TestTimeLeftIsExact(t *testing.T) {
-	n := &Node{}
+	n := &Agent{}
 	left, unc, synced := n.timeLeft(1_000_100, 1_000_000, mono.Now())
 	if left != 100*time.Millisecond || unc != 0 || !synced {
 		t.Fatalf("left %v unc %d synced %v", left, unc, synced)

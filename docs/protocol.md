@@ -61,10 +61,10 @@ Content-Type: application/json
 {"code": "ABCD1234", "pairing": "pair_…", "name": "rover"}
 ```
 
-`201` → `{"principal": "lnk_…", "node_id": "n-…", "home_cell": "…", "credential": "…", "token_endpoint": "…",
+`201` → `{"principal": "lnk_…", "link_id": "n-…", "home_cell": "…", "credential": "…", "token_endpoint": "…",
 "paired_for": {"service": "bot", "ref": "rob_…"}}`; refusals are problems with `registry.pairing_code_invalid`,
 `_locked`, `_used`, `_expired`, `registry.invalid_pairing_code`, `registry.invalid_pairing_request`, and a plain `429`.
-The Link stores `{principal, node_credential, network, paired_for}` in `credential.json` (mode 0600, temp file and
+The Link stores `{principal, link_credential, network, paired_for}` in `credential.json` (mode 0600, temp file and
 rename) before anything else.
 
 ```http

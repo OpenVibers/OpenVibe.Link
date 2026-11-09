@@ -1,4 +1,4 @@
-package node
+package agent
 
 import (
 	"encoding/json"
@@ -41,11 +41,11 @@ var totpDigits = regexp.MustCompile(`^[0-9]{6,8}$`)
 var exactFillRequestID = regexp.MustCompile(`^fr_[A-Za-z0-9_-]{16,64}$`)
 var exactHTTPSOrigin = regexp.MustCompile(`^https://[a-z0-9.-]+(:[0-9]{1,5})?$`)
 
-func (n *Node) prepareBlindFill(value json.RawMessage) (json.RawMessage, func(), error) {
+func (n *Agent) prepareBlindFill(value json.RawMessage) (json.RawMessage, func(), error) {
 	return n.prepareBlindFillAt(value, time.Now())
 }
 
-func (n *Node) prepareBlindFillAt(value json.RawMessage, now time.Time) (json.RawMessage, func(), error) {
+func (n *Agent) prepareBlindFillAt(value json.RawMessage, now time.Time) (json.RawMessage, func(), error) {
 	var req blindFillRequest
 	if json.Unmarshal(value, &req) != nil || req.Action != "blind_fill" {
 		return value, func() {}, nil

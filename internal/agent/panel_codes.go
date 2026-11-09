@@ -1,8 +1,8 @@
-package node
+package agent
 
 // The Codes half of Link's window: the coding-agent CLIs on this machine, and the Codes tasks its worker runs. Both
 // are local facts. The agents are read the way OpenVibe.Codes reads them (on PATH, signed in by the CLI's own login
-// file, the version the binary reports); the tasks are the jobs the Codes worker accepted here, kept under the Node's
+// file, the version the binary reports); the tasks are the jobs the Codes worker accepted here, kept under the Agent's
 // state directory so a task that ended today is still shown after a restart. Nothing here reads a token or a key: a
 // login file is only checked for a usable session, never reported.
 
@@ -29,7 +29,7 @@ import (
 const (
 	// codesArtifact is the OpenVibe.Codes job runner's artifact name: the jobs that are coding tasks.
 	codesArtifact = "openvibe-codes"
-	// codesTasksName is the file that keeps the Codes tasks this worker ran, under the Node's state directory.
+	// codesTasksName is the file that keeps the Codes tasks this worker ran, under the Agent's state directory.
 	codesTasksName = "codes-tasks.json"
 	// codesTaskMax bounds what that file holds; the window lists what happened today, newest first.
 	codesTaskMax = 50
@@ -523,7 +523,7 @@ func codesTaskTime(t *codesTaskRecord) time.Time {
 }
 
 // panelCodes is the window's Codes section: the CLIs here and the tasks this worker ran today.
-func (n *Node) panelCodes() *panel.Codes {
+func (n *Agent) panelCodes() *panel.Codes {
 	c := &panel.Codes{Agents: n.codesAgents.latest(n.probeCodesAgents)}
 	if n.codes != nil {
 		c.Tasks = n.codes.list()
@@ -532,7 +532,7 @@ func (n *Node) panelCodes() *panel.Codes {
 }
 
 // probeCodesAgents is the real detection: this machine's home and PATH, the binaries' own --version.
-func (n *Node) probeCodesAgents() []panel.CodesAgent {
+func (n *Agent) probeCodesAgents() []panel.CodesAgent {
 	home, _ := os.UserHomeDir()
 	return detectCodesAgents(codesProbe{Home: home, LookPath: exec.LookPath, ReadFile: os.ReadFile,
 		Version: codesVersion, OpenCodeAuth: openCodeAuth})
@@ -540,7 +540,7 @@ func (n *Node) probeCodesAgents() []panel.CodesAgent {
 
 // panelStopCodesTask stops the local run the way Codes' own stop does: cancel its Run job here, which kills the
 // worker's process and makes its job_exit say cancelled. A task that is not running on this computer is refused.
-func (n *Node) panelStopCodesTask(id string) error {
+func (n *Agent) panelStopCodesTask(id string) error {
 	if n.codes == nil {
 		return errors.New("that task is not running on this computer")
 	}

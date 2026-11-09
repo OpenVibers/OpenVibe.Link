@@ -9,7 +9,7 @@ import (
 )
 
 // TestWorkerPlanLogins: worker.plan_logins is off unless the owner names the files, and each named file must be a
-// path under the Node user's home: the copy a job gets is made from it.
+// path under the Link user's home: the copy a job gets is made from it.
 func TestWorkerPlanLogins(t *testing.T) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -40,7 +40,7 @@ func TestWorkerPlanLogins(t *testing.T) {
 }
 
 // TestPlanLoginHomeUnderSudo: a `sudo openvibe-link ...` reads the plan logins under the sudo user's home (the home
-// install.sh --plan-logins gives the service), not root's; without sudo it is the Node user's own home.
+// install.sh --plan-logins gives the service), not root's; without sudo it is the Link user's own home.
 func TestPlanLoginHomeUnderSudo(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("the worker and its plan logins are Linux-only")

@@ -2,7 +2,7 @@
 
 Many people already run models at home (Ollama, llama.cpp's server, LM Studio). This plugin lets OpenVibe use them for
 their owner, for Vibe's answers or an agent's thinking, without the prompt leaving the machine's network and with no
-open port: OpenVibe.AI asks OpenVibe.Bot, Bot sends the Node one ``ai`` command over the connection the Node already
+open port: OpenVibe.AI asks OpenVibe.Bot, Bot sends the Link one ``ai`` command over the connection the Link already
 keeps, and this plugin relays it to the local model server and answers with the reply.
 
 It reaches one place only, the server in its config, and it reads and changes nothing else on the machine. A request
@@ -165,7 +165,7 @@ def _offer_config(cfg, served):
     ``offer.models`` defaults to the models this machine serves; ``hours`` is one local-time window (start == end
     means all day and an overnight window is allowed); ``concurrency`` caps how many community replies run at once;
     ``price`` is credits per million input and output tokens (0 is volunteering); ``audience`` is everyone, followers
-    or one group. The Node enforces enabled, hours, models and concurrency; the router enforces the audience, since
+    or one group. The Link enforces enabled, hours, models and concurrency; the router enforces the audience, since
     only it can resolve a requester's followers and groups.
     """
     raw = cfg.get("offer")
@@ -619,7 +619,7 @@ class Ai(Plugin):
 
     def on_stop(self, info):
         """The kill switch on this machine (an emergency stop) stops the whole pool now and holds it until the latch is
-        cleared; the Node stopping closes it and keeps the key. A turn's halt, a lost link or a command's timeout is not
+        cleared; the Link stopping closes it and keeps the key. A turn's halt, a lost link or a command's timeout is not
         about the pool. Without a pool, every stop is as before (nothing moves here)."""
         if not self.cfg.get("pool_directory"):
             return Plugin.on_stop(self, info)

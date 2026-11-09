@@ -16,9 +16,9 @@ func setProcAttr(cmd *exec.Cmd) {}
 
 // processTree is the Job Object that holds one plugin process and every process it starts. Windows has no process
 // group for this: TerminateProcess ends only the direct child, so a plugin that starts its own helper (a stdio
-// relay's child, speech, a camera helper) would leave it running when the Node kills or restarts the plugin. The
+// relay's child, speech, a camera helper) would leave it running when the Link kills or restarts the plugin. The
 // job carries JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, so closing the last handle also ends everything in it when the
-// Node exits or crashes and Windows closes its handles.
+// Link exits or crashes and Windows closes its handles.
 type processTree struct {
 	cmd *exec.Cmd
 	mu  sync.Mutex

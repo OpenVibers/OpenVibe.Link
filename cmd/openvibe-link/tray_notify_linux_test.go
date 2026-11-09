@@ -12,7 +12,7 @@ import (
 
 	"github.com/godbus/dbus/v5"
 
-	"github.com/OpenVibers/OpenVibe.Link/internal/node"
+	"github.com/OpenVibers/OpenVibe.Link/internal/agent"
 )
 
 // fakeNotifications is an org.freedesktop.Notifications server on a private session bus.
@@ -62,7 +62,7 @@ func TestDesktopNotifierAsksAndHearsTheButtons(t *testing.T) {
 	}
 	n := newDesktopNotifier(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	defer n.Shut()
-	n.Ask(node.Approval{ID: "c1", Kind: "exec", Summary: "run <b>rm</b> & co", ExpiresS: 120}, "")
+	n.Ask(agent.Approval{ID: "c1", Kind: "exec", Summary: "run <b>rm</b> & co", ExpiresS: 120}, "")
 	var got []any
 	select {
 	case got = <-f.notify:
@@ -97,14 +97,14 @@ func TestDesktopNotifierAsksAndHearsTheButtons(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the Approve button was not heard")
 	}
-	n.Ask(node.Approval{ID: "c1", Summary: "again"}, "Not taken")
+	n.Ask(agent.Approval{ID: "c1", Summary: "again"}, "Not taken")
 	if again := <-f.notify; again[0] != nid {
 		t.Fatalf("asking again replaces the same notification: %v", again)
 	}
 	// The no-actions hint must quote its identifier and escape display controls.
 	desktop := n.(*dbusNotifier)
 	desktop.actions = false
-	desktop.Ask(node.Approval{ID: "x';$(bad)", Summary: "unsafe\n\x1b[2J\u202e"}, "")
+	desktop.Ask(agent.Approval{ID: "x';$(bad)", Summary: "unsafe\n\x1b[2J\u202e"}, "")
 	hint := <-f.notify
 	body := hint[2].(string)
 	if strings.ContainsAny(body, "\x1b\u202e") || !strings.Contains(body, `\u202e`) || !strings.Contains(body, `approve 'x'"'"';$(bad)'`) {

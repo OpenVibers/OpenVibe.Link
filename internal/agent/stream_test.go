@@ -1,4 +1,4 @@
-package node
+package agent
 
 import (
 	"bytes"
@@ -15,7 +15,7 @@ func jpegConfig(b []byte) (image.Config, error) {
 }
 
 func TestDeskStreamStatusAndStopAreSafeBeforeAStream(t *testing.T) {
-	n := &Node{}
+	n := &Agent{}
 	if st := n.deskStreamStatus(); st != nil {
 		t.Fatalf("status before a stream = %+v", st)
 	}

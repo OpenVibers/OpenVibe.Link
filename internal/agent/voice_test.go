@@ -1,6 +1,6 @@
 //go:build !windows
 
-package node
+package agent
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
-// TestVoiceEndToEnd runs the real voice plugin (its file engine stands in for the microphone) under a Node paired with
+// TestVoiceEndToEnd runs the real voice plugin (its file engine stands in for the microphone) under a Agent paired with
 // the fake Bot: nothing goes to Bot until the owner's config turns voice on; then only what follows the call word goes,
 // as a voice_ask frame (never as a telemetry event), and Bot's answer reaches the plugin, which speaks it.
 func TestVoiceEndToEnd(t *testing.T) {

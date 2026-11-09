@@ -22,14 +22,14 @@ import (
 	"unsafe"
 )
 
-// A job starts as the Node's own executable (/proc/self/exe) with sandboxArg0 as its only argument and its sandboxSpec
+// A job starts as the Link's own executable (/proc/self/exe) with sandboxArg0 as its only argument and its sandboxSpec
 // on specFD (a memfd: in argv, the function's environment would show in /proc/<pid>/cmdline to every host user until
 // the function executes), already in its namespaces and its cgroup, holding CAP_SYS_ADMIN of its user namespace only (an ambient capability).
 // It builds the job's private root, sets the rlimits, gives up every capability, sets no_new_privs and the seccomp
 // filter, and only then executes the function. It reports a failure on statusFD as text. Once confined it writes one
-// NUL byte there and waits for one byte on goFD: the Node checks the confinement and sets RLIMIT_CPU meanwhile, while
+// NUL byte there and waits for one byte on goFD: the Link checks the confinement and sets RLIMIT_CPU meanwhile, while
 // the process is sure to be alive. The function's execve then closes statusFD. artifactFD is the function's artifact
-// directory, opened by the Node, when the init is to copy it.
+// directory, opened by the Link, when the init is to copy it.
 const (
 	sandboxArg0 = "openvibe-link-sandbox"
 	statusFD    = 4 // fd 3 is the function's result
@@ -38,12 +38,12 @@ const (
 	artifactFD  = 7
 )
 
-// sandboxSpec is everything the sandbox init needs, from the Node.
+// sandboxSpec is everything the sandbox init needs, from the Link.
 type sandboxSpec struct {
 	Root string `json:"root"` // the host directory the private root is mounted on
 	Work string `json:"work"` // the working directory, inside the private root
 	Disk int64  `json:"disk"` // the size of the job's /tmp, and the most its artifact's copy may take
-	// Inputs are the files the Node fetched into Root, copied into Work before the private root covers them.
+	// Inputs are the files the Link fetched into Root, copied into Work before the private root covers them.
 	Inputs []string `json:"inputs,omitempty"`
 	// PlanLogins are the owner's plan logins staged in Root (paths under the home), copied read-only into Work.
 	PlanLogins []string   `json:"plan_logins,omitempty"`
@@ -210,7 +210,7 @@ func enterSandbox() error {
 		return err
 	}
 	// The job's own path to its artifact directory must lead to the copy, never to the host's directory under it. The
-	// Node checked that no host user but root or the Node's own can change that path while the job runs (checkRoute).
+	// Link checked that no host user but root or the Link's own can change that path while the job runs (checkRoute).
 	if s.Artifact != "" {
 		var st syscall.Stat_t
 		if err := syscall.Stat(s.Artifact, &st); err != nil || st.Dev != artifactDev {
@@ -287,7 +287,7 @@ func enterSandbox() error {
 		return fmt.Errorf("reporting ready: %w", err)
 	}
 	if n, err := syscall.Read(goFD, b[:]); n != 1 {
-		return fmt.Errorf("the Node did not let the function start (%v)", err)
+		return fmt.Errorf("the Link did not let the function start (%v)", err)
 	}
 	_, _, e := syscall.RawSyscall(syscall.SYS_EXECVE, uintptr(unsafe.Pointer(path)), uintptr(unsafe.Pointer(&argv[0])),
 		uintptr(unsafe.Pointer(&envv[0])))
@@ -361,8 +361,8 @@ func copyInputs(from *os.File, work string, names []string) error {
 // stageArtifact copies the artifact directory open on artifactFD, the host's src, into a tmpfs of at most size bytes
 // mounted where src leads in the private root r, and makes it read-only: the job sees the tree as it was when it
 // started, never what the host adds to it later (a socket or a FIFO a host process could be reached through, say).
-// That holds in a system path too: the copy covers what the bind of /usr (say) shows there, on a path to it the Node
-// checked that only root or the Node's own user can change (checkRoute). It returns the copy's
+// That holds in a system path too: the copy covers what the bind of /usr (say) shows there, on a path to it the Link
+// checked that only root or the Link's own user can change (checkRoute). It returns the copy's
 // device number, for the job to check that its path to the artifact leads there. The copy is read as the job's own
 // user, who must be able to reach src by its path (search every directory above it) and list it, and holds
 // directories, regular files and symlinks only, with their permission bits and modification times (no owner, set-id
@@ -370,7 +370,7 @@ func copyInputs(from *os.File, work string, names []string) error {
 // bind mount of the same filesystem included), fails the job. The copy counts towards the job's memory and its reads
 // towards its io.max.
 func stageArtifact(r, src string, size int64) (uint64, error) {
-	// Opened again by its path, as the job's user: the Node opened it with its own rights (root's, with run_as), and
+	// Opened again by its path, as the job's user: the Link opened it with its own rights (root's, with run_as), and
 	// reopening that descriptor through /proc would skip the search permission of the directories above it.
 	f, err := os.OpenFile(src, os.O_RDONLY|syscall.O_DIRECTORY, 0)
 	if err != nil {
@@ -386,7 +386,7 @@ func stageArtifact(r, src string, size int64) (uint64, error) {
 	}
 	syscall.Close(artifactFD)
 	if st.Dev != node.Dev || st.Ino != node.Ino {
-		return 0, errors.New("it changed since the Node checked it")
+		return 0, errors.New("it changed since the Link checked it")
 	}
 	dst, err := inRoot(r, src)
 	if err != nil {
@@ -592,7 +592,7 @@ func copyDir(dir *os.File, dst string) error {
 
 // openEntry opens the entry name of the directory dir O_PATH (a symlink itself, not what it points to) with openat2,
 // which fails EXDEV if the entry is a mount point: unlike a device number, that also catches a bind mount of the
-// artifact's own filesystem (of a Node directory, say).
+// artifact's own filesystem (of a Link directory, say).
 func openEntry(dir int, name string) (int, error) {
 	const resolveNoXdev, resolveNoSymlinks, resolveBeneath = 0x01, 0x04, 0x08
 	return openat2(dir, name, oPath|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, resolveNoXdev|resolveNoSymlinks|resolveBeneath)
@@ -760,7 +760,7 @@ func seccompFilter() ([]syscall.SockFilter, error) {
 // The read-only system paths of every private root (symlinks are recreated, as on merged-/usr systems), the few
 // files of /etc programs need to start, the device nodes, and copies of the public CA certificates (stageCA). Nothing
 // else of the host is there: no /home, /root, /var, /run, /srv, /mnt, /media, /sys, no rest of /etc (no
-// /etc/ssl/private, /etc/shadow nor any other key), and none of the Node's directories.
+// /etc/ssl/private, /etc/shadow nor any other key), and none of the Link's directories.
 var (
 	systemPaths = []string{"/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32"}
 	etcPaths    = []string{"/etc/alternatives", "/etc/group", "/etc/hosts", "/etc/ld.so.cache", "/etc/ld.so.conf",
@@ -784,7 +784,7 @@ type hostBind struct {
 }
 
 // rootPlan lists what of the host every job sees bound: the system paths, the /etc files and the devices. It refuses
-// any of them that is, holds or lies in one of the Node's directories or hiddenPaths, as given or where its symlinks
+// any of them that is, holds or lies in one of the Link's directories or hiddenPaths, as given or where its symlinks
 // lead. The CA certificates and a function's artifact directory, wherever it is, are not bound but copied (stageCA,
 // stageArtifact).
 func rootPlan(nodeDirs []string) (binds []hostBind, links []linkSpec, err error) {
@@ -810,7 +810,7 @@ func rootPlan(nodeDirs []string) (binds []hostBind, links []linkSpec, err error)
 	}
 	for _, b := range binds {
 		if d, ok := overlaps(b.path, nodeDirs); ok {
-			return nil, nil, fmt.Errorf("%s would expose the Node's directory %s to jobs", b.path, d)
+			return nil, nil, fmt.Errorf("%s would expose the Link's directory %s to jobs", b.path, d)
 		}
 		if d, ok := overlaps(b.path, hiddenPaths); ok {
 			return nil, nil, fmt.Errorf("%s would expose the host's %s to jobs", b.path, d)
@@ -832,7 +832,7 @@ var (
 )
 
 // checkArtifact refuses an artifact directory that would show the job host paths beyond the function's own files:
-// one in or over hostOnlyPaths, one over sharedPaths, one that is, holds or lies in one of the Node's directories.
+// one in or over hostOnlyPaths, one over sharedPaths, one that is, holds or lies in one of the Link's directories.
 func checkArtifact(nodeDirs []string, artifact string) error {
 	if d, ok := overlaps(artifact, hostOnlyPaths); ok {
 		return fmt.Errorf("artifact directory %s would expose the host's %s to jobs", artifact, d)
@@ -847,7 +847,7 @@ func checkArtifact(nodeDirs []string, artifact string) error {
 		}
 	}
 	if d, ok := overlaps(artifact, nodeDirs); ok {
-		return fmt.Errorf("artifact directory %s would expose the Node's directory %s to jobs", artifact, d)
+		return fmt.Errorf("artifact directory %s would expose the Link's directory %s to jobs", artifact, d)
 	}
 	return nil
 }
@@ -946,7 +946,7 @@ var passwdFile, groupFile = "/etc/passwd", "/etc/group"
 
 // trustedGroup reports whether every member of group gid is a trusted user: each user listed in it in groupFile and
 // each whose primary group it is in passwdFile. A group groupFile does not list (one from a directory service, whose
-// members the Node cannot see) or a member it cannot resolve is not trusted.
+// members the Link cannot see) or a member it cannot resolve is not trusted.
 func trustedGroup(gid uint32, trusted []uint32) bool {
 	g, err := os.ReadFile(groupFile)
 	if err != nil {
@@ -991,7 +991,7 @@ func trustedGroup(gid uint32, trusted []uint32) bool {
 	return listed
 }
 
-// trustedUIDs are the host users who may change the path to an artifact directory (checkRoute): root and the Node's.
+// trustedUIDs are the host users who may change the path to an artifact directory (checkRoute): root and the Link's.
 func trustedUIDs() []uint32 { return []uint32{0, uint32(os.Geteuid())} }
 
 // openArtifact opens the artifact directory a job's sandbox init copies, and checks the directory it opened (where

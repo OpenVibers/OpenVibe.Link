@@ -1,6 +1,6 @@
-package node
+package agent
 
-// OpenVibe Connect shares, kept in the Node's own process so Link's window can start and end one while it runs. The
+// OpenVibe Connect shares, kept in the Agent's own process so Link's window can start and end one while it runs. The
 // saved list is the same one `openvibe-link share add|list|remove` uses.
 
 import (
@@ -16,13 +16,13 @@ import (
 )
 
 // shareOptions builds the Connect client: a Network-paired machine buys its own node token for a share it serves.
-func (n *Node) shareOptions() connect.Options {
+func (n *Agent) shareOptions() connect.Options {
 	o := connect.Options{Log: n.log, Version: n.opt.Version}
 	if n.opt.Creds != nil && n.opt.Creds.NetworkPaired() {
 		ts := link.NewTokenSourceFor(n.opt.Creds, nil, "openvibe-link/"+n.opt.Version, link.ConnectAudience)
-		o.NodeToken = func(ctx context.Context) (string, error) {
+		o.LinkToken = func(ctx context.Context) (string, error) {
 			tok, err := ts.Token(ctx)
-			if errors.Is(err, link.ErrNodeRevoked) {
+			if errors.Is(err, link.ErrLinkRevoked) {
 				return "", fmt.Errorf("%w: %v", connect.ErrStopped, err)
 			}
 			if err != nil {
@@ -90,7 +90,7 @@ func (s *shareSet) add(port int) (panel.Share, error) {
 	if port < 1 || port > 65535 {
 		return panel.Share{}, errors.New("port is 1 to 65535")
 	}
-	if s.opts.NodeToken == nil {
+	if s.opts.LinkToken == nil {
 		return panel.Share{}, errors.New("this computer is not paired with OpenVibe: add it on openvibe.link/machines first")
 	}
 	s.mu.Lock()
@@ -99,15 +99,15 @@ func (s *shareSet) add(port int) (panel.Share, error) {
 	if running {
 		return panel.Share{}, fmt.Errorf("port %d is already shared", port)
 	}
-	tok, err := s.opts.NodeToken(s.ctx)
+	tok, err := s.opts.LinkToken(s.ctx)
 	if err != nil {
 		return panel.Share{}, err
 	}
-	mine, err := connect.NodeShares(s.ctx, nil, connect.DefaultServer, tok, "openvibe-link/"+s.opts.Version)
+	mine, err := connect.LinkShares(s.ctx, nil, connect.DefaultServer, tok, "openvibe-link/"+s.opts.Version)
 	if err != nil {
 		return panel.Share{}, err
 	}
-	var found *connect.NodeShare
+	var found *connect.LinkShare
 	for i := range mine {
 		if mine[i].LocalPort != port {
 			continue
@@ -148,9 +148,9 @@ func (s *shareSet) remove(port int) error {
 }
 
 // shareAdd is the window's POST /panel/api/shares.
-func (n *Node) shareAdd(port int) (panel.Share, error) {
+func (n *Agent) shareAdd(port int) (panel.Share, error) {
 	if n.shares == nil {
-		return panel.Share{}, errors.New("this Node is not keeping shares up")
+		return panel.Share{}, errors.New("this Agent is not keeping shares up")
 	}
 	sh, err := n.shares.add(port)
 	if err != nil {
@@ -161,9 +161,9 @@ func (n *Node) shareAdd(port int) (panel.Share, error) {
 }
 
 // shareRemove is the window's DELETE /panel/api/shares/:port.
-func (n *Node) shareRemove(port int) error {
+func (n *Agent) shareRemove(port int) error {
 	if n.shares == nil {
-		return errors.New("this Node is not keeping shares up")
+		return errors.New("this Agent is not keeping shares up")
 	}
 	if err := n.shares.remove(port); err != nil {
 		return err

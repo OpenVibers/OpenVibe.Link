@@ -20,7 +20,7 @@ const DefaultEndpoint = "https://openvibe.codes"
 const DefaultTokenEnv = "OPENVIBE_TOKEN"
 
 // MaxResponseBytes bounds the manifest a hostile or broken hub can make the
-// Node read: one skill is at most 128 KiB and a person syncs a handful.
+// Link read: one skill is at most 128 KiB and a person syncs a handful.
 const MaxResponseBytes = 4 << 20
 
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)

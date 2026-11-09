@@ -92,7 +92,7 @@ func Host(ctx context.Context, client Client, version string, stdout io.Writer) 
 	tunnelErr := make(chan error, 1)
 	go func() {
 		tunnelErr <- connect.Run(tunnelCtx, connect.Share{ID: share.ID, Port: proxyPort, Server: client.ConnectServer}, connect.Options{
-			Version: version, NodeToken: client.ConnectToken, OnReady: func(connect.Ready) {
+			Version: version, LinkToken: client.ConnectToken, OnReady: func(connect.Ready) {
 				select {
 				case connected <- struct{}{}:
 				default:

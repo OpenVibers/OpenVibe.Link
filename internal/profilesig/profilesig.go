@@ -199,11 +199,11 @@ type Result struct {
 	ID      string
 	Version string
 	KeyID   string
-	Plugin  string // mapping.plugin: the Node plugin the profile's robots run, installed by the owner
+	Plugin  string // mapping.plugin: the Link plugin the profile's robots run, installed by the owner
 }
 
 // Check fetches the community profile id and Bot's signing key from server (Bot's origin) and verifies the profile.
-// With want (a profile Bot sent this Node, at pairing), it must also be that same profile. pinKeyID, when set, is the
+// With want (a profile Bot sent this Link, at pairing), it must also be that same profile. pinKeyID, when set, is the
 // only key accepted.
 func Check(ctx context.Context, client *http.Client, server, id string, want json.RawMessage, pinKeyID string) (Result, error) {
 	res := Result{ID: id}
@@ -256,7 +256,7 @@ func Check(ctx context.Context, client *http.Client, server, id string, want jso
 		a, errA := Canonical(want)
 		b, errB := Canonical(doc.Profile)
 		if errA != nil || errB != nil || !bytes.Equal(a, b) {
-			return res, errors.New("the profile Bot sent this Node is not the signed one in its catalogue (another version, or changed)")
+			return res, errors.New("the profile Bot sent this Link is not the signed one in its catalogue (another version, or changed)")
 		}
 	}
 	return res, nil

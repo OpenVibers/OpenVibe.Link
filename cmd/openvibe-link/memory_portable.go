@@ -150,7 +150,7 @@ func cmdMemoryImport(args []string, stdin io.Reader, stdout, stderr io.Writer) i
 		return 1
 	}
 	if portable.Format != "openvibe.memory-export@1" || portable.Version != 1 {
-		fmt.Fprintf(stderr, "error: the file is %s version %d; this Node reads openvibe.memory-export@1 version 1\n", portable.Format, portable.Version)
+		fmt.Fprintf(stderr, "error: the file is %s version %d; this Link reads openvibe.memory-export@1 version 1\n", portable.Format, portable.Version)
 		return 1
 	}
 	fmt.Fprintf(stdout, "Portable memory file: %d notes, exported %s.\n", len(portable.Items), portable.ExportedAt)

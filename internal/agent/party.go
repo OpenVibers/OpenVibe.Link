@@ -1,4 +1,4 @@
-package node
+package agent
 
 import (
 	"context"
@@ -16,7 +16,7 @@ var validPartyID = regexp.MustCompile(`^party-[a-f0-9]{8}$`)
 
 // startParty runs the same host path as the CLI, tied to the Link service's
 // lifetime. The window lists it and can cancel it without stopping other work.
-func (n *Node) startParty(id string) error {
+func (n *Agent) startParty(id string) error {
 	if !validPartyID.MatchString(id) {
 		return errors.New("invalid party id")
 	}
@@ -69,7 +69,7 @@ func (n *Node) startParty(id string) error {
 	return nil
 }
 
-func (n *Node) stopParty(id string) error {
+func (n *Agent) stopParty(id string) error {
 	n.mu.Lock()
 	if n.partyCancel == nil || n.partyID != id {
 		n.mu.Unlock()

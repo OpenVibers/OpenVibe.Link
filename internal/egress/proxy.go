@@ -67,7 +67,7 @@ func (c *wsConn) SetDeadline(t time.Time) error {
 
 type Endpoint struct {
 	Client *Client
-	Node   string
+	Link   string
 	Budget *Budget
 	Dial   DialFunc
 	Pause  func() bool
@@ -79,7 +79,7 @@ func (e *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session, credential := r.Header.Get("X-OV-Session"), r.Header.Get("X-OV-Egress")
-	grant, err := e.Client.Open(r.Context(), session, credential, e.Node)
+	grant, err := e.Client.Open(r.Context(), session, credential, e.Link)
 	if err != nil || e.Pause() || e.Budget.Reserve(0, grant.Cap) != nil {
 		http.Error(w, "refused", 403)
 		return
@@ -104,7 +104,7 @@ func (e *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				g, err := e.Client.Open(ctx, session, credential, e.Node)
+				g, err := e.Client.Open(ctx, session, credential, e.Link)
 				currentCap.Store(g.Cap)
 				if err != nil || e.Pause() || e.Budget.Reserve(0, g.Cap) != nil {
 					cancel()

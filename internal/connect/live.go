@@ -18,7 +18,7 @@ type Status struct {
 	LastError string `json:"last_error,omitempty"`
 }
 
-// live is the state of the shares this process keeps up. The Node service runs every saved share in this process
+// live is the state of the shares this process keeps up. The Link service runs every saved share in this process
 // (RunAll), and its local status socket answers from here; a foreground `openvibe-link share` has its own process and
 // is not listed by the service's status.
 var live = struct {

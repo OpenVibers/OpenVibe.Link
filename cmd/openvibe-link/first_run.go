@@ -25,7 +25,7 @@ import (
 
 // The guided first run is what a bare `openvibe-link` does: pair (when needed), check the way to OpenVibe, run one
 // harmless first job (this machine's OS, CPUs, memory and free disk) and report one event per step to Bot over the
-// link the Node already uses. `openvibe-link first-run` is the same command, for scripts that want to say it.
+// link the Link already uses. `openvibe-link first-run` is the same command, for scripts that want to say it.
 const firstRunDocs = "https://github.com/OpenVibers/OpenVibe.Link/blob/main/docs/install.md"
 
 // guideArgs are the flags a bare `openvibe-link` (or `openvibe-link first-run`) takes. They mirror the pair flags so
@@ -62,12 +62,12 @@ func cmdFirstRun(g *globals, a guideArgs, positional []string, stdin io.Reader, 
 		a.code = positional[0]
 	}
 	if err := g.paths.Ensure(); err != nil {
-		fmt.Fprintln(stdout, "The Node keeps its files where this account cannot write them. Run this with sudo:")
+		fmt.Fprintln(stdout, "The Link keeps its files where this account cannot write them. Run this with sudo:")
 		fmt.Fprintln(stdout, "  sudo openvibe-link")
 		return fmt.Errorf("cannot use %s: %w", g.paths.ConfigDir, err)
 	}
 	if err := writable(g.paths.StateDir); err != nil {
-		fmt.Fprintln(stdout, "The Node's files belong to the service account. Run the first run with sudo:")
+		fmt.Fprintln(stdout, "The Link's files belong to the service account. Run the first run with sudo:")
 		fmt.Fprintln(stdout, "  sudo openvibe-link")
 		return fmt.Errorf("cannot write to %s: %w (run with sudo)", g.paths.StateDir, err)
 	}
@@ -175,7 +175,7 @@ func cmdFirstRun(g *globals, a guideArgs, positional []string, stdin io.Reader, 
 		}
 	} else {
 		fmt.Fprintf(stdout, "Self-check: FAILED: %s.\n", reason)
-		fmt.Fprintln(stdout, "The Node keeps trying in the background; check this machine's network and firewall.")
+		fmt.Fprintln(stdout, "The Link keeps trying in the background; check this machine's network and firewall.")
 	}
 
 	// (c) The first job: a harmless local report of this machine, sent as one event (never a path, user or address).
@@ -233,7 +233,7 @@ func pairFromGuide(g *globals, a pairArgs, stdout io.Writer) (*credentials.Crede
 		if network == "" {
 			return nil, errors.New("--pairing needs --network, the OpenVibe.Network URL from the installer command")
 		}
-		if creds, err = link.PairNetwork(ctx, nil, network, protocol.NodePairingRequest{Code: code, Pairing: a.pairing, Name: deviceName(a.name)}, ua); err != nil {
+		if creds, err = link.PairNetwork(ctx, nil, network, protocol.LinkPairingRequest{Code: code, Pairing: a.pairing, Name: deviceName(a.name)}, ua); err != nil {
 			return nil, err
 		}
 		creds.Server = strings.TrimSuffix(cfg.Server, "/")
@@ -241,10 +241,10 @@ func pairFromGuide(g *globals, a pairArgs, stdout io.Writer) (*credentials.Crede
 			return nil, err
 		}
 		if bound, berr := link.Bind(ctx, nil, creds, link.NewTokenSource(creds, nil, ua), ua); berr != nil {
-			if errors.Is(berr, link.ErrNodeRevoked) {
+			if errors.Is(berr, link.ErrLinkRevoked) {
 				return nil, berr
 			}
-			fmt.Fprintf(stdout, "Paired on %s; the device binds when the Node starts.\n", network)
+			fmt.Fprintf(stdout, "Paired on %s; the device binds when the Link starts.\n", network)
 		} else {
 			if err := saveCredentials(g, bound); err != nil {
 				return nil, err
@@ -367,7 +367,7 @@ func parsePairingInput(line string) (pairArgs, error) {
 	return a, nil
 }
 
-// sendFirstRun sends the events through the running Node when there is one (the installer starts it), and otherwise
+// sendFirstRun sends the events through the running Link when there is one (the installer starts it), and otherwise
 // opens the device link for the few frames itself, so a manual install reports the same way.
 func sendFirstRun(g *globals, creds *credentials.Credentials, events []protocol.Event) error {
 	data, err := jsonTelemetry(events)

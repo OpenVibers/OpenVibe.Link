@@ -1,4 +1,4 @@
-// Package conformance runs the shared redaction corpus (Memory M2a) against the Node's Go scrubber. It lives in its
+// Package conformance runs the shared redaction corpus (Memory M2a) against the Link's Go scrubber. It lives in its
 // own package because it reads the network to compare the copy with the SDK tag it names; internal/memory itself is
 // deliberately local-only (memory_test.go fails on any net import).
 package conformance

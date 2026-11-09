@@ -53,7 +53,7 @@ func TestLiveSharesHidesTheKey(t *testing.T) {
 }
 
 // The service's shares are listed while it runs and stop when its context ends: `openvibe-link status` is the service
-// process, and ending the Node ends every share it keeps up.
+// process, and ending the Link ends every share it keeps up.
 func TestRunAllListsAndStopsWithTheNode(t *testing.T) {
 	f := newFakeServer(t, 0)
 	dir := t.TempDir()
@@ -87,9 +87,9 @@ func TestRunAllListsAndStopsWithTheNode(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(3 * time.Second):
-		t.Fatal("RunAll did not return when the Node stopped")
+		t.Fatal("RunAll did not return when the Link stopped")
 	}
 	if got := LiveShares(); len(got) != 0 {
-		t.Fatalf("not listed after the Node stops: %+v", got)
+		t.Fatalf("not listed after the Link stops: %+v", got)
 	}
 }

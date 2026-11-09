@@ -1,6 +1,6 @@
 //go:build !windows
 
-package node
+package agent
 
 import (
 	"bytes"
@@ -19,7 +19,7 @@ import (
 	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
-// The machine roles of the network's hub (plan L34): the Node reads them in the config frame at its check-in, keeps
+// The machine roles of the network's hub (plan L34): the Agent reads them in the config frame at its check-in, keeps
 // them, and applies the ones this machine has. A role it does not know is ignored, never fatal, and the local
 // configuration always wins (ADR-045).
 func TestRolesAtCheckIn(t *testing.T) {
@@ -101,14 +101,14 @@ func TestRoleFeatures(t *testing.T) {
 		{Name: "computer", Config: map[string]any{"desk": map[string]any{"max_desks": 2}}},
 		{Name: "ai"},
 	}
-	n := &Node{opt: Options{Config: cfg}}
+	n := &Agent{opt: Options{Config: cfg}}
 	if !n.hasDeskHost() {
 		t.Error("the computer plugin with a desk is a desk host")
 	}
 	if !n.hasAIHost() {
 		t.Error("the ai plugin serves the machine's own models")
 	}
-	plain := &Node{opt: Options{Config: config.Default()}}
+	plain := &Agent{opt: Options{Config: config.Default()}}
 	if plain.hasDeskHost() || plain.hasAIHost() {
 		t.Error("a machine with neither plugin has neither feature")
 	}

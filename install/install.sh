@@ -41,7 +41,7 @@
 #                    computer (Claude Code, Codex, OpenCode, Command Code) as the worker's plan logins, so a Codes job
 #                    uses the plan you signed in for. A tool that is not installed or not signed in is skipped with a
 #                    line saying how to sign it in. The installer never reads, copies or prints a login's content, and
-#                    sets the Node service's HOME to your home (the logins must sit under it). Linux only.
+#                    sets the Link service's HOME to your home (the logins must sit under it). Linux only.
 #                    docs/worker.md has the details.
 #   --desk-host      this machine hosts desks for its owner's agents (docs/computer.md "Desk hosts"; the Desks plan's
 #                    step D5): an old laptop, a mini PC or a spare workstation, no screen or login needed. The
@@ -214,7 +214,7 @@ pair_with() {
 
 # plan_logins_home: set PLAN_HOME to the home whose coding-tool login files --plan-logins names. That is the person's
 # own home, never root's: run the installer as yourself (it asks for sudo itself), or with sudo from that account.
-# The login files must sit under the Node user's home; --plan-logins sets the service's HOME to this one.
+# The login files must sit under the Link user's home; --plan-logins sets the service's HOME to this one.
 plan_logins_home() {
 	if [ "$(id -u)" -eq 0 ]; then
 		_user="${SUDO_USER:-}"
@@ -272,7 +272,7 @@ plan_logins_steps() {
 	_home="$1" _paths="$2"
 	say "plan logins (dry run): what --plan-logins will do"
 	say "  1. pair this computer for its owner's OpenVibe.Codes jobs (the code from openvibe.codes → Machines)"
-	say "  2. set the openvibe-link service's HOME to $_home (the login files must sit under the Node user's home)"
+	say "  2. set the openvibe-link service's HOME to $_home (the login files must sit under the Link user's home)"
 	say "  3. name the coding tools' own login files for the job runner (their content is never read, copied or printed):"
 	plan_logins_scan "$_home" "$_paths"
 	say "  4. write the names into config.json's worker.plan_logins and restart openvibe-link"
@@ -304,12 +304,12 @@ os.replace(path + '.tmp', path)
 PY
 }
 
-# plan_logins_service_home <home>: make the Node service start with the owner's HOME. The worker runs as root, and the
-# plan logins must sit under the Node user's home; without this the service's home is root's and the config is refused.
+# plan_logins_service_home <home>: make the Link service start with the owner's HOME. The worker runs as root, and the
+# plan logins must sit under the Link user's home; without this the service's home is root's and the config is refused.
 plan_logins_service_home() {
 	_home="$1"
 	if [ "$SERVICE" = 0 ]; then
-		say "plan logins: no service to set HOME on; run the Node with HOME=$_home so it finds the login files"
+		say "plan logins: no service to set HOME on; run the Link with HOME=$_home so it finds the login files"
 		return 0
 	fi
 	if ! command -v systemctl >/dev/null 2>&1; then
@@ -318,7 +318,7 @@ plan_logins_service_home() {
 	fi
 	$SUDO mkdir -p /etc/systemd/system/openvibe-link.service.d
 	$SUDO sh -c "cat > /etc/systemd/system/openvibe-link.service.d/home.conf" <<EOF
-# Plan logins are files under the Node user's home (install.sh --plan-logins).
+# Plan logins are files under the Link user's home (install.sh --plan-logins).
 [Service]
 Environment="HOME=$_home"
 EOF
@@ -888,7 +888,7 @@ say "installed $BIN_DIR/openvibe-link ($("$BIN_DIR/openvibe-link" version))"
 
 # ---- service account (Linux): hardware groups, no login ----
 # A worker (--worker) runs the service as root: the job sandbox's run_as and its public egress (a veth, NAT and the
-# Node's nftables table) need it, and each job still runs as the unprivileged openvibe-job user.
+# Link's nftables table) need it, and each job still runs as the unprivileged openvibe-job user.
 SVC_USER=""
 if [ "$WORKER" = 1 ] && [ "$OS" != linux ]; then die "--worker is for Linux"; fi
 COMPUTER_HOME=""
@@ -919,10 +919,10 @@ elif [ "$DESK_HOST" = 1 ]; then
 	$SUDO chmod 700 "$COMPUTER_HOME"
 elif [ -n "$COMPUTER" ]; then
 	case "$COMPUTER" in observe|ask|trusted|full) ;; *) die "--computer is observe, ask, trusted or full" ;; esac
-	[ "$OS" = linux ] || die "--computer is for Linux in this installer (docs/computer.md: run the Node in your own session elsewhere)"
+	[ "$OS" = linux ] || die "--computer is for Linux in this installer (docs/computer.md: run the Link in your own session elsewhere)"
 	[ "$WORKER" = 0 ] || die "--computer and --worker cannot share a machine yet (the worker's service runs as root)"
 	SVC_USER="${SUDO_USER:-$(id -un)}"
-	[ "$SVC_USER" != root ] || die "--computer runs the Node as your own account: run the installer from it (it uses sudo itself), not as root"
+	[ "$SVC_USER" != root ] || die "--computer runs the Link as your own account: run the installer from it (it uses sudo itself), not as root"
 	COMPUTER_HOME=$(getent passwd "$SVC_USER" | cut -d: -f6)
 	if [ -z "$COMPUTER_HOME" ] || [ ! -d "$COMPUTER_HOME" ]; then die "no home folder for $SVC_USER"; fi
 fi
@@ -982,13 +982,13 @@ ros2|ros2-holonomic)
 	say "     rosbridge_url, cmd_vel, max_linear and image_topic in $CONF/config.json if yours differ"
 	;;
 looi)
-	# LOOI's camera is its phone, which streams on its own (docs/hardware-looi.md): the Node publishes no video.
+	# LOOI's camera is its phone, which streams on its own (docs/hardware-looi.md): the Link publishes no video.
 	PLUGINS='[{"name": "looi"}]'
 	KIND=bridge
 	VIDEO='"source": "off"'
 	if ! "$STATE/venv/bin/python" -c 'import openvibe_looi' >/dev/null 2>&1; then
 		say "the Generic LOOI driver is not in $STATE/venv yet: install it with \"$SUDO $PIP install <the driver>\", then"
-		say "restart the Node's service. Until then the panel shows the plugin's fault and LOOI never moves."
+		say "restart the Link's service. Until then the panel shows the plugin's fault and LOOI never moves."
 	fi
 	;;
 esac
@@ -1001,7 +1001,7 @@ if [ -n "$COMPUTER" ]; then
 fi
 if [ "$DESK_HOST" = shared ]; then
 	# What a sandboxed browser desk needs: a browser installed under /usr or /opt (never a snap, which cannot run in
-	# the sandbox), fonts, and the sandbox's network tools (its egress is a veth the Node NATs).
+	# the sandbox), fonts, and the sandbox's network tools (its egress is a veth the Link NATs).
 	if command -v apt-get >/dev/null 2>&1; then
 		say "installing what shared desks need (a browser, fonts, nftables, iproute2)"
 		$SUDO apt-get install -y nftables iproute2 util-linux fonts-dejavu-core fonts-noto-color-emoji fonts-liberation >/dev/null 2>&1 ||
@@ -1059,7 +1059,7 @@ if [ "$DESK_HOST" = shared ]; then
 		$SUDO useradd --system --no-create-home --shell /usr/sbin/nologin --user-group openvibe-job 2>/dev/null ||
 			$SUDO adduser --system --no-create-home --shell /usr/sbin/nologin --group openvibe-job
 	fi
-	# The worker is on (no functions: no jobs are offered) so the Node sets up its cgroup before any desk starts, and
+	# The worker is on (no functions: no jobs are offered) so the Link sets up its cgroup before any desk starts, and
 	# its sandbox, run_as and egress are the desks'.
 	write_worker_config "$CONF/config.json" "$(id -u openvibe-job)" "$(id -g openvibe-job)"
 	write_computer_config "$CONF/config.json" "$COMPUTER" "$COMPUTER_HOME" shared
@@ -1113,7 +1113,7 @@ if [ "$AI" = 1 ]; then
 		say "your own models: found $found"
 	else
 		say "your own models: no model server answers yet. Install one (Ollama: https://ollama.com, then: ollama pull llama3.1:8b),"
-		say "  or start LM Studio's or llama.cpp's server; the Node finds it on its usual port (--ai-endpoint URL for another)."
+		say "  or start LM Studio's or llama.cpp's server; the Link finds it on its usual port (--ai-endpoint URL for another)."
 	fi
 	say "on https://openvibe.link/machines turn on \"Let my AI use this computer's models\" for this machine: OpenVibe then"
 	say "  asks them for your own work only (your Vibe, your AI members), and nobody else's."

@@ -53,7 +53,7 @@ type Credentials struct {
 	Credential Secret // a Bot device credential (legacy pairing); zero for a Network-paired machine
 	// Network pairing: the node principal (lnk_…), its credential, the Network origin and what it was paired for.
 	Principal      string
-	NodeCredential Secret
+	LinkCredential Secret
 	Network        string
 	PairedFor      *protocol.PairedFor
 	PublishKey     Secret // WHIP publish key; secret like the credential
@@ -69,7 +69,7 @@ type Credentials struct {
 type file struct {
 	Version        int                 `json:"version"`
 	Principal      string              `json:"principal,omitempty"`
-	NodeCredential string              `json:"node_credential,omitempty"`
+	LinkCredential string              `json:"link_credential,omitempty"`
 	Network        string              `json:"network,omitempty"`
 	PairedFor      *protocol.PairedFor `json:"paired_for,omitempty"`
 
@@ -114,11 +114,11 @@ var ErrNotPaired = errors.New("this device is not paired; run `openvibe-link pai
 
 // Save writes the credentials atomically with mode 0600.
 func Save(path string, c *Credentials) error {
-	if !valid(c.Principal, c.NodeCredential.Reveal(), c.Network, c.DeviceID, c.Credential.Reveal()) {
+	if !valid(c.Principal, c.LinkCredential.Reveal(), c.Network, c.DeviceID, c.Credential.Reveal()) {
 		return errors.New("credentials: refusing to save an empty credential")
 	}
 	b, err := json.MarshalIndent(file{
-		Version: 1, Principal: c.Principal, NodeCredential: c.NodeCredential.Reveal(), Network: c.Network, PairedFor: c.PairedFor,
+		Version: 1, Principal: c.Principal, LinkCredential: c.LinkCredential.Reveal(), Network: c.Network, PairedFor: c.PairedFor,
 		DeviceID: c.DeviceID, RobotID: c.RobotID, Credential: c.Credential.Reveal(), PublishKey: c.PublishKey.Reveal(),
 		Server: c.Server, DeviceURL: c.DeviceURL, WHIPURL: c.WHIPURL, ICEServers: c.ICEServers, Profile: c.Profile,
 		PairedAt: c.PairedAt,
@@ -182,11 +182,11 @@ func Load(path string, warn func(string)) (*Credentials, error) {
 		// Never wrap the decoder error: it can quote file contents.
 		return nil, fmt.Errorf("credentials: %s is not valid JSON", path)
 	}
-	if !valid(f.Principal, f.NodeCredential, f.Network, f.DeviceID, f.Credential) {
+	if !valid(f.Principal, f.LinkCredential, f.Network, f.DeviceID, f.Credential) {
 		return nil, fmt.Errorf("credentials: %s is incomplete; pair again", path)
 	}
 	return &Credentials{
-		Principal: f.Principal, NodeCredential: NewSecret(f.NodeCredential), Network: f.Network, PairedFor: f.PairedFor,
+		Principal: f.Principal, LinkCredential: NewSecret(f.LinkCredential), Network: f.Network, PairedFor: f.PairedFor,
 		DeviceID: f.DeviceID, RobotID: f.RobotID, Credential: NewSecret(f.Credential), PublishKey: NewSecret(f.PublishKey),
 		Server: f.Server, DeviceURL: f.DeviceURL, WHIPURL: f.WHIPURL, ICEServers: f.ICEServers, Profile: f.Profile,
 		PairedAt: f.PairedAt,

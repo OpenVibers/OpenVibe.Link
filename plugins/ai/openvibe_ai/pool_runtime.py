@@ -6,7 +6,7 @@ the head says RUN and keeps calling, runs `rpc-server` inside its own network na
 status each half second, pauses the whole pool when any member is busy (idle-only), stopped (the kill switch) or
 unreachable, measures every link before it starts, and runs `llama-server --rpc` in its own namespace with the members
 reached only through the authenticated link. Leaving (a removal, a sign-out, another owner, a revoked pool) closes the
-link and deletes the key; a plain close (the Node stopping) keeps the key for the next start.
+link and deletes the key; a plain close (the Link stopping) keeps the key for the next start.
 """
 import http.client
 import ipaddress
@@ -28,7 +28,7 @@ from .pool import Identity, Tunnel, fit_table, probe, relay, validate_pool
 BWRAP = 'bwrap'
 UNSHARE = 'unshare'
 ISOLATION_METHODS = (BWRAP, UNSHARE)
-# One plain sentence the Node app can show. The engine never gets the host network instead.
+# One plain sentence the Link app can show. The engine never gets the host network instead.
 ISOLATION_HELP = ('Pooling needs an isolated network for the engine. '
                   'Install bubblewrap (sudo apt install bubblewrap) and try again.')
 
@@ -347,7 +347,7 @@ class PoolRuntime:
             (self.directory / path).unlink(missing_ok=True)
 
     def close(self):
-        """Stop the engines and close the link, keeping the key: the Node is stopping, not leaving the pool."""
+        """Stop the engines and close the link, keeping the key: the Link is stopping, not leaving the pool."""
         with self.lock:
             self.stopped.set()
             self.paused = True

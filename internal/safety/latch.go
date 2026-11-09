@@ -36,7 +36,7 @@ type LatchState struct {
 // so a remote clear can still release robot plugins.
 func (s LatchState) Stopped() bool { return s.Remote || s.Local }
 
-// Latch is the persisted latch. It survives restarts: a Node that was e-stopped comes back e-stopped.
+// Latch is the persisted latch. It survives restarts: a Link that was e-stopped comes back e-stopped.
 type Latch struct {
 	mu       sync.Mutex
 	path     string
@@ -191,7 +191,7 @@ func (l *Latch) Resume() (LatchState, error) {
 	return l.update(func(s *LatchState) { *s = LatchState{} })
 }
 
-// Reload adopts the file's state if another process (the CLI, when the Node's socket was unreachable) changed it.
+// Reload adopts the file's state if another process (the CLI, when the Link's socket was unreachable) changed it.
 // It reports whether anything changed.
 func (l *Latch) Reload() (bool, error) {
 	// Read under the lock: an update between our read and our adoption would otherwise be overwritten by stale bytes.
@@ -218,7 +218,7 @@ func (l *Latch) Reload() (bool, error) {
 }
 
 // WriteLocalFile latches the local stop (or clears everything, for resume) directly in the file. The CLI uses it
-// when no Node is running or its socket does not answer; a running Node picks the change up within its poll interval.
+// when no Link is running or its socket does not answer; a running Link picks the change up within its poll interval.
 func WriteLocalFile(path string, stop bool) error {
 	l, _ := OpenLatch(path)
 	var err error

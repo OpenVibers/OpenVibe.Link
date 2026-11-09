@@ -1,6 +1,6 @@
 //go:build !windows
 
-package node
+package agent
 
 import (
 	"context"
@@ -19,7 +19,7 @@ import (
 	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
-func panelTestNode(t *testing.T, paths config.Paths) *Node {
+func panelTestNode(t *testing.T, paths config.Paths) *Agent {
 	t.Helper()
 	n, err := New(Options{Config: &config.Config{}, Paths: paths, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
 		CodesAgents: func() []panel.CodesAgent { return nil }})
@@ -170,7 +170,7 @@ func TestFirstRunIsShownThenCleared(t *testing.T) {
 	paths := config.HomePaths(dir)
 	n := panelTestNode(t, paths)
 	if !n.panelState().FirstRun {
-		t.Fatal("a new Node does not ask what the computer is for")
+		t.Fatal("a new Agent does not ask what the computer is for")
 	}
 	if err := n.applyFirstRun([]string{"vibe"}, false); err != nil {
 		t.Fatal(err)

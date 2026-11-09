@@ -1,16 +1,16 @@
 package connect
 
 // A share served by this computer itself, as OpenVibe Link (CON-4, ADR-057 decision 4). The share's owner picks the
-// computer on the share's page; there is no connect key. Before every connection the Node buys its node token (subject
+// computer on the share's page; there is no connect key. Before every connection the Link buys its node token (subject
 // link:lnk_…, audience openvibe.link) and asks Connect for a tunnel token for that one share:
 //
 //	POST https://connect.openvibe.link/api/v1/link/shares/<shr_…>/tunnel-token   Authorization: Bearer <node token>
 //	→ {"tunnel_token":"ovt_…","expires_in":60,"share":{"id","host","url","local_port","mode"}}
 //
-// then says hello with both, {"t":"hello","v":1,"share":"shr_…","node_token":…,"tunnel":"ovt_…",…}, and sends
-// {"t":"reauth","node_token":…} every ReauthEvery so the tunnel outlives its 5-minute token. Neither token is logged.
+// then says hello with both, {"t":"hello","v":1,"share":"shr_…","link_token":…,"tunnel":"ovt_…",…}, and sends
+// {"t":"reauth","link_token":…} every ReauthEvery so the tunnel outlives its 5-minute token. Neither token is logged.
 //
-// The port stays this computer's: the Node serves the port it was given (or the one the share had when it was added)
+// The port stays this computer's: the Link serves the port it was given (or the one the share had when it was added)
 // even if the share's page says another later, so Connect can never point it at a different local service.
 
 import (
@@ -31,11 +31,11 @@ import (
 var ShareIDRe = regexp.MustCompile(`^shr_[0-9A-HJKMNP-TV-Z]{26}$`)
 
 // DefaultReauthEvery is how often a computer's tunnel sends a fresh node token (they last 300 s; Connect allows 30 s
-// past the expiry, and the Node's token cache replaces a token 30 s before it).
+// past the expiry, and the Link's token cache replaces a token 30 s before it).
 const DefaultReauthEvery = 45 * time.Second
 
-// NodeShare is one share this computer serves, as Connect lists it.
-type NodeShare struct {
+// LinkShare is one share this computer serves, as Connect lists it.
+type LinkShare struct {
 	ID        string `json:"id"`
 	Host      string `json:"host"`
 	URL       string `json:"url"`
@@ -74,7 +74,7 @@ func apiURL(server, path string) (string, error) {
 	return u.String(), nil
 }
 
-func nodeCall(ctx context.Context, client *http.Client, method, server, path, nodeToken, userAgent string, out any) (int, error) {
+func linkCall(ctx context.Context, client *http.Client, method, server, path, linkToken, userAgent string, out any) (int, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second}
 	}
@@ -86,7 +86,7 @@ func nodeCall(ctx context.Context, client *http.Client, method, server, path, no
 	if err != nil {
 		return 0, err
 	}
-	req.Header.Set("Authorization", "Bearer "+nodeToken)
+	req.Header.Set("Authorization", "Bearer "+linkToken)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", userAgent)
 	resp, err := client.Do(req)
@@ -110,12 +110,12 @@ func nodeCall(ctx context.Context, client *http.Client, method, server, path, no
 	return resp.StatusCode, json.Unmarshal(raw, out)
 }
 
-// NodeShares lists the open shares bound to this computer (GET /api/v1/link/shares).
-func NodeShares(ctx context.Context, client *http.Client, server, nodeToken, userAgent string) ([]NodeShare, error) {
+// LinkShares lists the open shares bound to this computer (GET /api/v1/link/shares).
+func LinkShares(ctx context.Context, client *http.Client, server, linkToken, userAgent string) ([]LinkShare, error) {
 	var out struct {
-		Shares []NodeShare `json:"shares"`
+		Shares []LinkShare `json:"shares"`
 	}
-	if _, err := nodeCall(ctx, client, http.MethodGet, server, "/api/v1/link/shares", nodeToken, userAgent, &out); err != nil {
+	if _, err := linkCall(ctx, client, http.MethodGet, server, "/api/v1/link/shares", linkToken, userAgent, &out); err != nil {
 		return nil, err
 	}
 	return out.Shares, nil
@@ -123,20 +123,20 @@ func NodeShares(ctx context.Context, client *http.Client, server, nodeToken, use
 
 // tunnelToken asks for one hello's tunnel token. A share this computer does not serve (404) or a closed one (410)
 // stops it; anything else is tried again.
-func tunnelToken(ctx context.Context, o Options, server, shareID, nodeToken string) (string, NodeShare, error) {
+func tunnelToken(ctx context.Context, o Options, server, shareID, linkToken string) (string, LinkShare, error) {
 	var out struct {
 		Token string    `json:"tunnel_token"`
-		Share NodeShare `json:"share"`
+		Share LinkShare `json:"share"`
 	}
-	status, err := nodeCall(ctx, o.HTTPClient, http.MethodPost, server, "/api/v1/link/shares/"+url.PathEscape(shareID)+"/tunnel-token", nodeToken, "openvibe-link/"+o.Version, &out)
+	status, err := linkCall(ctx, o.HTTPClient, http.MethodPost, server, "/api/v1/link/shares/"+url.PathEscape(shareID)+"/tunnel-token", linkToken, "openvibe-link/"+o.Version, &out)
 	if err != nil {
 		if status == http.StatusNotFound || status == http.StatusGone {
-			return "", NodeShare{}, fmt.Errorf("%w: %v", ErrStopped, err)
+			return "", LinkShare{}, fmt.Errorf("%w: %v", ErrStopped, err)
 		}
-		return "", NodeShare{}, err
+		return "", LinkShare{}, err
 	}
 	if !strings.HasPrefix(out.Token, "ovt_") {
-		return "", NodeShare{}, errors.New("connect: no tunnel token in the answer")
+		return "", LinkShare{}, errors.New("connect: no tunnel token in the answer")
 	}
 	return out.Token, out.Share, nil
 }

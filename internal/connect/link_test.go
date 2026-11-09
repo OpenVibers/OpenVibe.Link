@@ -80,7 +80,7 @@ func newNodeServer(t *testing.T) *nodeServer {
 			var m map[string]any
 			_ = json.Unmarshal(data, &m)
 			if m["t"] == "reauth" {
-				tok, _ := m["node_token"].(string)
+				tok, _ := m["link_token"].(string)
 				n.reauths <- tok
 				_ = ws.WriteMessage(websocket.TextMessage, []byte(`{"t":"reauthed","until":"2026-11-03T00:00:00Z"}`))
 			}
@@ -107,7 +107,7 @@ func TestAShareServedByThisComputer(t *testing.T) {
 	ready := make(chan Ready, 2)
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, Share{ID: testShareID, Port: 9100, Server: n.url()}, Options{Version: "test", NodeToken: tokens, ReauthEvery: 40 * time.Millisecond, OnReady: func(r Ready) { ready <- r }, MinWait: 20 * time.Millisecond})
+		done <- Run(ctx, Share{ID: testShareID, Port: 9100, Server: n.url()}, Options{Version: "test", LinkToken: tokens, ReauthEvery: 40 * time.Millisecond, OnReady: func(r Ready) { ready <- r }, MinWait: 20 * time.Millisecond})
 	}()
 	var hello map[string]any
 	select {
@@ -117,7 +117,7 @@ func TestAShareServedByThisComputer(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("no hello")
 	}
-	if hello["share"] != testShareID || hello["node_token"] != "node-token-1" || hello["tunnel"] != fmt.Sprintf("ovt_%043d", 1) || hello["port"].(float64) != 9100 {
+	if hello["share"] != testShareID || hello["link_token"] != "node-token-1" || hello["tunnel"] != fmt.Sprintf("ovt_%043d", 1) || hello["port"].(float64) != 9100 {
 		t.Fatalf("hello %v", hello)
 	}
 	if _, has := hello["key"]; has {
@@ -143,7 +143,7 @@ func TestAShareThisComputerDoesNotServeStops(t *testing.T) {
 	n := newNodeServer(t)
 	n.notMine = true
 	tokens, _ := countingTokens()
-	err := Run(context.Background(), Share{ID: testShareID, Port: 9100, Server: n.url()}, Options{Version: "test", NodeToken: tokens, MinWait: 10 * time.Millisecond})
+	err := Run(context.Background(), Share{ID: testShareID, Port: 9100, Server: n.url()}, Options{Version: "test", LinkToken: tokens, MinWait: 10 * time.Millisecond})
 	if !errors.Is(err, ErrStopped) {
 		t.Fatalf("want ErrStopped, got %v", err)
 	}
@@ -152,7 +152,7 @@ func TestAShareThisComputerDoesNotServeStops(t *testing.T) {
 func TestARemovedMachineStops(t *testing.T) {
 	n := newNodeServer(t)
 	revoked := func(context.Context) (string, error) { return "", fmt.Errorf("%w: refused", ErrStopped) }
-	err := Run(context.Background(), Share{ID: testShareID, Port: 9100, Server: n.url()}, Options{Version: "test", NodeToken: revoked, MinWait: 10 * time.Millisecond})
+	err := Run(context.Background(), Share{ID: testShareID, Port: 9100, Server: n.url()}, Options{Version: "test", LinkToken: revoked, MinWait: 10 * time.Millisecond})
 	if !errors.Is(err, ErrStopped) {
 		t.Fatalf("want ErrStopped, got %v", err)
 	}
@@ -165,14 +165,14 @@ func TestAShareByIDNeedsThePairing(t *testing.T) {
 	if err := Run(context.Background(), Share{ID: testShareID, Port: 9100}, Options{}); err == nil || !strings.Contains(err.Error(), "openvibe.link/machines") {
 		t.Fatalf("got %v", err)
 	}
-	if err := Run(context.Background(), Share{ID: "shr_nope", Port: 9100}, Options{NodeToken: func(context.Context) (string, error) { return "x", nil }}); err == nil {
+	if err := Run(context.Background(), Share{ID: "shr_nope", Port: 9100}, Options{LinkToken: func(context.Context) (string, error) { return "x", nil }}); err == nil {
 		t.Fatal("a bad id")
 	}
 }
 
-func TestNodeSharesAndTheAPIURL(t *testing.T) {
+func TestLinkSharesAndTheAPIURL(t *testing.T) {
 	n := newNodeServer(t)
-	got, err := NodeShares(context.Background(), nil, n.url(), "node-token-9", "test")
+	got, err := LinkShares(context.Background(), nil, n.url(), "node-token-9", "test")
 	if err != nil || len(got) != 1 || got[0].ID != testShareID || got[0].LocalPort != 8790 {
 		t.Fatalf("%v %v", got, err)
 	}

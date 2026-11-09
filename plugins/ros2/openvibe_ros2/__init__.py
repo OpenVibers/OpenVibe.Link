@@ -1,6 +1,6 @@
 """OpenVibe Link bridge plugin for ROS 2 robots.
 
-The Node runs on the robot's computer (or next to it) and this plugin turns Bot's commands into ROS 2 messages and the
+The Link runs on the robot's computer (or next to it) and this plugin turns Bot's commands into ROS 2 messages and the
 robot's topics into telemetry and camera frames:
 
 * ``drive`` → ``geometry_msgs/msg/Twist`` on ``cmd_vel`` (``throttle``/``steer``, or ``x``/``y``/``rotation`` on a
@@ -9,7 +9,7 @@ robot's topics into telemetry and camera frames:
 * ``say`` → ``std_msgs/msg/String`` on ``say_topic`` (when set).
 * ``sensor_msgs/msg/BatteryState`` → battery percent and volts; ``sensor_msgs/msg/Range`` or the front arc of a
   ``sensor_msgs/msg/LaserScan`` → ``distance_cm``; ``nav_msgs/msg/Odometry`` → ``odom`` {x, y, yaw, speed}.
-* ``sensor_msgs/msg/CompressedImage`` (JPEG) on ``image_topic`` → camera frames for the Node to publish.
+* ``sensor_msgs/msg/CompressedImage`` (JPEG) on ``image_topic`` → camera frames for the Link to publish.
 
 Two ways to reach ROS 2 (``transport``):
 

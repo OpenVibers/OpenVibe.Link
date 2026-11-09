@@ -101,16 +101,14 @@ jobs:
             dist/openvibe-link_*_darwin_amd64.tar.gz dist/openvibe-link_*_darwin_arm64.tar.gz; do
             test -s "$f" || { echo "missing $f"; exit 1; }
           done
-      - name: the packages carry the program and the alias, not just a file
+      - name: the packages carry the program, not just a file
         run: |
           for f in dist/*.deb; do
             dpkg-deb -c "$f" > /tmp/pkg.txt
             grep -q 'usr/local/bin/openvibe-link$' /tmp/pkg.txt
-            grep -q 'usr/local/bin/openvibe-link -> openvibe-link$' /tmp/pkg.txt
           done
           for f in dist/*.rpm; do
             rpm -qpl "$f" > /tmp/pkg.txt
-            grep -qx '/usr/local/bin/openvibe-link' /tmp/pkg.txt
             grep -qx '/usr/local/bin/openvibe-link' /tmp/pkg.txt
           done
           for f in dist/openvibe-link_*.tar.gz; do

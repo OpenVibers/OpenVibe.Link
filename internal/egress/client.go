@@ -38,7 +38,7 @@ type Plan struct {
 }
 type Grant struct {
 	Session string `json:"session_id"`
-	Node    string `json:"node_id"`
+	Link    string `json:"link_id"`
 	Expires int64  `json:"expires_at"`
 	Cap     int64  `json:"monthly_bytes"`
 	Enabled bool   `json:"egress_via_link"`
@@ -87,8 +87,8 @@ func (c *Client) Call(ctx context.Context, method, path string, body, out any, a
 }
 func (c *Client) Open(ctx context.Context, session, credential, node string) (Grant, error) {
 	var grant Grant
-	err := c.Call(ctx, "POST", "/api/v1/link-egress/open", map[string]string{"session_id": session, "credential": credential, "node_id": node}, &grant, false)
-	if err == nil && (grant.Session != session || grant.Node != node || !grant.Enabled || grant.Expires <= time.Now().UnixMilli()) {
+	err := c.Call(ctx, "POST", "/api/v1/link-egress/open", map[string]string{"session_id": session, "credential": credential, "link_id": node}, &grant, false)
+	if err == nil && (grant.Session != session || grant.Link != node || !grant.Enabled || grant.Expires <= time.Now().UnixMilli()) {
 		err = errors.New("browsing connection refused")
 	}
 	return grant, err

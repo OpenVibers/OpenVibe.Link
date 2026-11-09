@@ -1,7 +1,7 @@
-package node
+package agent
 
-// Link's own window (internal/panel): the Node serves the embedded UI on 127.0.0.1 with a per-run token, and answers
-// the small API it polls from what the Node already knows. Nothing here invents a value: a section the Node cannot
+// Link's own window (internal/panel): the Agent serves the embedded UI on 127.0.0.1 with a per-run token, and answers
+// the small API it polls from what the Agent already knows. Nothing here invents a value: a section the Agent cannot
 // fill truthfully is left out.
 
 import (
@@ -42,7 +42,7 @@ var panelCapabilityList = []struct {
 }
 
 // panelAskFirst are the switches the window confirms in plain words before turning on. They were gated until the
-// 11-05 review's fixes (Node #102-#104, merged 11-06); they are never turned on by the first-run answer, only by their
+// 11-05 review's fixes (Agent #102-#104, merged 11-06); they are never turned on by the first-run answer, only by their
 // own switch.
 var panelAskFirst = map[string]string{
 	"terminal": "Turn on the terminal? Your agents can ask to run commands on this computer. At level ask you approve each one; at trusted they run with your account's full reach.",
@@ -82,7 +82,7 @@ type panelSend struct {
 	complete func(string) error
 }
 
-func (n *Node) panelSendOptions(ctx context.Context) panelSend {
+func (n *Agent) panelSendOptions(ctx context.Context) panelSend {
 	if n.opt.Creds == nil || !n.opt.Creds.NetworkPaired() {
 		return panelSend{}
 	}
@@ -148,7 +148,7 @@ type panelSaved struct {
 }
 
 // loadPanel reads the switches turned off and the first-run answer. A file written before the question existed, on a
-// machine that is paired, is a Node that was set up before this change (paired, its capabilities already saved): it
+// machine that is paired, is a Agent that was set up before this change (paired, its capabilities already saved): it
 // is not asked. A machine that never answered and has no such file is asked once.
 func loadPanel(dir string, paired bool) (map[string]bool, *panelFirstRun) {
 	off := map[string]bool{}
@@ -188,8 +188,8 @@ func savePanel(dir string, off map[string]bool, first *panelFirstRun) error {
 	return os.Rename(tmp, filepath.Join(dir, panelFile))
 }
 
-// startPanel serves Link's window until ctx ends. A failure leaves the Node running without it.
-func (n *Node) startPanel(ctx context.Context) {
+// startPanel serves Link's window until ctx ends. A failure leaves the Agent running without it.
+func (n *Agent) startPanel(ctx context.Context) {
 	if !n.opt.NoShares {
 		go egress.Run(ctx, n.opt.Creds, n.opt.Paths.StateDir)
 	}
@@ -237,8 +237,8 @@ func (n *Node) startPanel(ctx context.Context) {
 	}()
 }
 
-// PanelURL is where the tray opens Link's window; "" when the Node did not start it.
-func (n *Node) PanelURL() string {
+// PanelURL is where the tray opens Link's window; "" when the Agent did not start it.
+func (n *Agent) PanelURL() string {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if n.panel == nil {
@@ -247,8 +247,8 @@ func (n *Node) PanelURL() string {
 	return n.panel.URL()
 }
 
-// panelState is GET /panel/api/state, from what the Node already knows.
-func (n *Node) panelState() panel.State {
+// panelState is GET /panel/api/state, from what the Agent already knows.
+func (n *Agent) panelState() panel.State {
 	st := n.Status()
 	host, _ := os.Hostname()
 	out := panel.State{
@@ -281,7 +281,7 @@ func machineID(st Status) string {
 }
 
 // panelRunning lists what the tray already shows as running or waiting: approvals, jobs, connected shares and desks.
-func (n *Node) panelRunning(st Status) []panel.Running {
+func (n *Agent) panelRunning(st Status) []panel.Running {
 	out := []panel.Running{}
 	for _, a := range n.Approvals() {
 		title := strings.TrimSpace(a.Summary)
@@ -322,7 +322,7 @@ func (n *Node) panelRunning(st Status) []panel.Running {
 }
 
 // panelShares lists the connected shares with the address Connect gave them.
-func (n *Node) panelShares(st Status) []panel.Share {
+func (n *Agent) panelShares(st Status) []panel.Share {
 	out := []panel.Share{}
 	for _, sh := range st.Shares {
 		out = append(out, panel.Share{Port: sh.Port, URL: sh.URL})
@@ -332,7 +332,7 @@ func (n *Node) panelShares(st Status) []panel.Share {
 
 // panelCapabilities maps the daemon's permission switches to the window's list. A capability is on when a plugin
 // offers it, the computer is not at level observe, and the person has not turned it off here.
-func (n *Node) panelCapabilities(st Status) []panel.Capability {
+func (n *Agent) panelCapabilities(st Status) []panel.Capability {
 	offered := map[string]bool{}
 	for _, p := range st.Plugins {
 		for id := range p.Capabilities {
@@ -361,7 +361,7 @@ func (n *Node) panelCapabilities(st Status) []panel.Capability {
 }
 
 // setCapability turns one switch off (a local restriction) or back on. It persists the choice.
-func (n *Node) setCapability(id string, on bool) error {
+func (n *Agent) setCapability(id string, on bool) error {
 	known, computer := false, false
 	for _, c := range panelCapabilityList {
 		if c.ID == id {
@@ -401,10 +401,10 @@ func (n *Node) setCapability(id string, on bool) error {
 }
 
 // applyFirstRun records the answer to "What's this computer for?" and turns on what each use says: a browser for the
-// agents, or the AI plugin. Codes has no module switch on the Node yet and earn only records the wish (Exchange
+// agents, or the AI plugin. Codes has no module switch on the Agent yet and earn only records the wish (Exchange
 // confirms it); Terminal and Desktop are never turned on here, only by their own switch in the window. A skip only
-// stops the question. One node.first_run event carries the answer.
-func (n *Node) applyFirstRun(uses []string, skip bool) error {
+// stops the question. One link.first_run event carries the answer.
+func (n *Agent) applyFirstRun(uses []string, skip bool) error {
 	if skip {
 		uses = nil
 	} else {
@@ -421,7 +421,7 @@ func (n *Node) applyFirstRun(uses []string, skip bool) error {
 				n.log.Warn("first run: models stay off", "err", err)
 			}
 		case "codes":
-			// Recorded only: the Node has no Codes module to switch on, and Terminal stays as it is (its own switch).
+			// Recorded only: the Agent has no Codes module to switch on, and Terminal stays as it is (its own switch).
 		case "earn":
 			// Recorded only: Exchange confirms it, and nothing on this machine turns on here.
 		}
@@ -462,7 +462,7 @@ func (n *Node) applyFirstRun(uses []string, skip bool) error {
 }
 
 // capabilityOff reports whether a command kind is refused by a switch turned off here.
-func (n *Node) capabilityOff(kind string) bool {
+func (n *Agent) capabilityOff(kind string) bool {
 	id := capabilityForKind[kind]
 	if id == "" {
 		return false
@@ -473,7 +473,7 @@ func (n *Node) capabilityOff(kind string) bool {
 }
 
 // computerLevel is the computer plugin's level, "" without it.
-func (n *Node) computerLevel() string {
+func (n *Agent) computerLevel() string {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	tv := n.telemetry["computer"]
@@ -502,13 +502,13 @@ func sensorInt(v any) int {
 }
 
 // addActivity records one line for "What happened here"; the newest 30 are kept.
-func (n *Node) addActivity(text string) {
+func (n *Agent) addActivity(text string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.appendActivityLocked(text)
 }
 
-func (n *Node) appendActivityLocked(text string) {
+func (n *Agent) appendActivityLocked(text string) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return
@@ -520,7 +520,7 @@ func (n *Node) appendActivityLocked(text string) {
 }
 
 // panelPause is the local kill switch, the same action as the tray's Stop everything and Resume.
-func (n *Node) panelPause(paused bool) error {
+func (n *Agent) panelPause(paused bool) error {
 	if paused {
 		if err := n.stopEverything("Link panel"); err != nil {
 			return err
@@ -536,20 +536,20 @@ func (n *Node) panelPause(paused bool) error {
 }
 
 // stopEverything is the local kill switch: estop every plugin at once, then persist the latch.
-func (n *Node) stopEverything(reason string) error {
+func (n *Agent) stopEverything(reason string) error {
 	n.mgr.EstopAll(plugins.EstopLocal, reason)
 	_, err := n.latch.SetLocalWith(reason)
 	return err
 }
 
 // resumeEverything releases the local kill switch (and a server e-stop).
-func (n *Node) resumeEverything() error {
+func (n *Agent) resumeEverything() error {
 	_, err := n.latch.Resume()
 	return err
 }
 
 // panelStop stops one running thing by the id panelRunning gave it.
-func (n *Node) panelStop(id string) error {
+func (n *Agent) panelStop(id string) error {
 	switch {
 	case strings.HasPrefix(id, "approval:"):
 		return n.answerApproval(strings.TrimPrefix(id, "approval:"), false)
@@ -576,7 +576,7 @@ func (n *Node) panelStop(id string) error {
 }
 
 // answerApproval lets one waiting request run or refuses it; the tray, the CLI and the window all end here.
-func (n *Node) answerApproval(nonce string, approved bool) error {
+func (n *Agent) answerApproval(nonce string, approved bool) error {
 	n.mu.Lock()
 	var a Approval
 	ok := false

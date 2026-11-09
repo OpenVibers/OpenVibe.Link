@@ -1,4 +1,4 @@
-// Package config finds the Node's directories and reads its config file.
+// Package config finds the Link's directories and reads its config file.
 //
 // Layout (system install):
 //
@@ -6,7 +6,7 @@
 //	macOS    /Library/Application Support/OpenVibe Link/ (both)
 //	Windows  %ProgramData%\OpenVibe Link\ (both)
 //
-// OPENVIBE_LINK_HOME (or --home) puts everything in one directory, which is how tests and people trying the Node
+// OPENVIBE_LINK_HOME (or --home) puts everything in one directory, which is how tests and people trying the Link
 // without root run it. A non-root user on a machine without a system install gets the per-user config directory.
 package config
 
@@ -29,13 +29,13 @@ import (
 const (
 	DefaultServer = "https://openvibe.bot"
 	EnvHome       = "OPENVIBE_LINK_HOME"
-	// EnvConfigDir and EnvStateDir are the Node's directories as it gives them to its plugins, so a command a plugin
-	// runs (`openvibe-link desk-sandbox`) reads the same config as the Node that started it.
+	// EnvConfigDir and EnvStateDir are the Link's directories as it gives them to its plugins, so a command a plugin
+	// runs (`openvibe-link desk-sandbox`) reads the same config as the Link that started it.
 	EnvConfigDir = "OPENVIBE_LINK_CONFIG"
 	EnvStateDir  = "OPENVIBE_LINK_STATE"
 )
 
-// Paths are the Node's directories.
+// Paths are the Link's directories.
 type Paths struct {
 	ConfigDir string
 	StateDir  string
@@ -107,7 +107,7 @@ func DefaultPaths(home string) Paths {
 type Config struct {
 	// Server is the OpenVibe.Bot origin used for pairing (and the device link unless the pairing returns one).
 	Server string `json:"server,omitempty"`
-	// DeviceKind is "onboard" (the Node runs on the robot) or "bridge" (it drives a robot over the robot's own link).
+	// DeviceKind is "onboard" (the Link runs on the robot) or "bridge" (it drives a robot over the robot's own link).
 	DeviceKind string         `json:"device_kind,omitempty"`
 	Plugins    []PluginConfig `json:"plugins"`
 	Video      VideoConfig    `json:"video"`
@@ -127,15 +127,15 @@ type Config struct {
 type WorkerConfig struct {
 	Enabled   bool             `json:"enabled,omitempty"`
 	Functions []FunctionConfig `json:"functions,omitempty"`
-	// RunAs is the dedicated unprivileged uid/gid jobs run as; it needs the Node to run as root. Without it the Node
+	// RunAs is the dedicated unprivileged uid/gid jobs run as; it needs the Link to run as root. Without it the Link
 	// refuses to run jobs unless AllowSameUser is set.
 	RunAs *RunAs `json:"run_as,omitempty"`
-	// AllowSameUser runs jobs as the Node's own user (no run_as), with its groups (gpio, dialout, video), on what the
+	// AllowSameUser runs jobs as the Link's own user (no run_as), with its groups (gpio, dialout, video), on what the
 	// job's private root holds: for development only.
 	AllowSameUser bool       `json:"allow_same_user,omitempty"`
 	Caps          WorkerCaps `json:"caps,omitzero"`
 	// Egress is the most a job may reach on the network, all three enforced (docs/worker.md): none (the default; a
-	// network namespace with only a loopback that is down), public (IPv4 to public addresses, through a veth the Node
+	// network namespace with only a loopback that is down), public (IPv4 to public addresses, through a veth the Link
 	// NATs; private, shared, link-local and reserved ranges, EgressDeny and the host itself refused) or openvibe-only
 	// (public restricted to EgressAllow). A job runs under the stricter of the net it names and this: a job naming no
 	// net (platform.job@1's declared default, deny), or deny or none, gets no network whatever this says; a job naming
@@ -145,7 +145,7 @@ type WorkerConfig struct {
 	// EgressAllow is the IPv4 CIDRs an openvibe-only job may reach (the OpenVibe network's own ranges, configured
 	// rather than guessed); required with openvibe-only and refused with any other policy.
 	EgressAllow []string `json:"egress_allow,omitempty"`
-	// EgressDeny is more IPv4 CIDRs a public or openvibe-only job is refused (the Node's cell, WireGuard peers with
+	// EgressDeny is more IPv4 CIDRs a public or openvibe-only job is refused (the Link's cell, WireGuard peers with
 	// public addresses), on top of the ranges always refused.
 	EgressDeny []string `json:"egress_deny,omitempty"`
 	// DNS is up to three IPv4 resolvers written to the /etc/resolv.conf of a job that runs with a network (public or
@@ -158,18 +158,18 @@ type WorkerConfig struct {
 	// PlanLogins are the owner's own coding-CLI login files (for example ~/.claude/.credentials.json,
 	// ~/.codex/auth.json, ~/.local/share/opencode/auth.json), copied read-only into a job's private home so a job may
 	// use the plan the owner signed in for. Off (the default): a job sees no credential of any kind until the owner
-	// names them here. Each is a path under the Node user's home; the copies live in that one job's home and go with
+	// names them here. Each is a path under the Link user's home; the copies live in that one job's home and go with
 	// it, and their content is never sent anywhere.
 	PlanLogins []string `json:"plan_logins,omitempty"`
-	// NodeDirs are the Node's own directories (config, credential, state, control socket), which no job may see; the
-	// Node sets them, the config file does not.
-	NodeDirs []string `json:"-"`
+	// LinkDirs are the Link's own directories (config, credential, state, control socket), which no job may see; the
+	// Link sets them, the config file does not.
+	LinkDirs []string `json:"-"`
 }
 
 // MediaConfig is the OpenVibe.Media objects client the worker fetches inputs and uploads large results with. The
 // token is read from the environment variable TokenEnv names when a job needs it: it never lies in the config file
-// and appears in no job's environment, log line or error. Which app and token a Node uses is the operator's choice
-// (Run's own app, never Node's), made when they enable it.
+// and appears in no job's environment, log line or error. Which app and token a Link uses is the operator's choice
+// (Run's own app, never Link's), made when they enable it.
 type MediaConfig struct {
 	Enabled  bool   `json:"enabled,omitempty"`
 	Endpoint string `json:"endpoint,omitempty"`  // https only, e.g. https://media.openvibe.network
@@ -235,7 +235,7 @@ type FunctionConfig struct {
 	Command []string          `json:"command"` // Command[0] is an absolute path
 	Env     map[string]string `json:"env,omitempty"`
 	// ArtifactDir is the directory each job gets a read-only copy of, made as it starts, in its private root (default:
-	// the directory of Command[0]). It must not be / nor hold, or lie inside, the Node's own directories.
+	// the directory of Command[0]). It must not be / nor hold, or lie inside, the Link's own directories.
 	ArtifactDir string `json:"artifact_dir,omitempty"`
 }
 
@@ -386,7 +386,7 @@ type VideoConfig struct {
 	WHIPURL string `json:"whip_url,omitempty"`
 }
 
-// Bundled lists the plugins the Node runs as <python> -m <module> without a command: the ones that ship with it, and
+// Bundled lists the plugins the Link runs as <python> -m <module> without a command: the ones that ship with it, and
 // looi, whose driver is installed into the same Python on its own (docs/hardware-looi.md; install.sh --driver looi
 // writes {"name": "looi"}, which was refused as "needs a command" until 0.30).
 var Bundled = map[string]string{
@@ -598,13 +598,13 @@ func planLoginHome() (string, error) {
 
 // validateDNS checks worker.dns: at most three IPv4 resolvers (the most a resolv.conf is read for), only with a policy
 // that gives jobs a network, each public, and under openvibe-only inside egress_allow.
-// validatePlanLogins refuses a plan login that is not a plain path under the Node user's home: a job's copy is made
+// validatePlanLogins refuses a plan login that is not a plain path under the Link user's home: a job's copy is made
 // from it, so it must be a file the owner meant to share with their own jobs and nothing else.
 func (w WorkerConfig) validatePlanLogins() error {
 	home, err := planLoginHome()
 	if err != nil {
 		if len(w.PlanLogins) > 0 {
-			return fmt.Errorf("config: worker.plan_logins: the Node user's home is unknown: %w", err)
+			return fmt.Errorf("config: worker.plan_logins: the Link user's home is unknown: %w", err)
 		}
 		return nil
 	}
@@ -615,7 +615,7 @@ func (w WorkerConfig) validatePlanLogins() error {
 		}
 		rel, err := filepath.Rel(home, clean)
 		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return fmt.Errorf("config: worker.plan_logins %q must be under the Node user's home (%s)", p, home)
+			return fmt.Errorf("config: worker.plan_logins %q must be under the Link user's home (%s)", p, home)
 		}
 		if rel == "." {
 			return fmt.Errorf("config: worker.plan_logins %q must be a file, not the home itself", p)

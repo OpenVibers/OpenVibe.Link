@@ -10,7 +10,7 @@ const (
 	sysClone       = 56
 	sysClone3      = 435
 	sysSocket      = 41
-	sysMemfdCreate = 319 // the Node's own call, for the sandbox spec
+	sysMemfdCreate = 319 // the Link's own call, for the sandbox spec
 )
 
 var allowedSyscalls = []uint32{

@@ -14,30 +14,30 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OpenVibers/OpenVibe.Link/internal/agent"
 	"github.com/OpenVibers/OpenVibe.Link/internal/localctl"
-	"github.com/OpenVibers/OpenVibe.Link/internal/node"
 	"github.com/OpenVibers/OpenVibe.Link/internal/safety"
 )
 
 func TestTrayViewStates(t *testing.T) {
 	if v := viewOf(nil, nil, errors.New("dial unix: no such file")); v.State != trayDown || !strings.Contains(v.Tooltip, "not running") {
-		t.Fatalf("no Node: %+v", v)
+		t.Fatalf("no Link: %+v", v)
 	}
-	st := &node.Status{Server: "https://openvibe.bot", Link: node.LinkStatus{Connected: true}}
+	st := &agent.Status{Server: "https://openvibe.bot", Link: agent.LinkStatus{Connected: true}}
 	st.Telemetry.Sensors = map[string]any{"computer_level": "ask"}
 	v := viewOf(st, nil, nil)
 	if v.State != trayOK || v.Level != "ask" || v.Panel != "https://openvibe.bot/machines" || v.Tooltip != "OpenVibe Link: online, computer level ask" {
 		t.Fatalf("all well: %+v", v)
 	}
-	v = viewOf(st, []node.Approval{{ID: "a"}, {ID: "b"}}, nil)
+	v = viewOf(st, []agent.Approval{{ID: "a"}, {ID: "b"}}, nil)
 	if v.State != trayWaiting || v.Header != "2 requests wait for your answer" || !strings.HasSuffix(v.Tooltip, "2 waiting") {
 		t.Fatalf("waiting: %+v", v)
 	}
-	if v = viewOf(st, []node.Approval{{ID: "a"}}, nil); v.Header != "1 request waits for your answer" {
+	if v = viewOf(st, []agent.Approval{{ID: "a"}}, nil); v.Header != "1 request waits for your answer" {
 		t.Fatalf("one waiting: %q", v.Header)
 	}
 	st.Latch = safety.LatchState{Local: true}
-	if v = viewOf(st, []node.Approval{{ID: "a"}}, nil); v.State != trayStopped || !v.Stopped {
+	if v = viewOf(st, []agent.Approval{{ID: "a"}}, nil); v.State != trayStopped || !v.Stopped {
 		t.Fatalf("a latched stop wins over waiting: %+v", v)
 	}
 }
@@ -60,10 +60,10 @@ func TestTrayPanelURLOnlyForTheBot(t *testing.T) {
 }
 
 func TestTraySlotLabel(t *testing.T) {
-	if got := slotLabel(node.Approval{Kind: "exec", Summary: "run  echo\nhi"}); got != `exec: run  echo\u000ahi` {
+	if got := slotLabel(agent.Approval{Kind: "exec", Summary: "run  echo\nhi"}); got != `exec: run  echo\u000ahi` {
 		t.Fatalf("label: %q", got)
 	}
-	long := slotLabel(node.Approval{Kind: "input", Summary: strings.Repeat("é", 100)})
+	long := slotLabel(agent.Approval{Kind: "input", Summary: strings.Repeat("é", 100)})
 	if !strings.HasSuffix(long, "…") || len([]rune(long)) != len("input: ")+70 {
 		t.Fatalf("long label: %q (%d runes)", long, len([]rune(long)))
 	}
@@ -114,10 +114,10 @@ func TestTrayDesktopEntry(t *testing.T) {
 	}
 }
 
-// fakeNode answers the control socket like a running Node with the computer plugin at level ask.
+// fakeNode answers the control socket like a running Link with the computer plugin at level ask.
 type fakeNode struct {
 	mu       sync.Mutex
-	list     []node.Approval
+	list     []agent.Approval
 	refuse   int // approvals to refuse as "the agent is using the mouse or keyboard"
 	answered []string
 	tray     []bool
@@ -129,7 +129,7 @@ func (f *fakeNode) handle(r localctl.Request) localctl.Response {
 	defer f.mu.Unlock()
 	switch r.Cmd {
 	case localctl.CmdStatus:
-		st := node.Status{Server: "https://openvibe.bot", Link: node.LinkStatus{Connected: true}, Latch: safety.LatchState{Local: f.stopped}}
+		st := agent.Status{Server: "https://openvibe.bot", Link: agent.LinkStatus{Connected: true}, Latch: safety.LatchState{Local: f.stopped}}
 		st.Telemetry.Sensors = map[string]any{"computer_level": "ask"}
 		b, _ := json.Marshal(st)
 		return localctl.Response{OK: true, Data: b}
@@ -192,7 +192,7 @@ type fakeNotes struct {
 	shut   bool
 }
 
-func (n *fakeNotes) Ask(a node.Approval, again string) {
+func (n *fakeNotes) Ask(a agent.Approval, again string) {
 	if again != "" {
 		n.asked = append(n.asked, a.ID+" again")
 		return
@@ -209,7 +209,7 @@ func TestTrayCoreAgainstANode(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 	sock := filepath.Join(dir, "n.sock")
-	f := &fakeNode{list: []node.Approval{{ID: "c1", Kind: "exec", Summary: "run echo hi", ExpiresS: 120}}, refuse: 1}
+	f := &fakeNode{list: []agent.Approval{{ID: "c1", Kind: "exec", Summary: "run echo hi", ExpiresS: 120}}, refuse: 1}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _ = localctl.Serve(ctx, sock, f.handle) }()
@@ -240,7 +240,7 @@ func TestTrayCoreAgainstANode(t *testing.T) {
 		t.Fatalf("slot 0: %+v", a)
 	}
 	if err := core.answer(a, true); err == nil {
-		t.Fatal("the Node refused the approval; the tray should say so")
+		t.Fatal("the Link refused the approval; the tray should say so")
 	}
 	if strings.Join(notes.asked, ",") != "c1,c1 again" {
 		t.Fatalf("a refused approval asks again: %v", notes.asked)
@@ -258,7 +258,7 @@ func TestTrayCoreAgainstANode(t *testing.T) {
 
 	// A request answered elsewhere (the CLI, or it expired) takes its notification down at the next poll.
 	f.mu.Lock()
-	f.list = append(f.list, node.Approval{ID: "c2", Kind: "input", Summary: "click at 1, 2"})
+	f.list = append(f.list, agent.Approval{ID: "c2", Kind: "input", Summary: "click at 1, 2"})
 	f.mu.Unlock()
 	core.tick()
 	f.mu.Lock()
@@ -289,13 +289,13 @@ func TestTrayCoreAgainstANode(t *testing.T) {
 
 	core.quit()
 	if last := f.tray[len(f.tray)-1]; last || !notes.shut {
-		t.Fatalf("quit tells the Node and shuts the notifier: tray %v shut %v", f.tray, notes.shut)
+		t.Fatalf("quit tells the Link and shuts the notifier: tray %v shut %v", f.tray, notes.shut)
 	}
 	cancel()
 	time.Sleep(50 * time.Millisecond)
 	core.tick()
 	if ui.state != trayDown {
-		t.Fatalf("the Node gone: %+v", ui)
+		t.Fatalf("the Link gone: %+v", ui)
 	}
 }
 
@@ -304,7 +304,7 @@ func TestTrayClickRetainsRenderedNonce(t *testing.T) {
 	answers := make(chan trayAnswer, 1)
 	forwardTrayClicks(clicks, answers, "old-nonce", true)
 	core := newTrayCore("", &fakeUI{}, nil)
-	core.view = trayView{Waiting: []node.Approval{{ID: "replacement-nonce"}}}
+	core.view = trayView{Waiting: []agent.Approval{{ID: "replacement-nonce"}}}
 	// A click queued while the old label was on screen is delivered after reorder.
 	clicks <- struct{}{}
 	close(clicks)

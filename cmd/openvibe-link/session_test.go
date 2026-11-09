@@ -28,8 +28,8 @@ func TestUserSessionRefusedOffWindows(t *testing.T) {
 	}
 }
 
-// Each Node directory has its own sign-in start (v0.37.2): a test node beside a working robot's Node no longer replaces
-// its Run value, and the old single value is this Node's only when it starts this same home.
+// Each Link directory has its own sign-in start (v0.37.2): a test node beside a working robot's Link no longer replaces
+// its Run value, and the old single value is this Link's only when it starts this same home.
 func TestUserSessionPerHome(t *testing.T) {
 	cozmo, test := `C:\Users\m\AppData\Local\OpenVibe Link`, `D:\looi-test`
 	if a, b := runValueFor(cozmo), runValueFor(test); a == b || !strings.HasPrefix(a, "OpenVibe Link (") {
@@ -40,7 +40,7 @@ func TestUserSessionPerHome(t *testing.T) {
 		t.Fatal("the old value starts the Cozmo home")
 	}
 	if legacyRunsHome(legacy, test) {
-		t.Fatal("the old value is another Node's: never this test home's")
+		t.Fatal("the old value is another Link's: never this test home's")
 	}
 	if legacyRunsHome(userSessionCommand(`C:\bin\n.exe`, `D:\ov2`, "debug"), `D:\ov`) {
 		t.Fatal(`D:\ov is not D:\ov2`)

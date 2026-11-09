@@ -1,6 +1,6 @@
 //go:build !windows
 
-package node
+package agent
 
 import (
 	"encoding/json"
@@ -157,7 +157,7 @@ func TestJobAcceptedOnce(t *testing.T) {
 	}
 }
 
-// TestJobAnswersBounded: the Node remembers the answers of the last jobSeenMax valid job ids only, and never a
+// TestJobAnswersBounded: the Agent remembers the answers of the last jobSeenMax valid job ids only, and never a
 // malformed one.
 func TestJobAnswersBounded(t *testing.T) {
 	j := newJobs(nil)

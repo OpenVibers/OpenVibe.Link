@@ -1,6 +1,6 @@
 //go:build !windows
 
-package node
+package agent
 
 import (
 	"bufio"
@@ -39,7 +39,7 @@ type env struct {
 	t      *testing.T
 	srv    *fakebot.Server
 	whip   *video.WHIPReceiver
-	node   *Node
+	node   *Agent
 	conn   *fakebot.Conn
 	record string
 	paths  config.Paths
@@ -51,7 +51,7 @@ type env struct {
 	connAt   time.Time
 }
 
-// start pairs a Node running the real Python dry-run plugin with the fake Bot server and waits until the plugin is
+// start pairs a Agent running the real Python dry-run plugin with the fake Bot server and waits until the plugin is
 // ready and the link is up.
 func start(t *testing.T) *env {
 	t.Helper()
@@ -329,8 +329,8 @@ func TestCommandsClampedAndIdempotent(t *testing.T) {
 	if d := drives[0].DeadlineMS; d < 150 || d > 305 {
 		t.Fatalf("deadline %d", d)
 	}
-	// Deadlines are capped at max_command_ms, counted from the Node's receipt: the plugin gets the cap less the time
-	// the command then spent in the Node and its queue (Node 0.18).
+	// Deadlines are capped at max_command_ms, counted from the Agent's receipt: the plugin gets the cap less the time
+	// the command then spent in the Agent and its queue (Agent 0.18).
 	e.cmd("drive", `{"throttle":0.1}`, 60000)
 	r := e.records()
 	if last := r[len(r)-1]; last.DeadlineMS > 1000 || last.DeadlineMS < 900 {
@@ -398,7 +398,7 @@ func TestRobotEstopLatchedUntilOwnerClears(t *testing.T) {
 	if !isAck(e.cmd("halt", `{}`, 300)) {
 		t.Fatal("halt refused")
 	}
-	// Persisted: a restarted Node comes back latched.
+	// Persisted: a restarted Agent comes back latched.
 	l, _ := safety.OpenLatch(e.paths.LatchFile())
 	if !l.State().Remote {
 		t.Fatal("e-stop not persisted")

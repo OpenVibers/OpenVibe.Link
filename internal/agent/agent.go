@@ -1,4 +1,4 @@
-// Package node ties the Node together: the control link, the plugins, the safety rules, video and the local control
+// Package node ties the Agent together: the control link, the plugins, the safety rules, video and the local control
 // socket. Every path that should stop the motors ends in Manager.StopAll or EstopAll:
 //
 //	link lost (disconnect, deadman)       → StopAll
@@ -7,7 +7,7 @@
 //	core shutdown                         → StopAll, then each plugin's stdin is closed (plugins stop on EOF)
 //	plugin crash                          → restarted stopped, estop re-sent if latched
 //	core dies without cleanup             → plugins stop on EOF or after 1 s without a heartbeat
-package node
+package agent
 
 import (
 	"context"
@@ -42,7 +42,7 @@ import (
 	"github.com/OpenVibers/OpenVibe.Link/internal/worker"
 )
 
-// Options configure a Node.
+// Options configure a Agent.
 type Options struct {
 	Config  *config.Config
 	Paths   config.Paths
@@ -70,8 +70,8 @@ type Options struct {
 	CodesAgents func() []panel.CodesAgent
 }
 
-// Node is a running device agent.
-type Node struct {
+// Agent is a running device agent.
+type Agent struct {
 	opt   Options
 	log   *slog.Logger
 	latch *safety.Latch
@@ -181,8 +181,8 @@ type Approval struct {
 	ExpiresS  int64  `json:"expires_s,omitempty"`
 }
 
-// New builds a Node. Run starts it.
-func New(opt Options) (*Node, error) {
+// New builds a Agent. Run starts it.
+func New(opt Options) (*Agent, error) {
 	if opt.Log == nil {
 		opt.Log = slog.Default()
 	}
@@ -194,7 +194,7 @@ func New(opt Options) (*Node, error) {
 		opt.Log.Error("latch", "err", err)
 	}
 	panelOff, panelFirst := loadPanel(opt.Paths.StateDir, opt.Creds != nil)
-	n := &Node{opt: opt, log: opt.Log, latch: latch, dedup: safety.NewDedup(4096, 10*time.Minute),
+	n := &Agent{opt: opt, log: opt.Log, latch: latch, dedup: safety.NewDedup(4096, 10*time.Minute),
 		jobs: newJobs(nil), telemetry: map[string]map[string]any{}, telemMS: 500, approvals: map[string]Approval{}, inputs: map[string]bool{},
 		panelOff: panelOff, panelFirst: panelFirst}
 	home, _ := os.UserHomeDir()
@@ -235,7 +235,7 @@ func New(opt Options) (*Node, error) {
 	}
 
 	// Codes C9c: the same Codes runner the worker runs, asked for its logins instead of a job. The probe runs as the
-	// Node's user, the home worker.plan_logins names are under, and only its answer (labels, numbers, times) leaves.
+	// Agent's user, the home worker.plan_logins names are under, and only its answer (labels, numbers, times) leaves.
 	if cmd := codesProbeCommand(opt.Config.Worker.Functions); cmd != nil {
 		n.fleet = fleet.New(fleet.Options{Command: cmd, Log: opt.Log})
 	}
@@ -266,7 +266,7 @@ func New(opt Options) (*Node, error) {
 		}
 		n.link = link.New(lo, n)
 		if opt.Creds.NetworkPaired() {
-			// Agent Streams S1: a Node principal acting for its owner calls openvibe.live. Network grants it
+			// Agent Streams S1: a Agent principal acting for its owner calls openvibe.live. Network grants it
 			// live.agent-stream.publish for its owner.
 			n.liveTokens = link.NewTokenSourceFor(opt.Creds, nil, lo.UserAgent, "openvibe.live")
 			// S4: the desk's voice is the person's own, so the token names them.
@@ -295,8 +295,8 @@ func New(opt Options) (*Node, error) {
 }
 
 // Run runs until ctx ends, then stops every actuator and waits for the plugins to exit. It ends on its own, with
-// link.ErrNodeRevoked, when OpenVibe.Network refuses the machine's node credential.
-func (n *Node) Run(parent context.Context) error {
+// link.ErrLinkRevoked, when OpenVibe.Network refuses the machine's node credential.
+func (n *Agent) Run(parent context.Context) error {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	var fatal error
@@ -321,7 +321,7 @@ func (n *Node) Run(parent context.Context) error {
 	}
 	n.applyPluginLatch(n.latch.State(), false)
 
-	// Link's own window, and the Connect shares it can add or end, start with the Node.
+	// Link's own window, and the Connect shares it can add or end, start with the Agent.
 	n.shares = newShareSet(ctx, n.opt.Paths.ConfigDir, n.shareOptions())
 	if !n.opt.NoShares {
 		n.shares.StartAll()
@@ -381,13 +381,13 @@ func (n *Node) Run(parent context.Context) error {
 
 // Connected sends nothing: Bot sends config right after hello, and the first status and estop_state go out once it
 // has been applied (applyConfig), so they report the latch the owner may have set while the link was down.
-func (n *Node) Connected() {
+func (n *Agent) Connected() {
 	n.mu.Lock()
 	n.configured, n.robotIDs, n.session = false, nil, ""
 	n.mu.Unlock()
 }
 
-func (n *Node) Disconnected(err error) {
+func (n *Agent) Disconnected(err error) {
 	n.log.Warn("link lost: stopping every actuator", "err", err)
 	n.mgr.StopAll(plugins.StopLinkLost)
 	n.mu.Lock()
@@ -395,7 +395,7 @@ func (n *Node) Disconnected(err error) {
 	n.mu.Unlock()
 }
 
-func (n *Node) Frame(f protocol.Frame) {
+func (n *Agent) Frame(f protocol.Frame) {
 	switch m := f.Msg.(type) {
 	case protocol.Hello:
 		n.mu.Lock()
@@ -429,7 +429,7 @@ func (n *Node) Frame(f protocol.Frame) {
 	}
 }
 
-func (n *Node) remoteEstop(reason, by string) {
+func (n *Agent) remoteEstop(reason, by string) {
 	n.log.Warn("e-stop from the server", "by", by)
 	n.mgr.EstopAll(plugins.EstopRemote, safety.CleanReason(reason)) // at once, before the disk write
 	if _, err := n.latch.SetRemoteWithComputer(reason, n.hasComputer()); err != nil {
@@ -437,14 +437,14 @@ func (n *Node) remoteEstop(reason, by string) {
 	}
 }
 
-func (n *Node) remoteClear(by string) {
+func (n *Agent) remoteClear(by string) {
 	n.log.Warn("e-stop cleared by the server", "by", by)
 	if _, err := n.latch.ClearRemote(); err != nil {
 		n.log.Error("could not persist the e-stop clear", "err", err)
 	}
 }
 
-func (n *Node) applyConfig(c protocol.Config) {
+func (n *Agent) applyConfig(c protocol.Config) {
 	// The server's estop_latched is the owner's latch: it may have been set or cleared while the link was down.
 	if st := n.latch.State(); c.EstopLatched && !st.Remote {
 		n.remoteEstop("latched on the server", "server")
@@ -503,7 +503,7 @@ const (
 // was not installed for, and never turns on a feature the owner turned off here. What it does is start what the
 // machine was installed for and has not started yet (the job worker), and say plainly which role it could not
 // honour, so the owner sees it on the machine as well as on the hub.
-func (n *Node) applyRoles(roles []string) {
+func (n *Agent) applyRoles(roles []string) {
 	if len(roles) == 0 {
 		return
 	}
@@ -537,7 +537,7 @@ func (n *Node) applyRoles(roles []string) {
 // startWorker starts the job worker when the local configuration has it and it is not running yet. It is the work the
 // boot does; the role codes.worker asks for it again at check-in, so a machine whose worker was configured but not
 // running starts it. → whether it is running afterwards.
-func (n *Node) startWorker(why string) bool {
+func (n *Agent) startWorker(why string) bool {
 	n.mu.Lock()
 	running := n.worker != nil
 	n.mu.Unlock()
@@ -549,8 +549,8 @@ func (n *Node) startWorker(why string) bool {
 		return false
 	}
 	wcfg := n.opt.Config.Worker
-	// No job may see the Node's config, credential, state or control socket (they all lie in these).
-	wcfg.NodeDirs = []string{n.opt.Paths.ConfigDir, n.opt.Paths.StateDir}
+	// No job may see the Agent's config, credential, state or control socket (they all lie in these).
+	wcfg.LinkDirs = []string{n.opt.Paths.ConfigDir, n.opt.Paths.StateDir}
 	w := worker.New(wcfg, n.sendJobFrame, n.log)
 	if err := w.Probe(); err != nil {
 		n.log.Error("worker off: jobs cannot run isolated here, every job is refused", "err", err)
@@ -568,7 +568,7 @@ func (n *Node) startWorker(why string) bool {
 }
 
 // hasDeskHost says whether this machine was installed as a desk host: the computer plugin with a desk of its own.
-func (n *Node) hasDeskHost() bool {
+func (n *Agent) hasDeskHost() bool {
 	for _, p := range n.opt.Config.Plugins {
 		if p.Name != "computer" && p.Name != "computer.py" {
 			continue
@@ -581,7 +581,7 @@ func (n *Node) hasDeskHost() bool {
 }
 
 // hasAIHost says whether this machine was installed with the ai plugin (the local model server).
-func (n *Node) hasAIHost() bool {
+func (n *Agent) hasAIHost() bool {
 	for _, p := range n.opt.Config.Plugins {
 		if p.Name == "ai" || p.Name == "ai.py" {
 			return true
@@ -591,7 +591,7 @@ func (n *Node) hasAIHost() bool {
 }
 
 // tellVoice gives the voice plugins (or just p) the owner's voice setting: they listen for the call word only while on.
-func (n *Node) tellVoice(only *plugins.Plugin) {
+func (n *Agent) tellVoice(only *plugins.Plugin) {
 	n.mu.Lock()
 	on, word := n.voiceOn, n.callWord
 	n.mu.Unlock()
@@ -606,7 +606,7 @@ func (n *Node) tellVoice(only *plugins.Plugin) {
 
 // voiceAsk sends a voice plugin's question to Bot (never into telemetry: what the person said is theirs) and remembers
 // which plugin asked, so the answers reach it.
-func (n *Node) voiceAsk(pluginName string, data map[string]any) {
+func (n *Agent) voiceAsk(pluginName string, data map[string]any) {
 	id, _ := data["id"].(string)
 	text, _ := data["text"].(string)
 	lang, _ := data["lang"].(string)
@@ -628,7 +628,7 @@ func (n *Node) voiceAsk(pluginName string, data map[string]any) {
 }
 
 // voiceAnswer hands Bot's answer to the plugin that asked; a final answer (not working) forgets the question.
-func (n *Node) voiceAnswer(a protocol.VoiceAnswer) {
+func (n *Agent) voiceAnswer(a protocol.VoiceAnswer) {
 	n.mu.Lock()
 	name := n.voiceAskedBy[a.ID]
 	if a.State != "working" {
@@ -649,9 +649,9 @@ func (n *Node) voiceAnswer(a protocol.VoiceAnswer) {
 // commands in arrival order; the reply is awaited on its own goroutine. deadline_ms is an absolute instant on the
 // server's clock: it is compared with the link's estimate of that clock at receipt (serverNow), so a command that
 // arrives after its deadline is nacked and never reaches a plugin, and a plugin gets only the time that is left. What is
-// left becomes an instant on this machine (receipt + left): time the command then spends in the Node and in the queue
-// to the plugin counts against it, and the plugin is told the instant on the clock it shares with the Node (plugins.md).
-func (n *Node) command(c protocol.Command, sentMS int64, seq uint64, received mono.Instant) {
+// left becomes an instant on this machine (receipt + left): time the command then spends in the Agent and in the queue
+// to the plugin counts against it, and the plugin is told the instant on the clock it shares with the Agent (plugins.md).
+func (n *Agent) command(c protocol.Command, sentMS int64, seq uint64, received mono.Instant) {
 	if c.ID == "" {
 		n.log.Warn("command without id ignored", "kind", c.Kind)
 		return
@@ -734,7 +734,7 @@ func (n *Node) command(c protocol.Command, sentMS int64, seq uint64, received mo
 		left, u, synced := n.timeLeft(c.DeadlineMS, sentMS, received)
 		unc = u
 		if protocol.GuardedKinds[c.Kind] {
-			// Motion is timed only on a clock Node can bound (Maticus, 2026-10-27): not before the connection's first
+			// Motion is timed only on a clock Agent can bound (Maticus, 2026-10-27): not before the connection's first
 			// round trip, and not on a link whose fastest round trip is slower than MaxClockUncertaintyMS.
 			if !synced {
 				nack(protocol.FaultNotReady, "the link's clock is not synchronized yet: no round trip has been measured on this connection")
@@ -780,7 +780,7 @@ func (n *Node) command(c protocol.Command, sentMS int64, seq uint64, received mo
 	}
 	// Where it came from, unchanged, so a driver can check it without keeping old ids (Maticus, 2026-10-26, LOOI).
 	prov := &plugins.Provenance{Session: session, Seq: seq, IssuedAtMS: sentMS, ExpiresAtMS: c.DeadlineMS, ClockUncertaintyMS: uncertainty}
-	// The window counts from receipt, not from now: nothing the Node does after the frame arrived extends it.
+	// The window counts from receipt, not from now: nothing the Agent does after the frame arrived extends it.
 	expires := received.Add(time.Duration(deadline) * time.Millisecond)
 	wait := p.BeginWith(n.ctx, c.ID, c.Kind, value, expires, c.Operator, c.TurnEpoch, prov)
 	go func() {
@@ -799,7 +799,7 @@ func (n *Node) command(c protocol.Command, sentMS int64, seq uint64, received mo
 // computer runs one exec, fs or screen command: no clamping, a long reply window (the server's deadline, at most
 // MaxComputerMS, else DefaultComputerMS), refused while the local stop or an e-stop is latched when it would change the
 // machine, and answered with the plugin's data. The plugin applies its owner's control level.
-func (n *Node) computer(c protocol.Command, entry *safety.Entry, sentMS int64, received mono.Instant, nack func(code, msg string)) {
+func (n *Agent) computer(c protocol.Command, entry *safety.Entry, sentMS int64, received mono.Instant, nack func(code, msg string)) {
 	if len(c.Value) > protocol.MaxComputerValue {
 		nack(protocol.FaultBadValue, fmt.Sprintf("the value is larger than %d KB", protocol.MaxComputerValue/1024))
 		return
@@ -891,7 +891,7 @@ func (n *Node) computer(c protocol.Command, entry *safety.Entry, sentMS int64, r
 }
 
 // noteHaltEpoch records a halt's turn_epoch for its robot (the newest wins); haltEpoch reads it (0: none seen).
-func (n *Node) noteHaltEpoch(robotID string, epoch int64) {
+func (n *Agent) noteHaltEpoch(robotID string, epoch int64) {
 	if epoch <= 0 {
 		return
 	}
@@ -905,7 +905,7 @@ func (n *Node) noteHaltEpoch(robotID string, epoch int64) {
 	}
 }
 
-func (n *Node) haltEpoch(robotID string) int64 {
+func (n *Agent) haltEpoch(robotID string) int64 {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return n.haltEpochs[robotID]
@@ -917,7 +917,7 @@ func (n *Node) haltEpoch(robotID string) int64 {
 // nanoseconds, so no rounding can add time: left is exact, and unc, the bound reported in ms, is rounded up from
 // nanoseconds (Maticus, 2026-10-27: 1,000,001 ns is 2 ms). synced is false while no round trip has been measured on the
 // connection (left then counts from the bare estimate). Without a link (local commands) it is synced with no uncertainty.
-func (n *Node) timeLeft(deadlineMS, sentMS int64, received mono.Instant) (left time.Duration, unc int64, synced bool) {
+func (n *Agent) timeLeft(deadlineMS, sentMS int64, received mono.Instant) (left time.Duration, unc int64, synced bool) {
 	end := deadlineMS * int64(time.Millisecond)
 	now := n.serverNow(sentMS, received)
 	if n.link == nil {
@@ -949,7 +949,7 @@ func latchReason(st safety.LatchState) string {
 
 // serverNow is the server's clock (epoch ns) when a frame stamped sentMS was received: the link's estimate, else the
 // frame's own ts, else the wall clock now (later than the receipt, so never more time).
-func (n *Node) serverNow(sentMS int64, received mono.Instant) int64 {
+func (n *Agent) serverNow(sentMS int64, received mono.Instant) int64 {
 	if n.link != nil {
 		if ns, ok := n.link.ServerNow(received); ok {
 			return ns
@@ -961,7 +961,7 @@ func (n *Node) serverNow(sentMS int64, received mono.Instant) int64 {
 	return time.Now().UnixNano()
 }
 
-func (n *Node) send(m protocol.Message) {
+func (n *Agent) send(m protocol.Message) {
 	if n.link == nil {
 		return
 	}
@@ -973,7 +973,7 @@ func (n *Node) send(m protocol.Message) {
 // ---- latch ----
 
 // Computer stop is independent of the robot protocol's remotely cleared latch.
-func (n *Node) hasComputer() bool {
+func (n *Agent) hasComputer() bool {
 	if n.opt.Config == nil {
 		return false
 	}
@@ -985,7 +985,7 @@ func (n *Node) hasComputer() bool {
 	return false
 }
 
-func (n *Node) applyPluginLatch(st safety.LatchState, resume bool) {
+func (n *Agent) applyPluginLatch(st safety.LatchState, resume bool) {
 	for _, p := range n.mgr.Plugins() {
 		if st.Stopped() || (st.Computer && p.Name() == "computer") {
 			cause := plugins.EstopRemote
@@ -999,7 +999,7 @@ func (n *Node) applyPluginLatch(st safety.LatchState, resume bool) {
 	}
 }
 
-func (n *Node) onLatch(st safety.LatchState) {
+func (n *Agent) onLatch(st safety.LatchState) {
 	if n.worker != nil {
 		n.worker.SetStopped(stopFault(st)) // kills every job at once while stopped
 	}
@@ -1017,7 +1017,7 @@ func (n *Node) onLatch(st safety.LatchState) {
 	n.sendStatus()
 }
 
-func (n *Node) pollLatch(ctx context.Context) {
+func (n *Agent) pollLatch(ctx context.Context) {
 	t := time.NewTicker(n.opt.LatchPoll)
 	defer t.Stop()
 	for {
@@ -1035,7 +1035,7 @@ func (n *Node) pollLatch(ctx context.Context) {
 // sendEstopState reports the device's latch. Bot reads latched:true as "this device is stopped" and latches the robot
 // (so the local kill switch shows on the panel and the gate stops sending motion); latched:false is a report only
 // and never clears the owner's latch. robot_id names the robot when the device serves exactly one.
-func (n *Node) sendEstopState() {
+func (n *Agent) sendEstopState() {
 	if !n.reporting() {
 		return
 	}
@@ -1060,7 +1060,7 @@ func estopReason(st safety.LatchState) string {
 
 // ---- plugin output ----
 
-func (n *Node) pump(ctx context.Context) {
+func (n *Agent) pump(ctx context.Context) {
 	t := time.NewTicker(100 * time.Millisecond)
 	defer t.Stop()
 	for {
@@ -1075,7 +1075,7 @@ func (n *Node) pump(ctx context.Context) {
 	}
 }
 
-func (n *Node) output(o plugins.Output) {
+func (n *Agent) output(o plugins.Output) {
 	switch o.Kind {
 	case plugins.OutTelemetry:
 		n.mu.Lock()
@@ -1153,7 +1153,7 @@ func (n *Node) output(o plugins.Output) {
 
 // flushTelemetry sends at most one telemetry frame per telemetry interval (≥ 500 ms: ≤ 2 Hz). Events go out at the
 // next 100 ms tick even inside the interval, so a cliff is not held back by the rate limit of sensor data.
-func (n *Node) flushTelemetry(eventsOnly bool) {
+func (n *Agent) flushTelemetry(eventsOnly bool) {
 	n.mu.Lock()
 	due := time.Since(n.lastTelem) >= time.Duration(n.telemMS)*time.Millisecond
 	if !due && len(n.events) == 0 {
@@ -1228,7 +1228,7 @@ func num(v any) *float64 {
 
 // ---- video ----
 
-func (n *Node) startVideo(ctx context.Context) {
+func (n *Agent) startVideo(ctx context.Context) {
 	if n.pub == nil {
 		return
 	}
@@ -1245,7 +1245,7 @@ func (n *Node) startVideo(ctx context.Context) {
 }
 
 // chooseSource applies video.source. For "auto" it waits (up to 20 s) for the plugins to describe their cameras.
-func (n *Node) chooseSource(ctx context.Context) video.Source {
+func (n *Agent) chooseSource(ctx context.Context) video.Source {
 	vc := n.opt.Config.Video
 	fps := vc.FPS
 	switch vc.Source {
@@ -1337,8 +1337,8 @@ type Status struct {
 	// Roles are what the machine does for the network, as the owner set them on the hub (plan L34): the ids of the
 	// catalogue. Empty when the owner set none.
 	Roles []string `json:"roles,omitempty"`
-	// Shares are the OpenVibe Connect shares this Node keeps up (CON-4): their port, address, whether the tunnel is
-	// up and how many requests the app answered. Empty when the Node serves none.
+	// Shares are the OpenVibe Connect shares this Agent keeps up (CON-4): their port, address, whether the tunnel is
+	// up and how many requests the app answered. Empty when the Agent serves none.
 	Shares []connect.Status `json:"shares,omitempty"`
 }
 
@@ -1367,7 +1367,7 @@ type VideoStatus struct {
 	LastError string `json:"last_error,omitempty"`
 }
 
-func (n *Node) Status() Status {
+func (n *Agent) Status() Status {
 	s := Status{Version: n.opt.Version, Latch: n.latch.State(), ConfigDir: n.opt.Paths.ConfigDir, StateDir: n.opt.Paths.StateDir,
 		Uptime: time.Since(n.started).Round(time.Second).String()}
 	if n.opt.Creds != nil {
@@ -1405,13 +1405,13 @@ func (n *Node) Status() Status {
 }
 
 // reporting is whether status and estop_state may go out: only once this connection's config has been applied.
-func (n *Node) reporting() bool {
+func (n *Agent) reporting() bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return n.configured
 }
 
-func (n *Node) sendStatus() {
+func (n *Agent) sendStatus() {
 	if !n.reporting() {
 		return
 	}
@@ -1443,7 +1443,7 @@ func (n *Node) sendStatus() {
 }
 
 // trackApproval keeps the list `openvibe-link approvals` shows from the computer plugin's approval events.
-func (n *Node) trackApproval(plugin, name string, data map[string]any, at time.Time, binding *plugins.ApprovalRequest) {
+func (n *Agent) trackApproval(plugin, name string, data map[string]any, at time.Time, binding *plugins.ApprovalRequest) {
 	id, _ := data["id"].(string)
 	if id == "" || binding == nil || (name != "approval" && name != "approval_done") {
 		return
@@ -1481,7 +1481,7 @@ func (n *Node) trackApproval(plugin, name string, data map[string]any, at time.T
 }
 
 // Approvals lists the computer commands waiting for an answer on the machine, oldest first.
-func (n *Node) Approvals() []Approval {
+func (n *Agent) Approvals() []Approval {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	out := make([]Approval, 0, len(n.approvals))
@@ -1498,7 +1498,7 @@ func (n *Node) Approvals() []Approval {
 }
 
 // drivingLocked: an input command runs (it is in flight and not waiting for approval) or finished under InputGuard ago.
-func (n *Node) drivingLocked() bool {
+func (n *Agent) drivingLocked() bool {
 	for id := range n.inputs {
 		if _, waiting := n.approvals[id]; !waiting {
 			return true
@@ -1509,7 +1509,7 @@ func (n *Node) drivingLocked() bool {
 
 // tellTray passes the tray's presence to the plugins that handle computer kinds: at once when it quits, at most every
 // trayRetell while it runs.
-func (n *Node) tellTray(on bool) {
+func (n *Agent) tellTray(on bool) {
 	n.mu.Lock()
 	if on && !n.trayToldAt.IsZero() && time.Since(n.trayToldAt) < trayRetell {
 		n.mu.Unlock()
@@ -1533,7 +1533,7 @@ func (n *Node) tellTray(on bool) {
 	}
 }
 
-func (n *Node) control(r localctl.Request) localctl.Response {
+func (n *Agent) control(r localctl.Request) localctl.Response {
 	switch r.Cmd {
 	case localctl.CmdApprovals:
 		b, err := json.Marshal(n.Approvals())
@@ -1571,11 +1571,11 @@ func (n *Node) control(r localctl.Request) localctl.Response {
 		}
 		for _, e := range t.Events {
 			if !firstrun.ValidEvent(e) {
-				return localctl.Response{Error: "first_run: only node.first_run events for a known step are accepted"}
+				return localctl.Response{Error: "first_run: only link.first_run events for a known step are accepted"}
 			}
 		}
 		if !n.reporting() {
-			return localctl.Response{Error: "first_run: the node is not connected to OpenVibe.Bot yet"}
+			return localctl.Response{Error: "first_run: the Link is not connected to OpenVibe.Bot yet"}
 		}
 		// One event per telemetry frame, as the step names say.
 		for _, e := range t.Events {
@@ -1592,9 +1592,9 @@ func (n *Node) control(r localctl.Request) localctl.Response {
 		return localctl.Response{OK: true}
 	case localctl.CmdQuit:
 		// Not a stop: nothing is latched, so the next start drives as before (Maticus, 2026-10-26: a script that
-		// stopped the Node with `stop` left it latched, and had to kill the process to end it).
+		// stopped the Agent with `stop` left it latched, and had to kill the process to end it).
 		if !n.opt.CanQuit {
-			return localctl.Response{Error: "this node runs as a system service, which would start it again: stop it there " +
+			return localctl.Response{Error: "this Link runs as a system service, which would start it again: stop it there " +
 				"(sudo systemctl stop openvibe-link; on Windows, Services), or remove it with `openvibe-link uninstall`"}
 		}
 		n.log.Info("quit by its owner (openvibe-link quit)")
@@ -1610,7 +1610,7 @@ func (n *Node) control(r localctl.Request) localctl.Response {
 	case localctl.CmdPanel:
 		u := n.PanelURL()
 		if u == "" {
-			return localctl.Response{Error: "Link's window is not running on this Node"}
+			return localctl.Response{Error: "Link's window is not running on this Agent"}
 		}
 		b, err := json.Marshal(map[string]string{"url": u})
 		if err != nil {

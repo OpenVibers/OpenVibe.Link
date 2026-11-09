@@ -117,7 +117,7 @@ process.stdin.on('data', (d) => input += d).on('end', () => {
 }
 
 // TestSkillRunnerJobNetDeny: the job names no net, so the worker's network namespace holds no network: the tool's socket
-// to the internet fails, not because Node's permission model stopped it but because the sandbox has nowhere to send it.
+// to the internet fails, not because Link's permission model stopped it but because the sandbox has nowhere to send it.
 func TestSkillRunnerJobNetDeny(t *testing.T) {
 	tool := []byte(`
 const net = require('net');

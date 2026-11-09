@@ -40,7 +40,7 @@ const skillsSyncUsage = "openvibe-link skills sync [--tools a,b] [--project DIR 
 	"  --project DIR     write this project's skills and rules as well; may be given more than once\n" +
 	"  --dry-run         show the diffs and write nothing\n" +
 	"  --yes             do not ask on the first write\n" +
-	"  --state FILE      the opt-in file (default: the Node's state directory)\n" +
+	"  --state FILE      the opt-in file (default: the Link's state directory)\n" +
 	"  --endpoint URL    the skills hub (default " + skillsync.DefaultEndpoint + ")\n" +
 	"  --token-env NAME  the variable the access token is read from (default " + skillsync.DefaultTokenEnv + ")\n" +
 	"  --user-home DIR   use this directory as the person's home (default: yours)\n"
@@ -421,7 +421,7 @@ func skillsWrite(home string, projects []string, person []skillsync.Skill,
 	return 0
 }
 
-// removeBlockFile takes one file's block out, removes the file when the Node
+// removeBlockFile takes one file's block out, removes the file when the Link
 // created it and nothing else is left, and forgets it in the state.
 func removeBlockFile(home string, state *skillsync.State, tool, path string, dryRun bool, stdout io.Writer) (bool, error) {
 	existing, existed, err := readFile(path)
@@ -445,9 +445,9 @@ func removeBlockFile(home string, state *skillsync.State, tool, path string, dry
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return false, err
 		}
-		// A skill folder the Node made is removed too when it is empty.
+		// A skill folder the Link made is removed too when it is empty.
 		_ = os.Remove(filepath.Dir(path))
-		fmt.Fprintf(stdout, "%s: removed (the Node created it)\n", displayPath(home, path))
+		fmt.Fprintf(stdout, "%s: removed (the Link created it)\n", displayPath(home, path))
 	} else if err := writeFile(path, next); err != nil {
 		return false, err
 	}

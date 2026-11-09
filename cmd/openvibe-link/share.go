@@ -27,27 +27,27 @@ type shareArgs struct {
 
 const shareUsage = `usage:
   openvibe-link share <port>                        serve the share this computer was picked for on that port, until Ctrl-C
-  openvibe-link share add <port>                    keep that share up from the Node service
+  openvibe-link share add <port>                    keep that share up from the Link service
   openvibe-link share --share shr_… [--port N]      serve one by its id, until Ctrl-C (no key)
-  openvibe-link share add --share shr_… [--port N]  keep one by its id up from the Node service
+  openvibe-link share add --share shr_… [--port N]  keep one by its id up from the Link service
   openvibe-link share mine                          the shares this computer was picked for
   openvibe-link share --key ovc_… --port N          serve a share with its connect key, until Ctrl-C
-  openvibe-link share add --key ovc_… --port N      keep it up from the Node service (restart the service to start it)
+  openvibe-link share add --key ovc_… --port N      keep it up from the Link service (restart the service to start it)
   openvibe-link share list                          the shares the service keeps up
   openvibe-link share remove <PORT|KEY|ID|ADDRESS>  stop keeping one up
 
 Make a share at https://connect.openvibe.link; its address is https://<label>--<you>.openvibe.link. On its page, pick this computer under "Or serve it from one of your
 computers" to serve it with --share and no key (the computer must be added on openvibe.bot/machines). Without --port,
-the Node serves the port the share's page names now, and keeps that one. The Node only ever connects to localhost on
+the Link serves the port the share's page names now, and keeps that one. The Link only ever connects to localhost on
 the share's port; every visitor signs in with OpenVibe first.`
 
-// connectNodeToken buys this machine's node token for OpenVibe Connect (audience openvibe.link). A machine
+// connectLinkToken buys this machine's node token for OpenVibe Connect (audience openvibe.link). A machine
 // removed on OpenVibe stops its shares (connect.ErrStopped) instead of trying forever.
-func connectNodeToken(creds *credentials.Credentials) func(context.Context) (string, error) {
+func connectLinkToken(creds *credentials.Credentials) func(context.Context) (string, error) {
 	ts := link.NewTokenSourceFor(creds, nil, "openvibe-link/"+version, link.ConnectAudience)
 	return func(ctx context.Context) (string, error) {
 		tok, err := ts.Token(ctx)
-		if errors.Is(err, link.ErrNodeRevoked) {
+		if errors.Is(err, link.ErrLinkRevoked) {
 			return "", fmt.Errorf("%w: %v", connect.ErrStopped, err)
 		}
 		if err != nil {
@@ -67,14 +67,14 @@ func nodeShare(ctx context.Context, g *globals, a shareArgs) (connect.Share, fun
 	if err != nil || !creds.NetworkPaired() {
 		return connect.Share{}, nil, errors.New("this computer is not added to OpenVibe yet: add it on openvibe.bot/machines, then pick it on the share's page")
 	}
-	tokens := connectNodeToken(creds)
+	tokens := connectLinkToken(creds)
 	s := connect.Share{ID: a.share, Port: a.port, Server: a.server}
 	if s.Port == 0 {
 		tok, err := tokens(ctx)
 		if err != nil {
 			return connect.Share{}, nil, err
 		}
-		mine, err := connect.NodeShares(ctx, nil, a.server, tok, "openvibe-link/"+version)
+		mine, err := connect.LinkShares(ctx, nil, a.server, tok, "openvibe-link/"+version)
 		if err != nil {
 			return connect.Share{}, nil, err
 		}
@@ -100,16 +100,16 @@ func shareByPort(ctx context.Context, g *globals, a shareArgs) (connect.Share, f
 	if err != nil || !creds.NetworkPaired() {
 		return connect.Share{}, nil, errors.New("this computer is not added to OpenVibe yet: add it on openvibe.bot/machines, then pick it on the share's page")
 	}
-	tokens := connectNodeToken(creds)
+	tokens := connectLinkToken(creds)
 	tok, err := tokens(ctx)
 	if err != nil {
 		return connect.Share{}, nil, err
 	}
-	mine, err := connect.NodeShares(ctx, nil, a.server, tok, "openvibe-link/"+version)
+	mine, err := connect.LinkShares(ctx, nil, a.server, tok, "openvibe-link/"+version)
 	if err != nil {
 		return connect.Share{}, nil, err
 	}
-	var found []connect.NodeShare
+	var found []connect.LinkShare
 	for _, m := range mine {
 		if m.LocalPort == a.port {
 			found = append(found, m)
@@ -164,11 +164,11 @@ func cmdShare(g *globals, positional []string, a shareArgs, stdout, stderr io.Wr
 			return errors.New("this computer is not added to OpenVibe yet: add it on openvibe.bot/machines")
 		}
 		ctx := context.Background()
-		tok, err := connectNodeToken(creds)(ctx)
+		tok, err := connectLinkToken(creds)(ctx)
 		if err != nil {
 			return err
 		}
-		mine, err := connect.NodeShares(ctx, nil, a.server, tok, "openvibe-link/"+version)
+		mine, err := connect.LinkShares(ctx, nil, a.server, tok, "openvibe-link/"+version)
 		if err != nil {
 			return err
 		}
@@ -205,7 +205,7 @@ func cmdShare(g *globals, positional []string, a shareArgs, stdout, stderr io.Wr
 			if err := connect.Add(g.paths.ConfigDir, s); err != nil {
 				return err
 			}
-			fmt.Fprintf(stdout, "Saved: %s on localhost:%d, served by this computer (no key). Restart the Node service to start it.\n", s.ID, s.Port)
+			fmt.Fprintf(stdout, "Saved: %s on localhost:%d, served by this computer (no key). Restart the Link service to start it.\n", s.ID, s.Port)
 			return nil
 		}
 		if a.key == "" || a.port == 0 {
@@ -221,7 +221,7 @@ func cmdShare(g *globals, positional []string, a shareArgs, stdout, stderr io.Wr
 		if err := connect.Add(g.paths.ConfigDir, connect.Share{Key: a.key, Port: a.port, Server: a.server}); err != nil {
 			return err
 		}
-		fmt.Fprintf(stdout, "Saved: localhost:%d (key %s). Restart the Node service to start it: the service keeps every saved share up.\n", a.port, connect.Redact(a.key))
+		fmt.Fprintf(stdout, "Saved: localhost:%d (key %s). Restart the Link service to start it: the service keeps every saved share up.\n", a.port, connect.Redact(a.key))
 		return nil
 	case "list":
 		shares, err := connect.Load(g.paths.ConfigDir)
@@ -256,7 +256,7 @@ func cmdShare(g *globals, positional []string, a shareArgs, stdout, stderr io.Wr
 		if n == 0 {
 			return fmt.Errorf("no saved share matches %q", positional[1])
 		}
-		fmt.Fprintf(stdout, "Removed %d. Restart the Node service to stop serving it.\n", n)
+		fmt.Fprintf(stdout, "Removed %d. Restart the Link service to stop serving it.\n", n)
 		return nil
 	default:
 		fmt.Fprintln(stderr, shareUsage)
@@ -269,18 +269,18 @@ func shareNow(g *globals, a shareArgs, stdout io.Writer) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	share := connect.Share{Key: a.key, Port: a.port, Server: a.server}
-	var nodeToken func(context.Context) (string, error)
+	var linkToken func(context.Context) (string, error)
 	if a.share != "" {
 		s, tokens, err := nodeShare(ctx, g, a)
 		if err != nil {
 			return err
 		}
-		share, nodeToken, a.port = s, tokens, s.Port
+		share, linkToken, a.port = s, tokens, s.Port
 	}
 	err := connect.Run(ctx, share, connect.Options{
 		Log:       g.log,
 		Version:   version,
-		NodeToken: nodeToken,
+		LinkToken: linkToken,
 		OnReady: func(r connect.Ready) {
 			fmt.Fprintf(stdout, "Connected. %s → localhost:%d (only the people you let in can open it). Ctrl-C to stop.\n", r.URL, a.port)
 		},

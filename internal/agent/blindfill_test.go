@@ -1,4 +1,4 @@
-package node
+package agent
 
 import (
 	"encoding/json"
@@ -13,7 +13,7 @@ import (
 	"github.com/OpenVibers/OpenVibe.Link/internal/send"
 )
 
-func blindFillTestNode(t *testing.T) (*Node, string) {
+func blindFillTestNode(t *testing.T) (*Agent, string) {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join("..", "lockeropen", "testdata", "sdk-link-send-v1.json"))
 	if err != nil {
@@ -35,7 +35,7 @@ func blindFillTestNode(t *testing.T) (*Node, string) {
 	if err := os.WriteFile(filepath.Join(dir, "link-send-key.json"), key, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	n := &Node{opt: Options{Creds: &credentials.Credentials{Principal: v.Recipient.ID}, Paths: config.Paths{ConfigDir: dir}}}
+	n := &Agent{opt: Options{Creds: &credentials.Credentials{Principal: v.Recipient.ID}, Paths: config.Paths{ConfigDir: dir}}}
 	raw, _ := json.Marshal(map[string]any{"action": "blind_fill", "request_id": v.Expected["request_id"], "envelope": v.Envelope})
 	return n, string(raw)
 }

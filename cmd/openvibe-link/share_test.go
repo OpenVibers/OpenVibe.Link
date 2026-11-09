@@ -11,7 +11,7 @@ import (
 	"github.com/OpenVibers/OpenVibe.Link/internal/connect"
 )
 
-// `openvibe-link share`: usage, add, list (the key only redacted), remove, and the file only the Node's account reads.
+// `openvibe-link share`: usage, add, list (the key only redacted), remove, and the file only the Link's account reads.
 func TestShareCommands(t *testing.T) {
 	home := t.TempDir()
 	key := "ovc_" + strings.Repeat("K", 43)

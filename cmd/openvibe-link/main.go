@@ -37,13 +37,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OpenVibers/OpenVibe.Link/internal/agent"
 	"github.com/OpenVibers/OpenVibe.Link/internal/config"
 	"github.com/OpenVibers/OpenVibe.Link/internal/connect"
 	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
 	"github.com/OpenVibers/OpenVibe.Link/internal/firstrun"
 	"github.com/OpenVibers/OpenVibe.Link/internal/link"
 	"github.com/OpenVibers/OpenVibe.Link/internal/localctl"
-	"github.com/OpenVibers/OpenVibe.Link/internal/node"
 	"github.com/OpenVibers/OpenVibe.Link/internal/plugins"
 	"github.com/OpenVibers/OpenVibe.Link/internal/profilesig"
 	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
@@ -77,7 +77,7 @@ Usage:
   openvibe-link approve <ID>         let it run
   openvibe-link deny <ID>            refuse it
   openvibe-link tray [--autostart on|off]
-                    the Node in your notification area (Linux, Windows): what waits with Approve and Deny, stop,
+                    the Link in your notification area (Linux, Windows): what waits with Approve and Deny, stop,
                     resume, Open Link; --autostart starts it when you sign in
   openvibe-link panel                print Link's own window's address (loopback, this run's token)
   openvibe-link profile verify community.<name> [--server URL] [--key-id ID]
@@ -102,7 +102,7 @@ Usage:
                     OPENVIBE_STREAM_TICKET, never argv)
   openvibe-link share --key ovc_… --port N           put this machine's port N on the web (OpenVibe Connect),
                                                    behind OpenVibe sign-in, until Ctrl-C
-  openvibe-link share add|list|remove …             the shares the Node service keeps up (openvibe-link share)
+  openvibe-link share add|list|remove …             the shares the Link service keeps up (openvibe-link share)
   openvibe-link party host <party-id>               host a shared browser for an openvibe.party room, until stopped
   openvibe-link version
 
@@ -169,7 +169,7 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 	if cmd == "exchange" { // its own flags: serve, and the seller offer's
 		return cmdExchange(rest, stdout, stderr)
 	}
-	if cmd == "desk-sandbox" { // its own flags, up to "--": a browser's flags after it are never the Node's
+	if cmd == "desk-sandbox" { // its own flags, up to "--": a browser's flags after it are never the Link's
 		return cmdDeskSandbox(rest, stderr)
 	}
 	if cmd == "stream" { // its own flags: --probe and the latency probe's
@@ -311,7 +311,7 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 	}
 	if err != nil {
 		fmt.Fprintln(stderr, "error:", err)
-		if errors.Is(err, link.ErrNodeRevoked) {
+		if errors.Is(err, link.ErrLinkRevoked) {
 			return service.ExitPairAgain
 		}
 		return 1
@@ -386,7 +386,7 @@ func deviceName(name string) string {
 	return name
 }
 
-// preparePair checks that this Node may pair (not paired yet, or --force) and returns the config with --server and
+// preparePair checks that this Link may pair (not paired yet, or --force) and returns the config with --server and
 // --kind applied, and whether config.json was missing (then pairing writes it).
 func preparePair(g *globals, a pairArgs) (*config.Config, bool, error) {
 	if err := g.paths.Ensure(); err != nil {
@@ -506,7 +506,7 @@ func cmdPairNetwork(g *globals, a pairArgs, stdout io.Writer) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	ua := "openvibe-link/" + version
-	creds, err := link.PairNetwork(ctx, nil, network, protocol.NodePairingRequest{Code: code, Pairing: a.pairing, Name: deviceName(a.name)}, ua)
+	creds, err := link.PairNetwork(ctx, nil, network, protocol.LinkPairingRequest{Code: code, Pairing: a.pairing, Name: deviceName(a.name)}, ua)
 	if err != nil {
 		return err
 	}
@@ -516,7 +516,7 @@ func cmdPairNetwork(g *globals, a pairArgs, stdout io.Writer) error {
 	}
 	fmt.Fprintf(stdout, "Paired on %s as %s. Credential saved to %s (mode 600).\n", network, creds.Principal, g.paths.CredentialFile())
 	if bound, err := link.Bind(ctx, nil, creds, link.NewTokenSource(creds, nil, ua), ua); err != nil {
-		if errors.Is(err, link.ErrNodeRevoked) {
+		if errors.Is(err, link.ErrLinkRevoked) {
 			return err
 		}
 		fmt.Fprintf(stdout, "Could not bind the device on %s yet (%v); the node binds it when it starts.\n", creds.Server, err)
@@ -544,7 +544,7 @@ func saveCredentials(g *globals, c *credentials.Credentials) error {
 }
 
 // bindOnStart binds a Network-paired machine whose device record is missing (the bind at pairing failed) and saves
-// the answer. A refused node credential (ErrNodeRevoked) is returned; any other failure is logged and the Node
+// the answer. A refused node credential (ErrLinkRevoked) is returned; any other failure is logged and the Link
 // starts without a device record (no video); the next start binds again.
 func bindOnStart(g *globals, creds *credentials.Credentials, tokens *link.TokenSource, server string) (*credentials.Credentials, error) {
 	if !creds.NetworkPaired() || creds.Bound() {
@@ -556,7 +556,7 @@ func bindOnStart(g *globals, creds *credentials.Credentials, tokens *link.TokenS
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	bound, err := link.Bind(ctx, nil, creds, tokens, "openvibe-link/"+version)
-	if errors.Is(err, link.ErrNodeRevoked) {
+	if errors.Is(err, link.ErrLinkRevoked) {
 		return nil, err
 	}
 	if err != nil {
@@ -575,7 +575,7 @@ const maxRotateJSON = 64 << 10
 
 // cmdCredentialImport replaces the stored credential and publish key with the pair from a credential rotation.
 // It reads OpenVibe.Bot's `POST /api/v1/devices/:id/rotate` response from stdin and keeps every other stored field,
-// so a rotated Node does not have to pair again. Neither secret is ever printed.
+// so a rotated Link does not have to pair again. Neither secret is ever printed.
 func cmdCredentialImport(g *globals, stdin io.Reader, stdout io.Writer) error {
 	// The rotate answer is small; refuse a huge stream instead of buffering it.
 	b, err := io.ReadAll(io.LimitReader(stdin, maxRotateJSON+1))
@@ -603,16 +603,16 @@ func cmdCredentialImport(g *globals, stdin io.Reader, stdout io.Writer) error {
 	}
 	old, err := credentials.Load(g.paths.CredentialFile(), nil)
 	if errors.Is(err, credentials.ErrNotPaired) {
-		return errors.New("this Node is not paired yet; run `openvibe-link pair <CODE>` first")
+		return errors.New("this Link is not paired yet; run `openvibe-link pair <CODE>` first")
 	}
 	if err != nil {
 		return err
 	}
 	if old.NetworkPaired() {
-		return errors.New("this Node is paired through OpenVibe.Network: it has no Bot credential to import")
+		return errors.New("this Link is paired through OpenVibe.Network: it has no Bot credential to import")
 	}
 	if resp.Device.ID != old.DeviceID {
-		return fmt.Errorf("this rotation is for device %s, this Node is paired as %s", resp.Device.ID, old.DeviceID)
+		return fmt.Errorf("this rotation is for device %s, this Link is paired as %s", resp.Device.ID, old.DeviceID)
 	}
 	next := *old
 	next.Credential = credentials.NewSecret(resp.Credential)
@@ -658,13 +658,13 @@ func cmdRun(g *globals, dryRun bool) error {
 		}
 		tokens = ts
 	}
-	n, err := node.New(node.Options{Config: cfg, Paths: g.paths, Creds: creds, Tokens: tokens, Log: g.log, Version: version, CanQuit: service.Interactive(), NoShares: dryRun})
+	n, err := agent.New(agent.Options{Config: cfg, Paths: g.paths, Creds: creds, Tokens: tokens, Log: g.log, Version: version, CanQuit: service.Interactive(), NoShares: dryRun})
 	if err != nil {
 		return err
 	}
 	g.log.Info("openvibe-link starting", "version", version, "config", g.paths.ConfigDir, "plugins", len(cfg.Plugins))
 	return service.Run(serviceOptions(g, ""), func(ctx context.Context) error {
-		if err := n.Run(ctx); !errors.Is(err, node.ErrQuit) {
+		if err := n.Run(ctx); !errors.Is(err, agent.ErrQuit) {
 			return err
 		}
 		g.log.Info("openvibe-link exited: every actuator stopped, nothing latched")
@@ -733,7 +733,7 @@ func cmdStop(g *globals, stdout io.Writer) error {
 	if !errors.As(err, &op) || op.Op != "dial" {
 		return fmt.Errorf("stop failed: %w", err)
 	}
-	// No running Node answered: latch it in the file, which a running Node polls and a starting Node obeys.
+	// No running Link answered: latch it in the file, which a running Link polls and a starting Link obeys.
 	if ferr := safety.WriteLocalFile(g.paths.LatchFile(), true); ferr != nil {
 		return fmt.Errorf("could not reach the node (%v) nor write %s (%v); run with sudo", err, g.paths.LatchFile(), ferr)
 	}
@@ -743,7 +743,7 @@ func cmdStop(g *globals, stdout io.Writer) error {
 	return nil
 }
 
-// cmdQuit ends the running Node and waits until it has exited, so a script that runs it next can start it again.
+// cmdQuit ends the running Link and waits until it has exited, so a script that runs it next can start it again.
 func cmdQuit(g *globals, stdout io.Writer) error {
 	sock := g.paths.SocketPath()
 	if _, err := localctl.Call(sock, localctl.Request{Cmd: localctl.CmdQuit}, 2*time.Second); err != nil {
@@ -790,7 +790,7 @@ func cmdApprovals(g *globals, asJSON bool, stdout io.Writer) error {
 		_, err := stdout.Write(append(resp.Data, '\n'))
 		return err
 	}
-	var list []node.Approval
+	var list []agent.Approval
 	if err := json.Unmarshal(resp.Data, &list); err != nil {
 		return err
 	}
@@ -829,7 +829,7 @@ func cmdAnswer(g *globals, cmd, id string, stdout io.Writer) error {
 	return nil
 }
 
-// sharesText lists the OpenVibe Connect shares this Node keeps up (CON-4). A share that is reconnecting says why; a
+// sharesText lists the OpenVibe Connect shares this Link keeps up (CON-4). A share that is reconnecting says why; a
 // key-served share is named by its port and never shows the key.
 func sharesText(shares []connect.Status) string {
 	if len(shares) == 0 {
@@ -867,7 +867,7 @@ func cmdStatus(g *globals, asJSON bool, stdout io.Writer) error {
 		_, err := stdout.Write(append(resp.Data, '\n'))
 		return err
 	}
-	var s node.Status
+	var s agent.Status
 	if err := json.Unmarshal(resp.Data, &s); err != nil {
 		return err
 	}
@@ -995,7 +995,7 @@ func cmdPlugins(g *globals, asJSON bool, stdout io.Writer) error {
 	}
 	var list []entry
 	if resp, err := localctl.Call(g.paths.SocketPath(), localctl.Request{Cmd: localctl.CmdPlugins}, 2*time.Second); err == nil {
-		var s node.Status
+		var s agent.Status
 		if err := json.Unmarshal(resp.Data, &s); err != nil {
 			return err
 		}
@@ -1056,7 +1056,7 @@ func cmdProfileVerify(g *globals, id, server, keyID string, stdout io.Writer) er
 	}
 	fmt.Fprintf(stdout, "%s version %s: signed by %s (Bot key %s), as reviewed.\n", res.ID, res.Version, strings.TrimSuffix(server, "/"), res.KeyID)
 	if res.Plugin != "" {
-		fmt.Fprintf(stdout, "Its robots run the Node plugin %q: install it from the source its page links to, then list it in the config's plugins.\n", res.Plugin)
+		fmt.Fprintf(stdout, "Its robots run the Link plugin %q: install it from the source its page links to, then list it in the config's plugins.\n", res.Plugin)
 	}
 	return nil
 }

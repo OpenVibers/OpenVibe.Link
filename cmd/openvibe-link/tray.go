@@ -1,16 +1,16 @@
 package main
 
-// `openvibe-link tray`: the Node in its owner's notification area. It runs in the graphical session (not in the
-// service), talks to the running Node over the local control socket like the other commands, and shows:
+// `openvibe-link tray`: the Link in its owner's notification area. It runs in the graphical session (not in the
+// service), talks to the running Link over the local control socket like the other commands, and shows:
 //
 //   - the state in the icon: blue when all is well, amber while a computer request waits for an answer, red while a
-//     stop is latched, grey when the Node does not answer;
+//     stop is latched, grey when the Link does not answer;
 //   - what waits for approval (the computer plugin at level "ask"), each with Approve and Deny;
 //   - Stop everything (the local kill switch), Resume, and the machines page on openvibe.bot.
 //
 // A new request also raises a desktop notification with Approve and Deny buttons where the desktop offers them
 // (Linux, org.freedesktop.Notifications). While the tray runs, the computer plugin's own prompts stay quiet. The core
-// refuses an Approve while the agent drives the mouse or keyboard and just after (node.InputGuard), so an approved
+// refuses an Approve while the agent drives the mouse or keyboard and just after (agent.InputGuard), so an approved
 // click cannot press Approve here; the tray then asks again.
 
 import (
@@ -31,12 +31,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/OpenVibers/OpenVibe.Link/internal/agent"
 	"github.com/OpenVibers/OpenVibe.Link/internal/localctl"
-	"github.com/OpenVibers/OpenVibe.Link/internal/node"
 	"github.com/OpenVibers/OpenVibe.Link/internal/safety"
 )
 
-// trayPoll is how often the tray asks the Node what changed.
+// trayPoll is how often the tray asks the Link what changed.
 const trayPoll = 1500 * time.Millisecond
 
 // traySlots is how many waiting requests the menu lists (the plugin lets 8 wait at once).
@@ -57,14 +57,14 @@ type trayView struct {
 	Header  string // the first, disabled menu line
 	Level   string // the computer plugin's level, "" without it
 	Stopped bool
-	Waiting []node.Approval
-	Panel   string // the machines page on the Bot this Node is paired with, "" if unknown
+	Waiting []agent.Approval
+	Panel   string // the machines page on the Bot this Link is paired with, "" if unknown
 }
 
-// viewOf builds the view from the Node's status and approvals; err is the socket error (the Node is not running).
-func viewOf(st *node.Status, list []node.Approval, err error) trayView {
+// viewOf builds the view from the Link's status and approvals; err is the socket error (the Link is not running).
+func viewOf(st *agent.Status, list []agent.Approval, err error) trayView {
 	if err != nil || st == nil {
-		return trayView{State: trayDown, Tooltip: "OpenVibe Link: not running", Header: "The Node is not running"}
+		return trayView{State: trayDown, Tooltip: "OpenVibe Link: not running", Header: "The Link is not running"}
 	}
 	v := trayView{Waiting: list, Panel: panelURL(st.Server)}
 	if lv, ok := st.Telemetry.Sensors["computer_level"].(string); ok {
@@ -107,7 +107,7 @@ func plural(n int, one, many string) string {
 	return many
 }
 
-// panelURL is the machines page of the Bot the Node is paired with: an https origin, or a loopback http one.
+// panelURL is the machines page of the Bot the Link is paired with: an https origin, or a loopback http one.
 func panelURL(server string) string {
 	u, err := url.Parse(strings.TrimSpace(server))
 	if err != nil || u.Host == "" {
@@ -121,7 +121,7 @@ func panelURL(server string) string {
 }
 
 // slotLabel is one waiting request in the menu: its kind and what it would do, cut to fit a menu.
-func slotLabel(a node.Approval) string {
+func slotLabel(a agent.Approval) string {
 	s := safety.DisplayText(a.Summary)
 	if len([]rune(s)) > 70 {
 		s = string([]rune(s)[:69]) + "…"
@@ -135,7 +135,7 @@ func slotLabel(a node.Approval) string {
 // traySlot binds the rendered label and both buttons to one immutable approval.
 type traySlot struct {
 	Label    string
-	Approval node.Approval
+	Approval agent.Approval
 }
 
 // trayUI is the notification-area side (systray on Linux and Windows; a fake in tests).
@@ -152,7 +152,7 @@ type trayUI interface {
 // notifier raises and takes down desktop notifications (D-Bus on Linux; nothing elsewhere).
 type notifier interface {
 	// Ask shows a request with Approve and Deny; again marks a second asking after a refused answer.
-	Ask(a node.Approval, again string)
+	Ask(a agent.Approval, again string)
 	Close(id string)
 	Info(title, body string)
 	// Answers carries {id, approved} when a notification's button is pressed; nil if there are none.
@@ -167,13 +167,13 @@ type trayAnswer struct {
 
 type nopNotifier struct{}
 
-func (nopNotifier) Ask(node.Approval, string)  {}
+func (nopNotifier) Ask(agent.Approval, string) {}
 func (nopNotifier) Close(string)               {}
 func (nopNotifier) Info(string, string)        {}
 func (nopNotifier) Answers() <-chan trayAnswer { return nil }
 func (nopNotifier) Shut()                      {}
 
-// trayCore polls the Node and drives the UI and the notifications; the platform files only wire it up.
+// trayCore polls the Link and drives the UI and the notifications; the platform files only wire it up.
 type trayCore struct {
 	sock   string
 	ui     trayUI
@@ -195,15 +195,15 @@ func (t *trayCore) call(req localctl.Request) (localctl.Response, error) {
 	return localctl.Call(t.sock, req, 2*time.Second)
 }
 
-// tick asks the Node for its status and approvals, says the tray is there, and updates everything.
+// tick asks the Link for its status and approvals, says the tray is there, and updates everything.
 func (t *trayCore) tick() trayView {
 	t.pollMu.Lock()
 	defer t.pollMu.Unlock()
-	var st *node.Status
-	var list []node.Approval
+	var st *agent.Status
+	var list []agent.Approval
 	resp, err := t.call(localctl.Request{Cmd: localctl.CmdStatus})
 	if err == nil {
-		var s node.Status
+		var s agent.Status
 		if err = json.Unmarshal(resp.Data, &s); err == nil {
 			st = &s
 		}
@@ -217,7 +217,7 @@ func (t *trayCore) tick() trayView {
 	v := viewOf(st, list, err)
 	t.mu.Lock()
 	t.view = v
-	fresh, gone := []node.Approval{}, []string{}
+	fresh, gone := []agent.Approval{}, []string{}
 	now := map[string]bool{}
 	for _, a := range list {
 		now[a.ID] = true
@@ -257,7 +257,7 @@ func (t *trayCore) tick() trayView {
 }
 
 // answer approves or denies one request; a refusal (the agent just used the mouse or keyboard) asks again.
-func (t *trayCore) answer(a node.Approval, approved bool) error {
+func (t *trayCore) answer(a agent.Approval, approved bool) error {
 	cmd := localctl.CmdDeny
 	if approved {
 		cmd = localctl.CmdApprove
@@ -281,7 +281,7 @@ func (t *trayCore) answer(a node.Approval, approved bool) error {
 // answerByID is a notification's button: the request must still wait.
 func (t *trayCore) answerByID(id string, approved bool) error {
 	t.mu.Lock()
-	var found *node.Approval
+	var found *agent.Approval
 	for i := range t.view.Waiting {
 		if t.view.Waiting[i].ID == id {
 			a := t.view.Waiting[i]
@@ -306,7 +306,7 @@ func (t *trayCore) resume() error {
 	return err
 }
 
-// quit tells the Node the tray is gone (the plugin prompts again) and takes the notifications down.
+// quit tells the Link the tray is gone (the plugin prompts again) and takes the notifications down.
 func (t *trayCore) quit() {
 	_, _ = t.call(localctl.Request{Cmd: localctl.CmdTray, On: false})
 	t.mu.Lock()
@@ -384,7 +384,7 @@ var trayColors = map[string]color.NRGBA{
 	trayDown:    {0x9c, 0xa3, 0xaf, 0xff},
 }
 
-// trayImage draws the tray icon: a filled disc in the state's colour with a white ring-and-dot (the Node's mark);
+// trayImage draws the tray icon: a filled disc in the state's colour with a white ring-and-dot (the Link's mark);
 // while something waits the dot becomes a bar, an exclamation.
 func trayImage(state string, size int) *image.NRGBA {
 	img := image.NewNRGBA(image.Rect(0, 0, size, size))

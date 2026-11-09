@@ -254,7 +254,7 @@ func (s *Server) pair(w http.ResponseWriter, r *http.Request) {
 }
 
 // RefuseBind makes the next POST /api/v1/devices/bind answer with this problem (queued: one refusal per call), as
-// Bot refuses a node token (401 bot.node_token_required) or a principal it will not bind (403 bot.node_not_bound).
+// Bot refuses a node token (401 bot.link_token_required) or a principal it will not bind (403 bot.link_not_bound).
 func (s *Server) RefuseBind(status int, code, detail string) {
 	s.mu.Lock()
 	s.bindRefusals = append(s.bindRefusals, refusal{status, code, detail})
@@ -285,7 +285,7 @@ func (s *Server) bind(w http.ResponseWriter, r *http.Request) {
 	robot := s.robots[dev]
 	s.mu.Unlock()
 	if !ok {
-		problem(w, http.StatusUnauthorized, "bot.node_token_required", "a Network node token (audience openvibe.bot) is required")
+		problem(w, http.StatusUnauthorized, "bot.link_token_required", "a Network node token (audience openvibe.bot) is required")
 		return
 	}
 	pk := "pk_" + token()[:16]

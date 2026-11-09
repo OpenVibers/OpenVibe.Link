@@ -56,7 +56,7 @@ type header struct {
 	} `json:"slots"`
 }
 
-// Open validates and opens an SDK Locker people envelope addressed to the Node's Link Send key.
+// Open validates and opens an SDK Locker people envelope addressed to the Link's Link Send key.
 func Open(envelope []byte, private JWK, recipient Subject) ([]byte, error) {
 	if len(envelope) < 8 || len(envelope) > maxBytes || string(envelope[:4]) != "OVLK" {
 		return nil, errors.New("invalid locker envelope")

@@ -346,7 +346,7 @@ func (s *Server) api() http.Handler {
 				return
 			}
 			if s.opt.Pause == nil {
-				writeJSON(w, http.StatusServiceUnavailable, errBody("the panel cannot pause this Node"))
+				writeJSON(w, http.StatusServiceUnavailable, errBody("the panel cannot pause this Link"))
 				return
 			}
 			if err := s.opt.Pause(*body.Paused); err != nil {

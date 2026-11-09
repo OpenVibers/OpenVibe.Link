@@ -136,7 +136,7 @@ handled by more than `max_command_ms`.
 #### Deadlines, turns and stops: the platform's answers
 
 Asked by the Generic LOOI driver's authors (2026-10-27). Each answer is what Bot (`server/realtime.js`,
-`server/domain`), this core (`internal/node`, `internal/plugins`) and the Python runtime do:
+`server/domain`), this core (`internal/agent`, `internal/plugins`) and the Python runtime do:
 
 1. **Where a deadline comes from.** Bot's control gate sets it when it decides a command:
    - The deadline is Bot's clock now plus the robot's `max_command_ms`: 300 ms unless the owner set less.
@@ -465,7 +465,7 @@ a slow reader never sees a partial file) and announces it with `{"op": "video", 
 (`emit_video` in [`plugins/sdk`](../plugins/sdk)). The core reads the file at once and encodes it: with `ffmpeg` if
 installed, otherwise with its built-in encoder at up to 5 frames per second. The core side of this contract is
 `JPEGSource` in [`internal/video/sources.go`](../internal/video/sources.go#L298), selected when the plugin's
-`describe` advertises `camera.jpeg: true` (`internal/node/node.go`).
+`describe` advertises `camera.jpeg: true` (`internal/agent/node.go`).
 
 ## Safety rules (every plugin)
 

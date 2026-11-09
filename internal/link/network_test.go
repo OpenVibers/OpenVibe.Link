@@ -25,7 +25,7 @@ func networkPair(t *testing.T) (*fakebot.Server, *fakenetwork.Server, *credentia
 	t.Cleanup(net.Close)
 	net.AddCode("ABCD2345")
 	c, err := PairNetwork(context.Background(), nil, net.URL()+"/",
-		protocol.NodePairingRequest{Code: "ABCD2345", Pairing: fakenetwork.PairingID, Name: "Rover"}, "openvibe-link/t")
+		protocol.LinkPairingRequest{Code: "ABCD2345", Pairing: fakenetwork.PairingID, Name: "Rover"}, "openvibe-link/t")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func networkPair(t *testing.T) (*fakebot.Server, *fakenetwork.Server, *credentia
 // token; the bind answer fills the device fields exactly as POST /pair does.
 func TestPairNetworkTokenAndBind(t *testing.T) {
 	bot, net, c := networkPair(t)
-	if c.Principal != fakenetwork.Principal || c.NodeCredential.Reveal() != net.Credential() || c.Network != net.URL() ||
+	if c.Principal != fakenetwork.Principal || c.LinkCredential.Reveal() != net.Credential() || c.Network != net.URL() ||
 		c.PairedFor == nil || c.PairedFor.Service != "bot" || c.RobotID != fakebot.RobotID || c.Bound() || !c.NetworkPaired() {
 		t.Fatalf("%+v", c)
 	}
@@ -86,16 +86,16 @@ func TestTokenCachedUntilExpiryMinusSkew(t *testing.T) {
 	}
 }
 
-// A revoked principal: /oauth/token answers 401 invalid_client, which is ErrNodeRevoked, and the error never quotes
+// A revoked principal: /oauth/token answers 401 invalid_client, which is ErrLinkRevoked, and the error never quotes
 // the credential.
 func TestTokenRevoked(t *testing.T) {
 	_, net, c := networkPair(t)
 	net.Revoke()
 	_, err := NewTokenSource(c, nil, "t").Token(context.Background())
-	if !errors.Is(err, ErrNodeRevoked) || strings.Contains(err.Error(), net.Credential()) || !strings.Contains(err.Error(), "pair again") {
+	if !errors.Is(err, ErrLinkRevoked) || strings.Contains(err.Error(), net.Credential()) || !strings.Contains(err.Error(), "pair again") {
 		t.Fatalf("%v", err)
 	}
-	if _, err := Bind(context.Background(), nil, c, NewTokenSource(c, nil, "t"), "t"); !errors.Is(err, ErrNodeRevoked) {
+	if _, err := Bind(context.Background(), nil, c, NewTokenSource(c, nil, "t"), "t"); !errors.Is(err, ErrLinkRevoked) {
 		t.Fatalf("bind: %v", err)
 	}
 }
@@ -103,20 +103,20 @@ func TestTokenRevoked(t *testing.T) {
 // Bot answering 401 to the bind refetches the token once, and only once.
 func TestBindRefetchesTokenOnceOn401(t *testing.T) {
 	bot, net, c := networkPair(t)
-	bot.RefuseBind(http.StatusUnauthorized, "bot.node_token_required", "")
+	bot.RefuseBind(http.StatusUnauthorized, "bot.link_token_required", "")
 	if _, err := Bind(context.Background(), nil, c, NewTokenSource(c, nil, "t"), "t"); err != nil {
 		t.Fatal(err)
 	}
 	if bot.Binds() != 2 || len(net.Tokens()) != 2 {
 		t.Fatalf("binds %d tokens %d", bot.Binds(), len(net.Tokens()))
 	}
-	bot.RefuseBind(http.StatusUnauthorized, "bot.node_token_required", "")
-	bot.RefuseBind(http.StatusUnauthorized, "bot.node_token_required", "")
+	bot.RefuseBind(http.StatusUnauthorized, "bot.link_token_required", "")
+	bot.RefuseBind(http.StatusUnauthorized, "bot.link_token_required", "")
 	_, err := Bind(context.Background(), nil, c, NewTokenSource(c, nil, "t"), "t")
-	if err == nil || !strings.Contains(err.Error(), "node token") || bot.Binds() != 4 {
+	if err == nil || !strings.Contains(err.Error(), "Link token") || bot.Binds() != 4 {
 		t.Fatalf("%v binds %d", err, bot.Binds())
 	}
-	bot.RefuseBind(http.StatusForbidden, "bot.node_not_bound", "")
+	bot.RefuseBind(http.StatusForbidden, "bot.link_not_bound", "")
 	if _, err := Bind(context.Background(), nil, c, NewTokenSource(c, nil, "t"), "t"); err == nil || !strings.Contains(err.Error(), "will not bind") {
 		t.Fatalf("%v", err)
 	}
@@ -125,18 +125,18 @@ func TestBindRefetchesTokenOnceOn401(t *testing.T) {
 func TestPairNetworkRefusals(t *testing.T) {
 	net := fakenetwork.New(nil)
 	defer net.Close()
-	_, err := PairNetwork(context.Background(), nil, net.URL(), protocol.NodePairingRequest{Code: "ABCD2345"}, "t")
+	_, err := PairNetwork(context.Background(), nil, net.URL(), protocol.LinkPairingRequest{Code: "ABCD2345"}, "t")
 	if err == nil || !strings.Contains(err.Error(), "not the pairing code") {
 		t.Fatalf("%v", err)
 	}
-	if _, err := PairNetwork(context.Background(), nil, "http://example.com", protocol.NodePairingRequest{Code: "ABCD2345"}, "t"); err == nil || !strings.Contains(err.Error(), "plain http") {
+	if _, err := PairNetwork(context.Background(), nil, "http://example.com", protocol.LinkPairingRequest{Code: "ABCD2345"}, "t"); err == nil || !strings.Contains(err.Error(), "plain http") {
 		t.Fatalf("%v", err)
 	}
 }
 
-// A Network-paired link presents node tokens, sends reauth with a fresh one, and stops (Run returns ErrNodeRevoked)
+// A Network-paired link presents node tokens, sends reauth with a fresh one, and stops (Run returns ErrLinkRevoked)
 // once Network refuses the credential. Nothing secret reaches the log.
-func TestNodeTokenLinkReauthAndRevoked(t *testing.T) {
+func TestLinkTokenLinkReauthAndRevoked(t *testing.T) {
 	bot, net, c := networkPair(t)
 	u, _ := DeviceURL(bot.URL())
 	var logs bytes.Buffer
@@ -164,7 +164,7 @@ func TestNodeTokenLinkReauthAndRevoked(t *testing.T) {
 	net.Revoke()
 	select {
 	case err := <-done:
-		if !errors.Is(err, ErrNodeRevoked) {
+		if !errors.Is(err, ErrLinkRevoked) {
 			t.Fatalf("Run returned %v", err)
 		}
 	case <-time.After(5 * time.Second):
