@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/OpenVibers/OpenVibe.Node/internal/lockeropen"
@@ -81,6 +82,11 @@ func (n *Node) prepareBlindFillAt(value json.RawMessage, now time.Time) (json.Ra
 	if grantOrigin, valid := exactHTTPOrigin(grant.Origin); !valid || grantOrigin != grant.Origin {
 		return nil, func() {}, fmt.Errorf("blind fill origin mismatch")
 	}
+	// Run makes a grant single-use, but Run is exactly the party that must not be able to reuse one: the machine itself
+	// refuses a request id it has already opened (kept for twice the grant's 60 s life).
+	if !claimFillRequest(req.RequestID, now) {
+		return nil, func() {}, fmt.Errorf("blind fill grant reused")
+	}
 	pluginRequest := blindFillPluginRequest{Action: "blind_fill", RequestID: req.RequestID, Origin: grant.Origin, Username: grant.Username, Password: grant.Password, Code: grant.Code, Submit: grant.Submit}
 	pluginValue, err := json.Marshal(pluginRequest)
 	pluginRequest.Username, pluginRequest.Password, pluginRequest.Code = "", "", ""
@@ -122,4 +128,27 @@ func wipeSecret(b []byte) {
 	for i := range b {
 		b[i] = 0
 	}
+}
+
+var (
+	filledMu   sync.Mutex
+	filledSeen = map[string]time.Time{}
+)
+
+const filledKeep = 2 * time.Minute
+
+// claimFillRequest records a request id the first time it is opened and refuses it after that.
+func claimFillRequest(id string, now time.Time) bool {
+	filledMu.Lock()
+	defer filledMu.Unlock()
+	for k, at := range filledSeen {
+		if now.Sub(at) > filledKeep {
+			delete(filledSeen, k)
+		}
+	}
+	if _, ok := filledSeen[id]; ok {
+		return false
+	}
+	filledSeen[id] = now
+	return true
 }

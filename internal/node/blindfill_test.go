@@ -82,3 +82,19 @@ func TestPrepareBlindFillBindsRequestAndRecipient(t *testing.T) {
 		}
 	}
 }
+
+func TestPrepareBlindFillRefusesAReusedGrant(t *testing.T) {
+	n, raw := blindFillTestNode(t)
+	at := time.UnixMilli(1893455970000)
+	filledMu.Lock()
+	filledSeen = map[string]time.Time{}
+	filledMu.Unlock()
+	if _, clear, err := n.prepareBlindFillAt([]byte(raw), at); err != nil {
+		t.Fatal(err)
+	} else {
+		clear()
+	}
+	if _, _, err := n.prepareBlindFillAt([]byte(raw), at.Add(5*time.Second)); err == nil || !strings.Contains(err.Error(), "reused") {
+		t.Fatalf("the same grant opened twice: %v", err)
+	}
+}
