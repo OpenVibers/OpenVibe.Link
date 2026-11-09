@@ -169,8 +169,8 @@ STREAM_WIDTH = 1600
 STREAM_QUALITY = 70
 STREAM_MAX_FAILURES = 5
 INPUT_ACTIONS = frozenset({"move", "click", "double_click", "right_click", "scroll", "type", "key"})
-BROWSER_READS = frozenset({"read", "screenshot", "close"})
-BROWSER_ACTS = frozenset({"open", "click", "fill", "press", "back"})
+BROWSER_READS = frozenset({"read", "screenshot", "close", "active_origin"})
+BROWSER_ACTS = frozenset({"open", "click", "fill", "press", "back", "blind_fill"})
 MAX_URL = 2048
 MAX_DESK_PROGRAMS = 16
 PROFILE_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,23}$")
@@ -1007,6 +1007,12 @@ class Computer(Plugin):
             return self._act(cmd, level, self._driving(run), summary, threaded=True)
         if cmd.kind == "browser":
             run, summary, acting = self._browser_op(v, level, env=desk_env, desk=desk_name)
+            if v.get("action") == "blind_fill":
+                if RANK[level] < RANK["ask"]:
+                    raise Fault("not_allowed", "this machine allows observing only")
+                # The Node has opened and checked the single-use encrypted Companion grant. At level ask this is the
+                # owner's approval; observe-only and the Node's emergency stop still refuse it.
+                return self._act(cmd, "trusted", run, summary, threaded=True)
             if acting:
                 return self._act(cmd, level, run, summary, threaded=True)
             return self._start(cmd, run)
@@ -2000,6 +2006,13 @@ class Computer(Plugin):
                 raise Fault("bad_value", "fill takes the selector of the field")
             if not isinstance(text, str) or len(text) > MAX_TYPE or "\x00" in text:
                 raise Fault("bad_value", "text is at most %d characters" % MAX_TYPE)
+        if action == "blind_fill":
+            if not isinstance(v.get("request_id"), str) or not v.get("request_id") or len(v["request_id"]) > 100:
+                raise Fault("bad_value", "blind fill request is invalid")
+            if not isinstance(v.get("origin"), str) or not isinstance(v.get("username"), str) or not isinstance(v.get("password"), str):
+                raise Fault("bad_value", "blind fill grant is invalid")
+            if len(v["username"]) > 4096 or len(v["password"]) > 4096 or not isinstance(v.get("code", ""), str) or len(v.get("code", "")) > 32 or not isinstance(v.get("submit"), bool):
+                raise Fault("bad_value", "blind fill grant is invalid")
         if action == "press" and key not in KEY_CODES:
             raise Fault("bad_value", "key is one of %s" % ", ".join(sorted(KEY_CODES)))
         width = _int(v.get("max_width"), "max_width", 320, 2560, 1280)
@@ -2037,6 +2050,16 @@ class Computer(Plugin):
                         out = b.open(url)
                     elif action == "read":
                         out = b.read()
+                    elif action == "active_origin":
+                        out = b.active_origin()
+                    elif action == "blind_fill":
+                        try:
+                            out = b.blind_fill(v["request_id"], v["origin"], v["username"], v["password"], v.get("code", ""), v["submit"])
+                        finally:
+                            for secret in ("username", "password", "code"):
+                                value = v.get(secret)
+                                if isinstance(value, str):
+                                    v[secret] = "\x00" * len(value)
                     elif action == "screenshot":
                         out = b.screenshot(width)
                     elif action == "click":

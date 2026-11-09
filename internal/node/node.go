@@ -851,7 +851,18 @@ func (n *Node) computer(c protocol.Command, entry *safety.Entry, sentMS int64, r
 		n.inputs[c.ID] = true
 		n.mu.Unlock()
 	}
-	wait := p.BeginAs(n.ctx, c.ID, c.Kind, c.Value, int(window), c.Operator)
+	commandValue := c.Value
+	clearCommandValue := func() {}
+	if c.Kind == protocol.KindBrowser {
+		var err error
+		commandValue, clearCommandValue, err = n.prepareBlindFill(c.Value)
+		if err != nil {
+			nack(protocol.FaultBadValue, "the blind sign-in grant is invalid or expired")
+			return
+		}
+	}
+	wait := p.BeginAs(n.ctx, c.ID, c.Kind, commandValue, int(window), c.Operator)
+	clearCommandValue()
 	go func() {
 		r := wait()
 		if c.Kind == protocol.KindInput {

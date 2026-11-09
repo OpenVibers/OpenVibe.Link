@@ -59,6 +59,14 @@ class FakeBrowser:
         self.calls.append(("back",))
         return self._page()
 
+    def active_origin(self):
+        self.calls.append(("active_origin",))
+        return {"origin": "https://example.org"}
+
+    def blind_fill(self, request_id, origin, username, password, code="", submit=False):
+        self.calls.append(("blind_fill", request_id, origin, username, password, code, submit))
+        return {"outcome": "ok"}
+
     def screenshot(self, max_width):
         self.calls.append(("screenshot", max_width))
         return {"format": "jpeg", "width": max_width, "height": 10, "content_b64": ""}
@@ -178,6 +186,36 @@ class BrowserKindTest(unittest.TestCase):
         self.boot("full")
         reply(self.out, self.cmd({"action": "open", "url": "https://example.org/"}))
         self.assertIs(self.made[0].allow_downloads, True)
+
+    def test_blind_fill_is_companion_approved_and_never_returns_fields(self):
+        self.boot("ask")
+        request = {"action":"blind_fill","request_id":"fr_01JAB2C3D4E5F6G7H8J9K0MNPQ","origin":"https://example.org","username":"alice","password":"vector-password","code":"123456","submit":True}
+        result = reply(self.out, self.cmd(request))
+        self.assertEqual(result.get("data"), {"outcome":"ok"})
+        self.assertEqual(self.made[0].calls[-1], ("blind_fill","fr_01JAB2C3D4E5F6G7H8J9K0MNPQ","https://example.org","alice","vector-password","123456",True))
+        self.assertEqual((request["username"],request["password"],request["code"]),("\x00"*5,"\x00"*15,"\x00"*6))
+        self.assertNotIn("vector-password", json.dumps(self.out.msgs()))
+
+    def test_active_origin_is_read_only_and_top_level(self):
+        self.boot("observe")
+        result = reply(self.out, self.cmd({"action":"active_origin"}))
+        self.assertEqual(result.get("data"), {"origin":"https://example.org"})
+        self.assertEqual(self.made[0].calls[-1], ("active_origin",))
+
+
+class BlindFillCDPTest(unittest.TestCase):
+    def test_top_frame_only_and_origin_recheck(self):
+        b=Browser.__new__(Browser); b._need=lambda:None; b._follow=lambda:None
+        b.call=lambda method: {"frameTree":{"frame":{"url":"https://example.org/login"}}}
+        seen=[]; b._eval=lambda script: seen.append(script) or {"ok":False,"reason":"no_fields"}
+        self.assertEqual(b.active_origin(),{"origin":"https://example.org"})
+        self.assertEqual(b.blind_fill("fr_01JAB2C3D4E5F6G7H8J9K0MNPQ","https://example.org","u","p"),{"outcome":"failed","reason":"no_fields"})
+        self.assertIn("location.origin !== origin",seen[0])
+        self.assertIn("document.querySelectorAll('input')",seen[0])
+        self.assertNotIn("iframe",seen[0].lower(),"child frames are never searched")
+        self.assertIn("if(false)",seen[0],"submit remains guarded by the user's choice")
+        b.call=lambda method: {"frameTree":{"frame":{"url":"http://example.org/login"}}}
+        self.assertEqual(b.active_origin(),{"origin":None},"plain HTTP cannot receive credentials")
 
 
 class DownloadPolicyTest(unittest.TestCase):
