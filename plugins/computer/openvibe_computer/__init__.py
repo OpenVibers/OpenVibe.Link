@@ -2189,6 +2189,9 @@ class Computer(Plugin):
             shown = _plain(text) if len(_plain(text)) <= 120 else None
             summary = ("type %d characters%s: %r" % (len(text), where, shown) if shown is not None else
                        "type %d characters%s, sha256 %s" % (len(text), where, _digest(text.encode("utf-8"))))
+            if desk:
+                # A person may be typing a sign-in on this desk. Keep neither text nor a password digest in history.
+                summary = "type %d characters%s" % (len(text), where)
         elif action == "key":
             summary = "press %s%s" % (_plain(v["keys"]), where)
         elif action == "scroll":

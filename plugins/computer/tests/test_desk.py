@@ -428,6 +428,8 @@ class DeskPluginTest(unittest.TestCase):
         self.assertIn(("mouse", "click", 500, 250), a.calls)
         reply(self.out, self.cmd("input", {"action": "scroll", "dy": 3, "desk": "desk-a"}))
         reply(self.out, self.cmd("input", {"action": "type", "text": "hello", "desk": "desk-a"}))
+        _, summary = self.plugin._input_op("page", {"action":"type", "text":"synthetic sign-in"}, env={}, desk="desk-a")
+        self.assertEqual(summary, "type 17 characters")
         reply(self.out, self.cmd("input", {"action": "key", "keys": "ctrl+a", "desk": "desk-a"}))
         self.assertEqual([c for c in a.calls if c[0] in ("wheel", "insert", "keys")],
                          [("wheel", 500, 250, 3), ("insert", "hello"), ("keys", "ctrl+a")], "a scroll with no point is at the middle")
