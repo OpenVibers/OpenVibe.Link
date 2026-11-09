@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -21,6 +22,25 @@ import (
 	"github.com/OpenVibers/OpenVibe.Link/internal/service"
 	"github.com/OpenVibers/OpenVibe.Link/internal/video"
 )
+
+// syncBuffer collects a child process's output while the test reads it, so the race detector
+// sees no concurrent bytes.Buffer access (cmd.Stdout writes from another goroutine).
+type syncBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
 
 // With OPENVIBE_LINK_MAIN=1 the test binary is openvibe-link itself.
 func TestMain(m *testing.M) {
@@ -145,7 +165,7 @@ func TestQuit(t *testing.T) {
 	exe, _ := os.Executable()
 	cmd := exec.Command(exe, "run", "--dry-run", "--home", home)
 	cmd.Env = append(os.Environ(), "OPENVIBE_LINK_MAIN=1")
-	var logs bytes.Buffer
+	var logs syncBuffer
 	cmd.Stdout, cmd.Stderr = &logs, &logs
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -221,7 +241,7 @@ func TestRunDryRun(t *testing.T) {
 	exe, _ := os.Executable()
 	cmd := exec.Command(exe, "run", "--dry-run", "--home", home)
 	cmd.Env = append(os.Environ(), "OPENVIBE_LINK_MAIN=1")
-	var logs bytes.Buffer
+	var logs syncBuffer
 	cmd.Stdout, cmd.Stderr = &logs, &logs
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
