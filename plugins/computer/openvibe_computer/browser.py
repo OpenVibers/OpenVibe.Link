@@ -233,6 +233,7 @@ class Browser:
         self.tab_change = None     # "opened" or "closed" since the last _mark: said in the action's receipt
         self.last_navigation = None   # the URL of the last main-frame navigation (a desk stream's allow-list reads it)
         self.follow_mu = threading.Lock()
+        self.storage_origins = set()
         self.after_start = None    # called once the browser runs (a kept profile's session cookies go back in)
 
     # ---- the process and the pipe ------------------------------------------------------------------------------------
@@ -757,6 +758,58 @@ class Browser:
         os.replace(path + ".part", path)
 
     # ---- cookies a kept profile carries (Node v0.24.1) ------------------------------------------------------------
+    def profile_export(self):
+        """Private Run transport only; never return this to a model or write it to a log."""
+        self._need()
+        cookies = self.call("Storage.getCookies", {}, session=False).get("cookies") or []
+        frame = self.call("Page.getFrameTree").get("frameTree", {})
+        def visit(tree):
+            origin = tree.get("frame", {}).get("securityOrigin", "")
+            if origin.startswith(("https://", "http://")):
+                self.storage_origins.add(origin)
+            for child in tree.get("childFrames", []):
+                visit(child)
+        visit(frame)
+        stores = []
+        for origin in sorted(self.storage_origins):
+            entries = self.call("DOMStorage.getDOMStorageItems", {"storageId": {"securityOrigin": origin, "isLocalStorage": True}}).get("entries", [])
+            stores.append({"origin": origin, "entries": entries})
+        out = {"cookies": [{k: c[k] for k in COOKIE_FIELDS if k in c} for c in cookies], "origins": stores}
+        if len(json.dumps(out).encode()) > 47000:
+            raise BrowserError("profile_too_large", "Saved sign-ins exceed this computer's limit")
+        return out
+
+    def profile_import(self, profile):
+        self._need()
+        self.restore_cookies(profile.get("cookies", []))
+        for store in profile.get("origins", []):
+            origin = store["origin"]
+            if not origin.startswith(("https://", "http://")):
+                raise BrowserError("bad_value", "Invalid saved site")
+            self.storage_origins.add(origin)
+            for key, value in store.get("entries", []):
+                self.call("DOMStorage.setDOMStorageItem", {"storageId": {"securityOrigin": origin, "isLocalStorage": True}, "key": key, "value": value})
+        return {"done": True}
+
+    def profile_sign_out(self, site):
+        from urllib.parse import urlparse
+        self._need()
+        cookies = self.call("Storage.getCookies", {}, session=False).get("cookies") or []
+
+        def under(host):
+            # The site and every subdomain of it: signing out of google.com also signs out of accounts.google.com.
+            h = (host or "").lstrip(".").lower()
+            return h == site or h.endswith("." + site)
+
+        for cookie in cookies:
+            if under(cookie.get("domain", "")):
+                self.call("Network.deleteCookies", {k: cookie[k] for k in ("name", "domain", "path", "partitionKey") if k in cookie})
+        for origin in list(self.storage_origins):
+            if under(urlparse(origin).hostname):
+                self.call("Storage.clearDataForOrigin", {"origin": origin, "storageTypes": "local_storage,indexeddb,cache_storage,service_workers"})
+                self.storage_origins.discard(origin)
+        return {"done": True}
+
     def session_cookies(self):
         """The cookies that end with the browser (no expiry): Chrome drops them when it quits, and a sign-in is often
         one. A kept profile keeps them alongside, for the next desk (restore_cookies)."""
