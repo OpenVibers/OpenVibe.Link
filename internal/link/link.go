@@ -33,9 +33,9 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
-	"github.com/OpenVibers/OpenVibe.Node/internal/mono"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
+	"github.com/OpenVibers/OpenVibe.Link/internal/mono"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 // ErrOffline is returned by Send while there is no connection.
@@ -331,8 +331,8 @@ func (l *Link) backoff(err error, attempt int) time.Duration {
 }
 
 var (
-	errUnauthorized = errors.New("the server refused the device credential (wrong, rotated or revoked): pair again with `openvibe-node pair <CODE>`, or, if the owner rotated it, pipe the rotate response into `openvibe-node credential import`")
-	errRevoked      = errors.New("the owner revoked this device or rotated its credential: pair again with `openvibe-node pair <CODE>`, or, if the owner rotated it, pipe the rotate response into `openvibe-node credential import`")
+	errUnauthorized = errors.New("the server refused the device credential (wrong, rotated or revoked): pair again with `openvibe-link pair <CODE>`, or, if the owner rotated it, pipe the rotate response into `openvibe-link credential import`")
+	errRevoked      = errors.New("the owner revoked this device or rotated its credential: pair again with `openvibe-link pair <CODE>`, or, if the owner rotated it, pipe the rotate response into `openvibe-link credential import`")
 	errReplaced     = errors.New("another connection with this device's credential replaced this one (is a second agent running with the same credential?)")
 )
 

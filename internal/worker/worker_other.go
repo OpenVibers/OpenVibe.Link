@@ -7,7 +7,7 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
 )
 
 // errNotLinux: the namespaces the worker isolates jobs with exist on Linux only, so elsewhere no job ever runs.

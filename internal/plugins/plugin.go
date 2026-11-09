@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/mono"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/mono"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 // Timing. Variables so tests can shorten them.
@@ -85,7 +85,7 @@ const (
 	OutFault     = "fault"
 	OutState     = "state"
 	// OutLocalStop: the driver latched the Node's local stop (its own stop button, a sensor it trusts). Only
-	// `openvibe-node resume` on the machine releases it.
+	// `openvibe-link resume` on the machine releases it.
 	OutLocalStop = "local_stop"
 )
 
@@ -293,10 +293,10 @@ func (p *Plugin) enqueue(l line) error {
 const (
 	StopHalt     = "halt"      // Bot's halt: the controlling turn ended (release, handoff, timeout, unbind)
 	StopLinkLost = "link_lost" // the link to Bot was lost
-	StopShutdown = "shutdown"  // the Node is stopping (service stop, `openvibe-node quit`)
+	StopShutdown = "shutdown"  // the Node is stopping (service stop, `openvibe-link quit`)
 	StopTimeout  = "timeout"   // a command got no answer from the driver within its window
 	EstopRemote  = "remote"    // an e-stop from the platform (a robot owner or staff)
-	EstopLocal   = "local"     // `openvibe-node stop` on the device
+	EstopLocal   = "local"     // `openvibe-link stop` on the device
 	EstopDriver  = "driver"    // a driver's own local stop (a plugin reported one)
 	EstopLatched = "latched"   // the stop was already latched when the Node or this process started
 )

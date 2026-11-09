@@ -3,8 +3,8 @@ package node
 import (
 	"sync"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
-	"github.com/OpenVibers/OpenVibe.Node/internal/safety"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/safety"
 )
 
 // jobSeenMax bounds how many job ids the Node remembers answers for.

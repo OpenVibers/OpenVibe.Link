@@ -6,7 +6,7 @@ import (
 	"sync"
 )
 
-// Status is one saved share's live state, as `openvibe-node status` (and its JSON) lists it. It never contains the
+// Status is one saved share's live state, as `openvibe-link status` (and its JSON) lists it. It never contains the
 // key: a share served by this computer is named by its shr_… id, and a key-served share by its port.
 type Status struct {
 	ID        string `json:"id,omitempty"`
@@ -19,7 +19,7 @@ type Status struct {
 }
 
 // live is the state of the shares this process keeps up. The Node service runs every saved share in this process
-// (RunAll), and its local status socket answers from here; a foreground `openvibe-node share` has its own process and
+// (RunAll), and its local status socket answers from here; a foreground `openvibe-link share` has its own process and
 // is not listed by the service's status.
 var live = struct {
 	sync.Mutex

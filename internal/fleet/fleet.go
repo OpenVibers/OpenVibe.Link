@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 // Defaults for the prober: a minute between readings (a plan window moves in hours, not seconds) and a probe that

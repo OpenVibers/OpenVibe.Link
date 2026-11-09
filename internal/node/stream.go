@@ -13,12 +13,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/mono"
-	"github.com/OpenVibers/OpenVibe.Node/internal/plugins"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
-	"github.com/OpenVibers/OpenVibe.Node/internal/safety"
-	"github.com/OpenVibers/OpenVibe.Node/internal/stream"
-	"github.com/OpenVibers/OpenVibe.Node/internal/voice"
+	"github.com/OpenVibers/OpenVibe.Link/internal/mono"
+	"github.com/OpenVibers/OpenVibe.Link/internal/plugins"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/safety"
+	"github.com/OpenVibers/OpenVibe.Link/internal/stream"
+	"github.com/OpenVibers/OpenVibe.Link/internal/voice"
 )
 
 // The agent desk stream (Agent Streams S1, live.agent-stream@1): the core mints the stream and its wpt_ ticket on
@@ -106,7 +106,7 @@ func (n *Node) deskStreamCommand(c protocol.Command, entry *safety.Entry, receiv
 
 	st := n.latch.State()
 	if st.Stopped() || st.Computer {
-		nack(protocol.FaultLocalStop, "stopped on the machine: `openvibe-node resume` on this machine is required")
+		nack(protocol.FaultLocalStop, "stopped on the machine: `openvibe-link resume` on this machine is required")
 		return
 	}
 	if n.liveTokens == nil {
@@ -135,7 +135,7 @@ func (n *Node) deskStreamCommand(c protocol.Command, entry *safety.Entry, receiv
 	if v.Task.Title == "" {
 		v.Task.Title = v.Title
 	}
-	ua := "openvibe-node/" + n.opt.Version
+	ua := "openvibe-link/" + n.opt.Version
 	client, err := stream.NewClient(stream.ClientOptions{BaseURL: n.opt.Config.Stream.LiveOrigin(),
 		Token: n.liveTokens.Token, UserAgent: ua})
 	if err != nil {

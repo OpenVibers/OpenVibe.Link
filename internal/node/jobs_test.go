@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 func jobID(n int) string { return fmt.Sprintf("job_01JAB2C3D4E5F6G7H8J9K%05d", n) }

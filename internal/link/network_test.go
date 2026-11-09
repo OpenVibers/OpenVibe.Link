@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
-	"github.com/OpenVibers/OpenVibe.Node/internal/fakebot"
-	"github.com/OpenVibers/OpenVibe.Node/internal/fakenetwork"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
+	"github.com/OpenVibers/OpenVibe.Link/internal/fakebot"
+	"github.com/OpenVibers/OpenVibe.Link/internal/fakenetwork"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 func networkPair(t *testing.T) (*fakebot.Server, *fakenetwork.Server, *credentials.Credentials) {
@@ -25,7 +25,7 @@ func networkPair(t *testing.T) (*fakebot.Server, *fakenetwork.Server, *credentia
 	t.Cleanup(net.Close)
 	net.AddCode("ABCD2345")
 	c, err := PairNetwork(context.Background(), nil, net.URL()+"/",
-		protocol.NodePairingRequest{Code: "ABCD2345", Pairing: fakenetwork.PairingID, Name: "Rover"}, "openvibe-node/t")
+		protocol.NodePairingRequest{Code: "ABCD2345", Pairing: fakenetwork.PairingID, Name: "Rover"}, "openvibe-link/t")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,8 +44,8 @@ func TestPairNetworkTokenAndBind(t *testing.T) {
 	if p := net.Pairings(); len(p) != 1 || p[0].Code != "ABCD2345" || p[0].Pairing != fakenetwork.PairingID || p[0].Name != "Rover" {
 		t.Fatalf("%+v", p)
 	}
-	ts := NewTokenSource(c, nil, "openvibe-node/t")
-	bound, err := Bind(context.Background(), nil, c, ts, "openvibe-node/t")
+	ts := NewTokenSource(c, nil, "openvibe-link/t")
+	bound, err := Bind(context.Background(), nil, c, ts, "openvibe-link/t")
 	if err != nil {
 		t.Fatal(err)
 	}

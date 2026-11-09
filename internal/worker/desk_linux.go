@@ -12,9 +12,9 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/config"
-	"github.com/OpenVibers/OpenVibe.Node/internal/egress"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/egress"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 // DeskSpec is one desk's program (its browser) as RunDesk runs it in the jobs' sandbox, on a desk host that serves

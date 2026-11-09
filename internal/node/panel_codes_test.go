@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/panel"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/panel"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 // The three states the window shows, from a fake machine: ready with a version, sign in with the exact command, and

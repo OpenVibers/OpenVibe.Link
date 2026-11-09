@@ -99,12 +99,12 @@ func TestAuthenticatedCONNECTAndSOCKSWithRemoteDNS(t *testing.T) {
 			return
 		}
 		checks.Add(1)
-		_ = json.NewEncoder(w).Encode(Grant{Session: session, Node: "nod_test", Enabled: true, Cap: 100000, Expires: time.Now().Add(time.Minute).UnixMilli()})
+		_ = json.NewEncoder(w).Encode(Grant{Session: session, Node: "lnk_test", Enabled: true, Cap: 100000, Expires: time.Now().Add(time.Minute).UnixMilli()})
 	}))
 	defer network.Close()
 	budget, _ := NewBudget(filepath.Join(t.TempDir(), "usage"))
 	targets := make(chan string, 4)
-	endpoint := &Endpoint{Client: &Client{Base: network.URL}, Node: "nod_test", Budget: budget, Pause: func() bool { return false }, Dial: func(_ context.Context, address string) (net.Conn, error) {
+	endpoint := &Endpoint{Client: &Client{Base: network.URL}, Node: "lnk_test", Budget: budget, Pause: func() bool { return false }, Dial: func(_ context.Context, address string) (net.Conn, error) {
 		targets <- address
 		a, b := net.Pipe()
 		go func() { defer b.Close(); _, _ = io.Copy(b, b) }()

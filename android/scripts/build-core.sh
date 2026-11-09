@@ -39,17 +39,17 @@ trap 'rm -rf "$tmp"' EXIT
 # in place of the published module.
 sed 's/^module .*/module openvibe-link\/core/' "$repo/go.mod" > "$tmp/go.mod"
 cp "$repo/go.sum" "$tmp/"
-printf '\nreplace github.com/OpenVibers/OpenVibe.Node => %s\n' "$repo" >> "$tmp/go.mod"
+printf '\nreplace github.com/OpenVibers/OpenVibe.Link => %s\n' "$repo" >> "$tmp/go.mod"
 
 (
     cd "$tmp"
     export GOFLAGS="-mod=mod -buildvcs=false"
     # go get, not go mod tidy: tidy would drop a module the bind uses but nothing imports.
-    go get github.com/OpenVibers/OpenVibe.Node@v0.0.0 >/dev/null
+    go get github.com/OpenVibers/OpenVibe.Link@v0.0.0 >/dev/null
     go get -tool "golang.org/x/mobile/cmd/gobind@$GOMOBILE" >/dev/null
     mkdir -p "$android/app/libs"
     "$GOBIN/gomobile" bind -target=android/arm64,android/arm -androidapi 26 \
-        -o "$android/app/libs/core.aar" github.com/OpenVibers/OpenVibe.Node/mobile
+        -o "$android/app/libs/core.aar" github.com/OpenVibers/OpenVibe.Link/mobile
 )
 
 echo "wrote android/app/libs/core.aar"

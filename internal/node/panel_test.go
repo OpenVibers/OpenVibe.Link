@@ -12,11 +12,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/config"
-	"github.com/OpenVibers/OpenVibe.Node/internal/connect"
-	"github.com/OpenVibers/OpenVibe.Node/internal/localctl"
-	"github.com/OpenVibers/OpenVibe.Node/internal/panel"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/connect"
+	"github.com/OpenVibers/OpenVibe.Link/internal/localctl"
+	"github.com/OpenVibers/OpenVibe.Link/internal/panel"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 func panelTestNode(t *testing.T, paths config.Paths) *Node {
@@ -55,7 +55,7 @@ func TestPanelPauseIsTheLocalKillSwitch(t *testing.T) {
 		t.Fatal(resp.Error)
 	}
 	if st := n.latch.State(); !st.Local {
-		t.Fatalf("openvibe-node stop did not latch: %+v", st)
+		t.Fatalf("openvibe-link stop did not latch: %+v", st)
 	}
 	if err := n.panelPause(false); err != nil {
 		t.Fatal(err)
@@ -118,10 +118,10 @@ func TestCapabilitySwitchIsARealRestriction(t *testing.T) {
 }
 
 func TestMachineIDIsThePairedDevice(t *testing.T) {
-	if got := machineID(Status{DeviceID: "dev_1", Principal: "nod_1"}); got != "dev_1" {
+	if got := machineID(Status{DeviceID: "dev_1", Principal: "lnk_1"}); got != "dev_1" {
 		t.Fatalf("device id: %q", got)
 	}
-	if got := machineID(Status{Principal: "nod_1"}); got != "nod_1" {
+	if got := machineID(Status{Principal: "lnk_1"}); got != "lnk_1" {
 		t.Fatalf("principal: %q", got)
 	}
 }

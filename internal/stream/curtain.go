@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/video"
+	"github.com/OpenVibers/OpenVibe.Link/internal/video"
 )
 
 // PrivateScreenText is what the desk shows while the curtain is up. Viewers never see the reason, only this.

@@ -1,11 +1,11 @@
 # LOOI on the OpenVibe Link
 
 LOOI is the tracked desk robot whose face is a phone. Its base talks Bluetooth Low Energy, so it is a **bridge**
-robot: the Node runs on a computer next to it (Windows, macOS or Linux), and a driver plugin drives the base over
+robot: the Link runs on a computer next to it (Windows, macOS or Linux), and a driver plugin drives the base over
 Bluetooth. The phone streams its own video, for example from its browser to the owner's OpenVibe.Live channel, so the
-Node publishes none.
+Link publishes none.
 
-The Generic LOOI driver is written by the community (LOOI owners), not bundled with the Node. This page is the
+The Generic LOOI driver is written by the community (LOOI owners), not bundled with the Link. This page is the
 contract it implements and how to run it.
 
 ## On openvibe.bot
@@ -16,14 +16,14 @@ turn at most 0.6, every motion command lasts at most 300 ms unless it is re-sent
 them per robot.
 
 Who may drive is Bot's job, not the driver's: the owner, invited operators, an optional public queue with timed
-turns, cooldowns and per-role allowed commands, all enforced by Bot's command gate before a command reaches the Node.
+turns, cooldowns and per-role allowed commands, all enforced by Bot's command gate before a command reaches the Link.
 The e-stop is latched in Bot and only the owner clears it. Each command tells the driver who sent it (`cmd.operator`,
 `{"subject", "role"}`), and when a queue turn ends or its holder leaves Bot halts the robot before the next person
 drives (the driver gets `stop`), so commands from the last driver never come after it
 ([plugins.md](plugins.md#core--plugin)). The owner or an operator driving during someone's turn pauses that turn and
 halts the robot first, the same way. Each command also carries `cmd.turn_epoch`: the core already refuses one older
 than the newest halt's, and a driver may check it again against its own record. Commands are never redelivered: Bot
-sends each once under a new id, the Node passes it on at most once and never after its deadline, and each carries
+sends each once under a new id, the Link passes it on at most once and never after its deadline, and each carries
 `cmd.provenance` (the link session, the frame's seq, Bot's send time and deadline). The Python runtime refuses a
 replay on a session and a command from an ended turn by itself
 ([plugins.md](plugins.md#what-a-driver-can-rely-on-commands-are-never-redelivered)).
@@ -34,7 +34,7 @@ the robot's panel beside the phone's stream, and viewers signed in on Live press
 
 ## What the driver receives
 
-The driver is a Node plugin ([plugins.md](plugins.md)): JSON lines over stdin and stdout. For `looi` it receives:
+The driver is a Link plugin ([plugins.md](plugins.md)): JSON lines over stdin and stdout. For `looi` it receives:
 
 | command | value | meaning |
 |---|---|---|
@@ -47,7 +47,7 @@ held control every 150 ms). With the Python runtime (`openvibe_plugin`, [plugins
 `motion_kinds = {"drive"}`, and it enforces the deadline, the 1 s heartbeat, stdin closing, `stop`, `estop` and
 `halt` for you.
 
-The deadline is the original one on every OS, Windows included (Node 0.30): the Node passes the instant a command
+The deadline is the original one on every OS, Windows included (Link 0.30): the Link passes the instant a command
 expires on the clock it shares with the driver, so time the line spends in the pipe counts against it. For live motion,
 also set `strict_timing = True` on the plugin (or `"strict_timing": true` on it in `config.json`): a command whose
 original expiry cannot be checked is then refused, never run on `deadline_ms` alone ([plugins.md](plugins.md), answer 9).
@@ -56,31 +56,31 @@ The driver should send telemetry with `battery` (`{"percent": 0..100}` or `{"vol
 
 ## Stopping
 
-- **The robot must stop on its own when commands stop.** The Node and the runtime stop the driver's motors on a
+- **The robot must stop on its own when commands stop.** The Link and the runtime stop the driver's motors on a
   passed deadline, a missed heartbeat or a closed stdin, but if the bridge computer sleeps, crashes or loses
   Bluetooth, only the robot can stop itself. Before any motor test, check that the base stops when the Bluetooth link
   drops or commands stop arriving. If it does not, keep every command short-lived so it cannot run on.
 - **A stop on the robot itself.** If the driver has its own stop (a button, a hotkey, a sensor it trusts), call
   `self.local_stop("reason")` (or send `{"op": "local_stop", "reason": "…"}`). Every actuator stops at once, the
-  Node latches its **local** stop (persisted across restarts), and the panel shows the robot as stopped on the robot.
+  Link latches its **local** stop (persisted across restarts), and the panel shows the robot as stopped on the robot.
   The owner's remote clear does not lift it: only `openvibe-link resume` on the bridge computer does, and then the
   owner clears the panel's e-stop. Running `openvibe-link stop` does the same from a terminal.
 
 ## Installing the driver
 
-The Node runs a plugin named `looi` as `python -m openvibe_looi`, so the driver is a Python package with that module,
-installed into the Python the Node uses.
+The Link runs a plugin named `looi` as `python -m openvibe_looi`, so the driver is a Python package with that module,
+installed into the Python the Link uses.
 
-**Linux or macOS bridge.** `curl -fsSL https://node.openvibe.network/install | sh -s -- --robot rob_… --code XXXX-XXXX
---driver looi` installs and pairs the Node as a bridge with video off. Then install the driver into the Node's
-environment (`sudo /var/lib/openvibe-node/venv/bin/pip install <the driver>`) and restart the Node's service. Until
+**Linux or macOS bridge.** `curl -fsSL https://openvibe.link/install | sh -s -- --robot rob_… --code XXXX-XXXX
+--driver looi` installs and pairs the Link as a bridge with video off. Then install the driver into the Link's
+environment (`sudo /var/lib/openvibe-link/venv/bin/pip install <the driver>`) and restart the Link's service. Until
 the driver is installed the panel shows the plugin's fault and the robot never moves.
 
 **Windows bridge.** Bluetooth through the Windows runtime may not work from a service running as LocalSystem, so
-run the Node in your own session:
+run the Link in your own session:
 
 ```bat
-set OVHOME=%LOCALAPPDATA%\OpenVibe Node
+set OVHOME=%LOCALAPPDATA%\OpenVibe Link
 openvibe-link pair XXXX-XXXX --robot rob_… --kind bridge --home "%OVHOME%"
 openvibe-link install --user-session --home "%OVHOME%"
 ```
@@ -97,11 +97,11 @@ openvibe-link install --user-session --home "%OVHOME%"
 }
 ```
 
-`install --user-session` starts the Node when you sign in, in a console window that shows its log (Windows keeps no
-service log yet). Closing the window stops the Node and every actuator; nothing restarts it until the next sign-in.
-`openvibe-link uninstall --user-session --home DIR` removes that directory's sign-in start (each Node directory has its own, since v0.37.2, so a test node never replaces a working one). On Windows a killed plugin takes the processes it
+`install --user-session` starts the Link when you sign in, in a console window that shows its log (Windows keeps no
+service log yet). Closing the window stops the Link and every actuator; nothing restarts it until the next sign-in.
+`openvibe-link uninstall --user-session --home DIR` removes that directory's sign-in start (each Link directory has its own, since v0.37.2, so a test node never replaces a working one). On Windows a killed plugin takes the processes it
 started with it (a Job Object), as it does on Linux and macOS, so a bridge helper cannot keep the Bluetooth link open
-after the Node stops or restarts the plugin.
+after the Link stops or restarts the plugin.
 
 Try the driver without the robot first: `openvibe-link plugins` asks each plugin to describe itself without touching
 hardware, and `openvibe-link run --dry-run` drives only the simulated plugin.

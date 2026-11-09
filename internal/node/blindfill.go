@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/lockeropen"
-	"github.com/OpenVibers/OpenVibe.Node/internal/send"
+	"github.com/OpenVibers/OpenVibe.Link/internal/lockeropen"
+	"github.com/OpenVibers/OpenVibe.Link/internal/send"
 )
 
 type blindFillRequest struct {
@@ -50,7 +50,7 @@ func (n *Node) prepareBlindFillAt(value json.RawMessage, now time.Time) (json.Ra
 	if json.Unmarshal(value, &req) != nil || req.Action != "blind_fill" {
 		return value, func() {}, nil
 	}
-	if n.opt.Creds == nil || !strings.HasPrefix(n.opt.Creds.Principal, "nod_") || !exactFillRequestID.MatchString(req.RequestID) || len(req.Envelope) > 16384 {
+	if n.opt.Creds == nil || !strings.HasPrefix(n.opt.Creds.Principal, "lnk_") || !exactFillRequestID.MatchString(req.RequestID) || len(req.Envelope) > 16384 {
 		return nil, func() {}, fmt.Errorf("invalid blind fill request")
 	}
 	encoded, err := lockeropen.DecodeEnvelope(req.Envelope)
@@ -62,7 +62,7 @@ func (n *Node) prepareBlindFillAt(value json.RawMessage, now time.Time) (json.Ra
 	if err != nil {
 		return nil, func() {}, fmt.Errorf("Link Send key is unavailable")
 	}
-	plain, err := lockeropen.Open(encoded, lockeropen.JWK{Kty: key.Kty, Crv: key.Crv, X: key.X, Y: key.Y, D: key.D}, lockeropen.Subject{Type: "node", ID: n.opt.Creds.Principal})
+	plain, err := lockeropen.Open(encoded, lockeropen.JWK{Kty: key.Kty, Crv: key.Crv, X: key.X, Y: key.Y, D: key.D}, lockeropen.Subject{Type: "link", ID: n.opt.Creds.Principal})
 	if err != nil {
 		return nil, func() {}, err
 	}

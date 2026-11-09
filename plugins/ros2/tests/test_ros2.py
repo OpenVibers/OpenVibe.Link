@@ -317,7 +317,7 @@ def test_rclpy_bus_with_a_fake_rclpy(monkeypatch):
     geometry.Twist = Twist
     monkeypatch.setitem(sys.modules, "geometry_msgs", types.ModuleType("geometry_msgs"))
     monkeypatch.setitem(sys.modules, "geometry_msgs.msg", geometry)
-    bus = RclpyBus("openvibe_node", lambda *a: None, rclpy=rclpy)
+    bus = RclpyBus("openvibe_link", lambda *a: None, rclpy=rclpy)
     bus.publish("/cmd_vel", "geometry_msgs/msg/Twist", {"linear": {"x": 0.1, "y": 0.0, "z": 0.0}, "angular": {"x": 0.0, "y": 0.0, "z": 0.3}})
     assert created["init"] and created["pubs"][0].topic == "/cmd_vel" and created["pubs"][0].sent[0].angular.z == 0.3
     got = []

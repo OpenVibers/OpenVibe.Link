@@ -40,13 +40,13 @@ description: "Open a PR, wait for CI, and merge only when it is green."
 <!-- openvibe-skills:end -->
 ```
 
-The frontmatter is written only when the Node creates the file; an existing `SKILL.md` keeps its own header. Everything
-else the Node writes is inside the block, and the block's markers are scrubbed out of content before it is written, so a
+The frontmatter is written only when the Link creates the file; an existing `SKILL.md` keeps its own header. Everything
+else the Link writes is inside the block, and the block's markers are scrubbed out of content before it is written, so a
 record cannot open or close a block. The rest of the file — your own notes above or below — is never changed.
 
 Every tool is off until you pass `--tools`. The first write to a file shows a line diff and asks; `--yes` skips the
 question. `--dry-run` reads the hub, shows the same diffs and writes nothing (not even the state file). `--undo` removes
-every block the Node wrote and deletes a file or skill folder the Node created when nothing else was in it; `--disable
+every block the Link wrote and deletes a file or skill folder the Link created when nothing else was in it; `--disable
 a,b` does that for named tools.
 
 ## What is not written yet
@@ -58,5 +58,5 @@ needs a per-tool adapter and its own dry run, so it is a follow-up rather than a
 
 ## State
 
-The opt-in choices and what was written live in the Node's state directory, `skills-sync.json`, mode 0600. It holds
+The opt-in choices and what was written live in the Link's state directory, `skills-sync.json`, mode 0600. It holds
 paths and versions, never the text of a skill. `--state FILE` and `--user-home DIR` are for tests and unusual installs.

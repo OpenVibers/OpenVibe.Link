@@ -1,7 +1,7 @@
 # Plugins
 
-A plugin is a driver: a separate executable the Node core starts, speaking **JSON lines over stdin/stdout** (one JSON
-object per line, UTF-8). Its stderr goes to the Node's log. The core never links driver code, so a driver can be written
+A plugin is a driver: a separate executable the Link core starts, speaking **JSON lines over stdin/stdout** (one JSON
+object per line, UTF-8). Its stderr goes to the Link's log. The core never links driver code, so a driver can be written
 in any language; the robot drivers are Python 3 because the kit libraries and PyCozmo are.
 
 Bundled plugins: [`dryrun`](../plugins/dryrun), [`adeept_adr036`](../plugins/adeept_adr036/README.md),
@@ -22,9 +22,9 @@ hardware.
 
 A bundled plugin needs only its `name`; the core runs `<state>/venv/bin/python -m openvibe_<name>`. Anything else needs
 `command`. `config` is sent to the plugin in `hello`. The core adds `frame_dir` (where to write camera frames) unless
-set, and the environment variables `OPENVIBE_NODE_STATE` and `OPENVIBE_NODE_CONFIG` (its state and config directories)
-and `OPENVIBE_NODE_EXE` (its own executable), so a command a plugin runs with it (`openvibe-link desk-sandbox`, the
-computer plugin's shared desks) reads the same config as the Node that started it.
+set, and the environment variables `OPENVIBE_LINK_STATE` and `OPENVIBE_LINK_CONFIG` (its state and config directories)
+and `OPENVIBE_LINK_EXE` (its own executable), so a command a plugin runs with it (`openvibe-link desk-sandbox`, the
+computer plugin's shared desks) reads the same config as the Link that started it.
 
 ## Lifecycle
 
@@ -63,13 +63,13 @@ describes itself and waits for EOF without opening any hardware.
 | `voice_answer` | `id`, `state` (working, answered, refused), `text`, `url`  | (voice plugins) Vibe's answer to a `voice_ask` event the plugin raised: speak and show it |
 
 `value` has already been validated and clamped to the owner's limits by the core ([protocol.md](protocol.md#commands)).
-`deadline_ms` is relative to receipt and already capped. Since Node 0.18 the core counts it down to the moment it writes
+`deadline_ms` is relative to receipt and already capped. Since Link 0.18 the core counts it down to the moment it writes
 the line, and adds `expires_at_mono_ns`: the instant the command expires on the clock every process on the machine
 shares, `CLOCK_MONOTONIC` on Linux and macOS and, since 0.30, the raw `QueryPerformanceCounter` on Windows. `hello` names
 that clock in `shared_clock` (`clock_monotonic` or `qpc`, 0.30). A plugin that reads it when the line arrives takes off
 the time the line sat in the pipe too (answers 8 and 9); the Python runtime does, on every OS.
 
-`hello` also carries `strict_timing: true` when the Node's plugin configuration sets it (0.30). A plugin under strict
+`hello` also carries `strict_timing: true` when the Link's plugin configuration sets it (0.30). A plugin under strict
 timing refuses (`timing_unavailable`) any motion command whose original expiry it cannot check on that clock, instead of
 running it on `deadline_ms` alone (answer 9).
 
@@ -89,7 +89,7 @@ A halt's epoch also comes with the `stop` it causes (`{"op": "stop", "turn_epoch
 epoch even before the next command. Python: `cmd.turn_epoch` (an int, or `None`); the runtime keeps the newest halt's
 and refuses an older command itself (`expired`).
 
-`provenance` is where the command came from, passed unchanged from Bot (Node 0.16):
+`provenance` is where the command came from, passed unchanged from Bot (Link 0.16):
 
 | field | meaning |
 |---|---|
@@ -99,12 +99,12 @@ and refuses an older command itself (`expired`).
 | `expires_at_ms` | the absolute deadline on Bot's clock (motion kinds); `deadline_ms` is what is left of it when the core writes the line |
 | `clock_uncertainty_ms` | (0.17) how far the core's estimate of Bot's clock may trail it: the connection's fastest round trip, plus 1 ms for Bot's whole-millisecond stamps since 0.18, rounded up from nanoseconds. `deadline_ms` already counts from estimate + this |
 
-Python: `cmd.provenance` (a dict, or `None` from an older Node). The runtime refuses (`expired`) a command whose `seq`
+Python: `cmd.provenance` (a dict, or `None` from an older Link). The runtime refuses (`expired`) a command whose `seq`
 is not above the last one it handled on the same `session`.
 
 #### What a driver can rely on: commands are never redelivered
 
-Asked by the Generic LOOI driver's authors (2026-10-26). From the code of Bot and this Node:
+Asked by the Generic LOOI driver's authors (2026-10-26). From the code of Bot and this Link:
 
 - **Bot sends a command once.** Each send gets a new id (`cmd_<ULID>`, minted at that moment). A command is sent only
   while the device is online and is never queued: offline, it is refused, not held. One that is not acknowledged by
@@ -112,7 +112,7 @@ Asked by the Generic LOOI driver's authors (2026-10-26). From the code of Bot an
   first result back and causes no second device command. Nothing is replayed after a reconnect, a Bot restart or a turn
   change. Jobs (`job_…`) do resend after a reconnect, but they are a different frame and never reach a driver as a
   `command`.
-- **The Node delivers a command at most once.** It remembers command ids for 10 minutes (up to 4096) across
+- **The Link delivers a command at most once.** It remembers command ids for 10 minutes (up to 4096) across
   reconnects and answers a repeated id with the first result, without passing it on. It refuses a command whose absolute
   deadline has passed on Bot's clock (`expired`), so a frame delayed or replayed with its original deadline never
   reaches a driver. Within a connection, commands reach a plugin in the order Bot sent them.
@@ -120,8 +120,8 @@ Asked by the Generic LOOI driver's authors (2026-10-26). From the code of Bot an
   - A turn change is a halt carrying a new `turn_epoch`. Epochs are milliseconds on Bot's clock, so they rise across
     Bot restarts. The core and the Python runtime both refuse older commands after it.
   - A connection is a `session`. The link is authenticated with the device's credential, and a plugin's stdin comes
-    only from the Node that started it, so whatever arrives there is from that Node.
-- **What is not kept.** The Node's id memory and newest-halt epochs start empty when the Node restarts. So does a
+    only from the Link that started it, so whatever arrives there is from that Link.
+- **What is not kept.** The Link's id memory and newest-halt epochs start empty when the Link restarts. So does a
   plugin's state when the plugin restarts. Commands sent before a restart can no longer arrive afterwards: their
   connection is gone and their deadlines (at most `max_command_ms`, 300 ms on LOOI) have long passed.
 
@@ -185,7 +185,7 @@ Asked by the Generic LOOI driver's authors (2026-10-27). Each answer is what Bot
    - `estop` stops every actuator **and latches**. The core refuses `drive`, `ptz` and `actuator` itself (`estopped`,
      `local_stop`), and so does the runtime, until `resume`. The latch:
      - is set by Bot's e-stop (an owner or operator presses it), by `openvibe-link stop`, or by a driver's `local_stop`;
-     - is written to disk, survives a Node restart, and is sent again at once to a plugin that restarts;
+     - is written to disk, survives a Link restart, and is sent again at once to a plugin that restarts;
      - is reapplied from Bot's config on every reconnect.
    - Only the owner clears Bot's e-stop. A local stop is cleared only by `openvibe-link resume` on the machine.
    - A `halt` still passes while latched.
@@ -202,13 +202,13 @@ Asked by the Generic LOOI driver's authors (2026-10-27). Each answer is what Bot
    - A plugin that does not answer within max(deadline, 1 s) is told to `stop`, and the command fails with
      `plugin_timeout`.
    - The Python runtime counts each deadline from the moment its line arrived. It refuses (`expired`) a motion command
-     whose deadline passed while it waited behind a slow handler, so the driver never sees it. Before Node 0.16.1 such a
+     whose deadline passed while it waited behind a slow handler, so the driver never sees it. Before Link 0.16.1 such a
      command still reached `handle` and was stopped on the next tick. Since 0.18 it also takes off the time the line sat
      in the pipe before it was read (`expires_at_mono_ns`).
    - A driver without the runtime should do the same: note the time each line is read (on a reader thread) and refuse
      motion that is already past its `deadline_ms` when its turn comes.
 
-Asked next by the same authors (2026-10-27, P7 LOOI shadow integration), and changed in Node 0.17.0 to answer them:
+Asked next by the same authors (2026-10-27, P7 LOOI shadow integration), and changed in Link 0.17.0 to answer them:
 
 6. **The clock's error, its bound, and when motion waits for it.**
    - **The error.** Each frame from Bot gives one sample, `ts − arrival` = the clock offset less that frame's one-way
@@ -234,18 +234,18 @@ Asked next by the same authors (2026-10-27, P7 LOOI shadow integration), and cha
      epoch and seq contract stays as it is.
 7. **Why a plugin is stopped (`cause`), and how a driver tells an ordinary stop from an emergency.**
    - Every `stop` and `estop` names its cause, and `hello` carries the newest halt epoch, so the meaning holds across a
-     plugin restart and a Node reconnect.
+     plugin restart and a Link reconnect.
 
      | op | `cause` | when | latches |
      |---|---|---|---|
      | `stop` | `halt` | Bot's halt: a turn ended, a viewer handoff, a release, a timeout, an unbind (with `turn_epoch`) | no |
      | `stop` | `link_lost` | the link to Bot dropped (two missed heartbeats, a close) | no |
-     | `stop` | `shutdown` | the Node is stopping (service stop, `openvibe-link quit`), or the core is stopping this process | no |
+     | `stop` | `shutdown` | the Link is stopping (service stop, `openvibe-link quit`), or the core is stopping this process | no |
      | `stop` | `timeout` | a command got no answer from the driver within its window | no |
      | `estop` | `remote` | the platform's e-stop (a robot owner or staff), with its `reason` | yes, until the owner clears it |
      | `estop` | `local` | `openvibe-link stop` on the device | yes, until `openvibe-link resume` |
      | `estop` | `driver` | a driver's own `local_stop` (this plugin's or another's) | yes, until `openvibe-link resume` |
-     | `estop` | `latched` | the latch was already set when the Node or this process started (`replayed: true`, `first_cause` when known) | yes |
+     | `estop` | `latched` | the latch was already set when the Link or this process started (`replayed: true`, `first_cause` when known) | yes |
      | `resume` | `cleared` | the owner cleared the platform's latch | clears the core's and the runtime's refusal only |
 
    - **Python (`openvibe_plugin` 0.17).** Every stop the runtime makes calls `on_stop(info)`, and `info` is a `StopInfo`:
@@ -258,12 +258,12 @@ Asked next by the same authors (2026-10-27, P7 LOOI shadow integration), and cha
      true; an ordinary halt, a disconnect, a timeout or a handoff only revokes remote motion. Treat `on_resume` as
      information. Never ARM P7, clear its physical latch or restore a remote grant there; the next command still passes
      every check. Across a plugin restart the latch arrives again as `estop` `latched` with `replayed: true`, and the halt
-     epoch comes in `hello`. Across a Node reconnect the link's loss is a `stop` (`link_lost`); a platform e-stop set
+     epoch comes in `hello`. Across a Link reconnect the link's loss is a `stop` (`link_lost`); a platform e-stop set
      while offline is applied from Bot's config before any command.
 
-Reviewed again by the same authors against v0.17.0 (2026-10-27, `632207f`), and changed in Node 0.18.0:
+Reviewed again by the same authors against v0.17.0 (2026-10-27, `632207f`), and changed in Link 0.18.0:
 
-8. **Node-to-plugin transit, the bound's rounding, and what a driver may assume.**
+8. **Link-to-plugin transit, the bound's rounding, and what a driver may assume.**
    - **Transit extended a command (confirmed, fixed).** In 0.17 the core turned the deadline into `deadline_ms` when the
      frame arrived, then queued the line for the plugin's stdin. Lines wait in that queue while the pipe is full (a
      plugin slow to read), and the Python runtime counted `deadline_ms` from when its reader got the line. So queue and
@@ -330,11 +330,11 @@ Reviewed again by the same authors against v0.17.0 (2026-10-27, `632207f`), and 
        `replayed: true`, `first_cause`). No command is routed to it before its `ready`, and lines reach it in the order
        they were queued. So the replay arrives before any command, and the runtime refuses motion (`estopped`) from
        then on.
-     - **Node reconnect.** No command is accepted until Bot's config has been applied on the new connection, which sets
+     - **Link reconnect.** No command is accepted until Bot's config has been applied on the new connection, which sets
        the latch first.
      - **Defence in depth.** The core itself refuses `drive`, `actuator`, `ptz`, `button` and `point` while latched,
        whatever the plugin's state. `test_a_replayed_estop_is_applied_before_any_motion`, `TestCrashRestartsWithEstop` and
-       `TestLatchSetBeforeStartIsReplayedFirst` hold the order. (Before 0.18 a Node booting latched told its plugins just
+       `TestLatchSetBeforeStartIsReplayedFirst` hold the order. (Before 0.18 a Link booting latched told its plugins just
        after starting them. That was also safe, by the core's own refusal, but is now in the order written here.)
    - **What a strict guarantee still assumes.** Each of these makes a command read as expired, never as open:
      - Bot's clock does not step back during a connection (that reads as expired until the next one).
@@ -345,10 +345,10 @@ Reviewed again by the same authors against v0.17.0 (2026-10-27, `632207f`), and 
      Bounded but not removed:
      - The gap between the runtime's check and the driver's own write to the hardware (the driver's code).
      - Time inside `handle()`.
-   - **Versions.** The Python SDK package now carries the Node release (`openvibe_plugin.__version__`, `pyproject.toml`:
+   - **Versions.** The Python SDK package now carries the Link release (`openvibe_plugin.__version__`, `pyproject.toml`:
      0.18.0; it said 0.1.0 before). For an exact source, pin the commit, not the version.
 
-Reviewed by the same authors against v0.18.0 for Windows 10 (2026-10-27, `399ef83`), and changed in Node 0.30.0:
+Reviewed by the same authors against v0.18.0 for Windows 10 (2026-10-27, `399ef83`), and changed in Link 0.30.0:
 
 9. **Windows: the original deadline across the pipe, and strict timing.**
    - **The issue (confirmed, fixed).**
@@ -394,7 +394,7 @@ Reviewed by the same authors against v0.18.0 for Windows 10 (2026-10-27, `399ef8
      - Asked for in any of three ways:
        - by the plugin: `strict_timing = True` on the class;
        - by the plugin's environment: `OPENVIBE_STRICT_TIMING=1`;
-       - by the Node's configuration: `"strict_timing": true` on the plugin, which `hello` passes on.
+       - by the Link's configuration: `"strict_timing": true` on the plugin, which `hello` passes on.
      - Under strict timing, a motion command whose original expiry cannot be checked is refused with
        `timing_unavailable`, before `handle()`. That covers:
        - no shared clock in the runtime (a missing clock);
@@ -434,7 +434,7 @@ Reviewed by the same authors against v0.18.0 for Windows 10 (2026-10-27, `399ef8
        - a restart naming another clock.
      - With the shared clock taken away, the 100 ms command reaches `handle()` with 99 ms, and the tests fail.
    - **What it still assumes.**
-     - The plugin runs on the same machine, started by the Node.
+     - The plugin runs on the same machine, started by the Link.
      - QPC is consistent across processes, as Windows documents.
      - The host is not suspended mid-command. The link is lost on resume anyway, and that loss is not a promise of an
        immediate physical stop.
@@ -453,7 +453,7 @@ Reviewed by the same authors against v0.18.0 for Windows 10 (2026-10-27, `399ef8
 | `telemetry` | `battery` {`volts`, `percent`}, `rssi`, `sensors` {…}, `faults` […]                         |
 | `event`     | `name` (`cliff`, `picked_up`, `low_battery`, `heartbeat_lost`, `stop_failed`, …), any fields |
 | `video`     | `format` (`jpeg`), `path`, optional `width`, `height`, `seq`                                |
-| `local_stop` | `reason` — the driver's own stop (a button, a sensor it trusts): latches the Node's local stop, see below |
+| `local_stop` | `reason` — the driver's own stop (a button, a sensor it trusts): latches the Link's local stop, see below |
 
 Two `event` names are the core's own, for voice plugins: `voice_ready` asks for the owner's setting (the core answers
 with `voice`), and `voice_ask` (`id`, `text`, optional `lang`) is what the person said after the call word. The core sends
@@ -537,7 +537,7 @@ kit's stock server.
 
 ### `cozmo` — Anki/DDL Cozmo through PyCozmo (bridge)
 
-The computer running the Node joins Cozmo's Wi-Fi on one interface and the internet on another. `drive` →
+The computer running the Link joins Cozmo's Wi-Fi on one interface and the internet on another. `drive` →
 `drive_wheels` (mm/s, `max_wheel_mmps` default 150); `ptz` `tilt` and actuator `head` (−1..1 → −25°..44.5°); actuator
 `lift` (0..1 → 32..92 mm); `backpack_lights` and `cube_lights` `{"r", "g", "b", "cube"?}`; `head_light` bool (infrared);
 `say` through `espeak-ng` or `pico2wave` → 22 kHz mono PCM; `display` text, faces or a PNG on the 128 × 32 screen;
@@ -552,7 +552,7 @@ supported version (2381, `allow_firmware`) is reported as `firmware_unsupported`
 Telemetry from `sensor_msgs/msg/BatteryState`, `sensor_msgs/msg/Range` or the front arc of a `sensor_msgs/msg/LaserScan`
 (`distance_cm`) and `nav_msgs/msg/Odometry`; camera frames from a JPEG `sensor_msgs/msg/CompressedImage`. It reaches ROS 2
 as a node of its own (`rclpy`, in a sourced ROS 2 environment) or through a rosbridge WebSocket server (no ROS 2
-libraries where the Node runs; the installer's `--driver ros2` sets this up). When ROS is not up yet, or the link drops,
+libraries where the Link runs; the installer's `--driver ros2` sets this up). When ROS is not up yet, or the link drops,
 it reports `ros_unreachable` and tries again every `retry_s` seconds (`retry_setup_s` in the Python runtime). Topics,
 speeds and setup: [plugins/ros2/README.md](../plugins/ros2/README.md).
 
@@ -566,7 +566,7 @@ Use this when the owner already has a local script receiving Live stream control
 ```
 
 The child receives one JSON object per line on **its stdin**. `argv` is passed directly to the OS, never a shell
-command. If it exits, the relay restarts it with backoff. On Node shutdown, the relay closes its stdin and stops
+command. If it exits, the relay restarts it with backoff. On Link shutdown, the relay closes its stdin and stops
 the process. A script that already uses Live's WebSocket protocol may instead use:
 
 ```json
@@ -588,7 +588,7 @@ Both outputs carry the hardware-facing Live fields exactly as Live's hardware so
 (rounded to four decimal places, as Live does). The Bot button `name` is the old Live button's **command string**,
 not its label. Live's `key_held` / `key_released` names are viewer status broadcasts on its control socket, never the
 hardware messages; the hardware socket, and so this relay, sends `key_down` / `key_up`. The old `control_id`,
-`from_user` and `timestamp` fields are unavailable in Bot's Node → plugin command; Live's example bridge reads
+`from_user` and `timestamp` fields are unavailable in Bot's Link → plugin command; Live's example bridge reads
 `from_user` only for logging and defaults it, so hardware clients treat all three as optional. The SDK releases all
 held buttons on deadline, missed heartbeat, stop, e-stop, halt and stdin close.
 
@@ -620,7 +620,7 @@ if __name__ == "__main__":
     raise SystemExit(run(Arm()))
 ```
 
-A driver with a safety latch of its own tells an ordinary stop from an emergency with `on_stop` (Node 0.17; "Why a
+A driver with a safety latch of its own tells an ordinary stop from an emergency with `on_stop` (Link 0.17; "Why a
 plugin is stopped" above):
 
 ```python
@@ -657,7 +657,7 @@ keep their full `deadline_ms` (motion kinds stay capped at 5 s).
 ## Community plugins
 
 A community robot's profile (`community.<name>`, submitted on openvibe.bot and reviewed by an OpenVibe admin) names
-the plugin its robots run in `mapping.plugin`. The Node never downloads a plugin: its owner installs it from the
+the plugin its robots run in `mapping.plugin`. The Link never downloads a plugin: its owner installs it from the
 source the profile's page links to and lists it in the config's `plugins`, as with any plugin.
 
 Before installing one, check that the profile is the one that was reviewed:
@@ -667,7 +667,7 @@ openvibe-link profile verify community.ballbot            # Bot from the config,
 openvibe-link profile verify community.ballbot --key-id a7a0f02462c68119   # accept only this signing key
 ```
 
-The Node fetches the profile (`GET /api/v1/profiles/:id`, with the `signature` Bot made on approval) and Bot's key
+The Link fetches the profile (`GET /api/v1/profiles/:id`, with the `signature` Bot made on approval) and Bot's key
 (`GET /api/v1/profiles/signing-key`). It checks that the key's id is the first 16 hex digits of the SHA-256 of its SPKI
 DER and that the signature names that key. Then it verifies Ed25519 over the profile's canonical JSON: every object's
 keys sorted by UTF-16 code units, no whitespace, strings and numbers as JavaScript's `JSON.stringify` writes them
@@ -678,6 +678,6 @@ driver", when:
 - the signature does not match;
 - the key is not the pinned one.
 
-`pair` runs the same check when the robot uses a community profile. It also checks that the profile Bot sent the Node
+`pair` runs the same check when the robot uses a community profile. It also checks that the profile Bot sent the Link
 is the signed one in the catalogue. A failure is a warning: pairing goes on, and the plugin stays uninstalled until
 the owner installs it.

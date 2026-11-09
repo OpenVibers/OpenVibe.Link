@@ -13,9 +13,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/connect"
-	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
-	"github.com/OpenVibers/OpenVibe.Node/internal/link"
+	"github.com/OpenVibers/OpenVibe.Link/internal/connect"
+	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
+	"github.com/OpenVibers/OpenVibe.Link/internal/link"
 )
 
 // Serve exposes no public listening port. Connect owns the authenticated incoming byte pipe.
@@ -46,7 +46,7 @@ func Serve(ctx context.Context, creds *credentials.Credentials, stateDir string)
 		return errors.New("computer sign-in unavailable")
 	}
 	data, _ := json.Marshal(map[string]any{"port": listener.Addr().(*net.TCPAddr).Port, "network_token": networkToken.Reveal()})
-	req, _ := http.NewRequestWithContext(ctx, "POST", "https://connect.openvibe.link/api/v1/node/egress-share", bytes.NewReader(data))
+	req, _ := http.NewRequestWithContext(ctx, "POST", "https://connect.openvibe.link/api/v1/link/egress-share", bytes.NewReader(data))
 	req.Header.Set("Authorization", "Bearer "+token.Reveal())
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := (&http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}).Do(req)
@@ -69,7 +69,7 @@ func Serve(ctx context.Context, creds *credentials.Credentials, stateDir string)
 			return
 		}
 		relay := "wss://" + result.Share.Host + "/__ov_egress"
-		_ = client.Call(ctx, "PUT", "/api/v1/node/self/egress/heartbeat", map[string]string{"relay_url": relay}, nil, true)
+		_ = client.Call(ctx, "PUT", "/api/v1/link/self/egress/heartbeat", map[string]string{"relay_url": relay}, nil, true)
 	}
 	go func() {
 		ticker := time.NewTicker(15 * time.Second)

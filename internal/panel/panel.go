@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/firstrun"
+	"github.com/OpenVibers/OpenVibe.Link/internal/firstrun"
 )
 
 //go:embed ui/index.html ui/panel.css ui/panel.js

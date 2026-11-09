@@ -23,7 +23,7 @@ installed the same way; Android allows it beside nothing else (the package is `n
 2. The page shows a code and a QR. The code works once and lasts 15 minutes.
 3. In the app, type the code or tap **Scan the QR instead**.
 
-Pairing is the Node's own: the code is redeemed on OpenVibe.Network, the phone gets a node credential, and it is bound
+Pairing is the Link's own: the code is redeemed on OpenVibe.Network, the phone gets a node credential, and it is bound
 on OpenVibe.Bot as a device of kind **phone**. The credential never leaves the phone in the clear: it is encrypted with
 a key the Android Keystore holds, and nothing on the phone is backed up.
 
@@ -91,8 +91,8 @@ line.
 
 ## Build it
 
-The app is in `android/`; it shares the Node's Go core through `gomobile bind`, so pairing, token refresh and
-reconnects are the same code the desktop Node runs. A debug build may be pointed at another server with
+The app is in `android/`; it shares the Link's Go core through `gomobile bind`, so pairing, token refresh and
+reconnects are the same code the desktop Link runs. A debug build may be pointed at another server with
 `./gradlew :app:assembleDebug -Pnetwork.url=https://staging.example`; that build shows a **Debug server** banner on every
 screen, and a release build always carries the official one.
 

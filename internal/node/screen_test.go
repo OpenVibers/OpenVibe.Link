@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/config"
-	"github.com/OpenVibers/OpenVibe.Node/internal/localctl"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
-	"github.com/OpenVibers/OpenVibe.Node/internal/video"
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/localctl"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/video"
 )
 
 // startScreenNode runs the real computer plugin with a fake `grim` (a Wayland session) that copies a real JPEG to the

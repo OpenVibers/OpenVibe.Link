@@ -31,7 +31,7 @@ dry="$(HOME="$home" PATH="$path" OPENVIBE_INSTALL_PLAN_LOGINS_DRY_RUN=1 sh "$ins
 	fail "the dry run exited non-zero"
 check() { printf '%s\n' "$dry" | grep -F -- "$1" >/dev/null || fail "the dry run is missing: $1"; }
 check '1. pair this computer'
-check '2. set the openvibe-node service'
+check '2. set the openvibe-link service'
 check '3. name the coding tools'
 check '4. write the names'
 check 'claude-code: signed in (~/.claude/.credentials.json): named for your jobs'

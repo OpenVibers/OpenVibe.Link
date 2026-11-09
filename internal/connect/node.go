@@ -1,10 +1,10 @@
 package connect
 
-// A share served by this computer itself, as OpenVibe Node (CON-4, ADR-057 decision 4). The share's owner picks the
+// A share served by this computer itself, as OpenVibe Link (CON-4, ADR-057 decision 4). The share's owner picks the
 // computer on the share's page; there is no connect key. Before every connection the Node buys its node token (subject
-// node:nod_…, audience openvibe.link) and asks Connect for a tunnel token for that one share:
+// link:lnk_…, audience openvibe.link) and asks Connect for a tunnel token for that one share:
 //
-//	POST https://connect.openvibe.link/api/v1/node/shares/<shr_…>/tunnel-token   Authorization: Bearer <node token>
+//	POST https://connect.openvibe.link/api/v1/link/shares/<shr_…>/tunnel-token   Authorization: Bearer <node token>
 //	→ {"tunnel_token":"ovt_…","expires_in":60,"share":{"id","host","url","local_port","mode"}}
 //
 // then says hello with both, {"t":"hello","v":1,"share":"shr_…","node_token":…,"tunnel":"ovt_…",…}, and sends
@@ -110,12 +110,12 @@ func nodeCall(ctx context.Context, client *http.Client, method, server, path, no
 	return resp.StatusCode, json.Unmarshal(raw, out)
 }
 
-// NodeShares lists the open shares bound to this computer (GET /api/v1/node/shares).
+// NodeShares lists the open shares bound to this computer (GET /api/v1/link/shares).
 func NodeShares(ctx context.Context, client *http.Client, server, nodeToken, userAgent string) ([]NodeShare, error) {
 	var out struct {
 		Shares []NodeShare `json:"shares"`
 	}
-	if _, err := nodeCall(ctx, client, http.MethodGet, server, "/api/v1/node/shares", nodeToken, userAgent, &out); err != nil {
+	if _, err := nodeCall(ctx, client, http.MethodGet, server, "/api/v1/link/shares", nodeToken, userAgent, &out); err != nil {
 		return nil, err
 	}
 	return out.Shares, nil
@@ -128,7 +128,7 @@ func tunnelToken(ctx context.Context, o Options, server, shareID, nodeToken stri
 		Token string    `json:"tunnel_token"`
 		Share NodeShare `json:"share"`
 	}
-	status, err := nodeCall(ctx, o.HTTPClient, http.MethodPost, server, "/api/v1/node/shares/"+url.PathEscape(shareID)+"/tunnel-token", nodeToken, "openvibe-node/"+o.Version, &out)
+	status, err := nodeCall(ctx, o.HTTPClient, http.MethodPost, server, "/api/v1/link/shares/"+url.PathEscape(shareID)+"/tunnel-token", nodeToken, "openvibe-link/"+o.Version, &out)
 	if err != nil {
 		if status == http.StatusNotFound || status == http.StatusGone {
 			return "", NodeShare{}, fmt.Errorf("%w: %v", ErrStopped, err)

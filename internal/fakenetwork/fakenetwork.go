@@ -1,5 +1,5 @@
 // Package fakenetwork is an in-process stand-in for OpenVibe.Network's node-principal pairing, for tests: POST
-// /api/v1/node-pairing redeems a one-time code for a node principal and its credential, and POST /oauth/token
+// /api/v1/link-pairing redeems a one-time code for a node principal and its credential, and POST /oauth/token
 // (client_credentials) sells node tokens for that credential (server/registry/node-principals.js,
 // server/auth/oauth-routes.js). Each token it mints is registered on the fake Bot as a credential of DeviceID, so the
 // Bot fake accepts it on /device and POST /api/v1/devices/bind as Bot accepts a node token.
@@ -14,13 +14,13 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/fakebot"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/fakebot"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 // Principal and PairingID are what a redeemed code answers with; DeviceID is the device the fake Bot binds it to.
 const (
-	Principal = "nod_01J8Z4M2Q0R7T9YV3K6N8P1W2X"
+	Principal = "lnk_01J8Z4M2Q0R7T9YV3K6N8P1W2X"
 	PairingID = "pair_01J8Z4M2Q0R7T9YV3K6N8P1W2Y"
 	DeviceID  = "dev_net01"
 )

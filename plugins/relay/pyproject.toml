@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "openvibe-relay"
 version = "0.1.0"
-description = "OpenVibe Node relay for existing Live hardware clients"
+description = "OpenVibe Link relay for existing Live hardware clients"
 requires-python = ">=3.9"
 license = { text = "AGPL-3.0-or-later" }
 dependencies = ["openvibe-plugin"]

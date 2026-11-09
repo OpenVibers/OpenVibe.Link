@@ -1,7 +1,7 @@
 # `ros2`: ROS 2 robots
 
 This plugin drives a ROS 2 robot from OpenVibe.Bot: TurtleBot 3 or 4, a Jackal, a home-built base, anything that takes
-`geometry_msgs/msg/Twist` on a `cmd_vel` topic. The Node runs on the robot's computer, or on a computer on the same
+`geometry_msgs/msg/Twist` on a `cmd_vel` topic. The Link runs on the robot's computer, or on a computer on the same
 network. The plugin turns Bot's commands into ROS 2 messages, and the robot's topics into telemetry and camera frames.
 Bot's gate (roles, the owner's limits, cooldowns and the e-stop) has already judged every command before it gets here.
 
@@ -16,15 +16,15 @@ Bot's gate (roles, the owner's limits, cooldowns and the e-stop) has already jud
 | battery | `sensor_msgs/msg/BatteryState` on `battery_topic`: `percentage` (0–1) and `voltage` |
 | `distance_cm` | `sensor_msgs/msg/Range` on `range_topic`, or else the nearest return within `front_arc_deg` of straight ahead on a `sensor_msgs/msg/LaserScan` (`scan_topic`) |
 | `odom` | `nav_msgs/msg/Odometry` on `odom_topic`: x, y, yaw and speed |
-| camera | a JPEG `sensor_msgs/msg/CompressedImage` on `image_topic`, at most `fps` frames a second; the Node publishes them as the robot's video |
+| camera | a JPEG `sensor_msgs/msg/CompressedImage` on `image_topic`, at most `fps` frames a second; the Link publishes them as the robot's video |
 
 ## Two ways to reach ROS 2
 
-- **`rclpy`**: the plugin is a ROS 2 node itself (named `node_name`). Run the Node where ROS 2 is installed, with its
+- **`rclpy`**: the plugin is a ROS 2 node itself (named `node_name`). Run the Link where ROS 2 is installed, with its
   environment sourced (`source /opt/ros/jazzy/setup.bash`) so `rclpy` imports.
 - **`rosbridge`**: JSON over WebSocket to a rosbridge server at `rosbridge_url`. Start one on the robot with
   `sudo apt install ros-$ROS_DISTRO-rosbridge-server` and `ros2 launch rosbridge_server rosbridge_websocket_launch.xml`.
-  No ROS 2 libraries are needed where the Node runs, so a Raspberry Pi beside the robot, or a laptop, works. `wss://`
+  No ROS 2 libraries are needed where the Link runs, so a Raspberry Pi beside the robot, or a laptop, works. `wss://`
   works too.
 - **`auto`** (the default) uses `rclpy` when it imports, otherwise `rosbridge`.
 
@@ -36,10 +36,10 @@ fault.
 
 1. On openvibe.bot, add a robot with the **ROS 2 robot** model (`ros2.diffdrive`; `ros2.holonomic` for mecanum or
    omni wheels) and keep its pairing code.
-2. On the computer that will run the Node:
-   `curl -fsSL https://node.openvibe.network/install | sh -s -- --robot <rob_…> --code <CODE> --driver ros2`
+2. On the computer that will run the Link:
+   `curl -fsSL https://openvibe.link/install | sh -s -- --robot <rob_…> --code <CODE> --driver ros2`
 3. Edit `config.json` (the installer prints where it is) if your topics differ from the defaults, then restart the
-   Node's service:
+   Link's service:
 
 ```json
 {"plugins": [{"name": "ros2", "config": {
@@ -61,7 +61,7 @@ and its base expects `cmd_vel` under the robot's namespace when one is set.
 |---|---|---|
 | `transport` | `auto` | `auto`, `rclpy` or `rosbridge` |
 | `rosbridge_url` | `ws://127.0.0.1:9090` | the rosbridge server (`ws://` or `wss://`) |
-| `node_name` | `openvibe_node` | the ROS 2 node's name with `rclpy` |
+| `node_name` | `openvibe_link` | the ROS 2 node's name with `rclpy` |
 | `cmd_vel` | `/cmd_vel` | where Twists go |
 | `max_linear` | `0.3` | m/s at full throttle (0–5) |
 | `max_angular` | `1.5` | rad/s at full steer (0–10) |

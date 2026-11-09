@@ -1,5 +1,5 @@
 // Package service installs and runs the Node as a system service (systemd, launchd or the Windows service manager)
-// through kardianos/service. The same code path runs `openvibe-node run` in a terminal: Ctrl-C stops it cleanly.
+// through kardianos/service. The same code path runs `openvibe-link run` in a terminal: Ctrl-C stops it cleanly.
 package service
 
 import (
@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	Name        = "openvibe-node"
+	Name        = "openvibe-link"
 	DisplayName = "OpenVibe Link"
 	Description = "OpenVibe Link connects this machine to OpenVibe (your agents, robots, cameras, computer control) over one outbound link."
 )
@@ -22,7 +22,7 @@ const (
 // Program is the body of the service: run until ctx ends.
 type Program func(ctx context.Context) error
 
-// ErrQuit is what a Program returns when its owner ended it (`openvibe-node quit`): it has stopped everything, and
+// ErrQuit is what a Program returns when its owner ended it (`openvibe-link quit`): it has stopped everything, and
 // the process exits 0. Only a Node run from a terminal or a sign-in start takes quit (a service manager would start it
 // again), and there the wait for a signal is not ours to end (kardianos/service on Windows waits for an interrupt),
 // so the process exits here.
@@ -107,7 +107,7 @@ func config(opt Options) *ks.Config {
 		},
 	}
 	if runtime.GOOS == "darwin" {
-		// launchd has no journal: write /usr/local/var/log/openvibe-node.{out,err}.log. systemd keeps journald.
+		// launchd has no journal: write /usr/local/var/log/openvibe-link.{out,err}.log. systemd keeps journald.
 		c.Option["LogOutput"] = true
 	}
 	return c

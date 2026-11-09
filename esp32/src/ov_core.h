@@ -8,10 +8,10 @@
 //
 // Time is injected as two clocks: a monotonic one for every timer (heartbeat, deadman, motion deadline) and a Unix
 // one for the protocol's timestamps only. Every side effect is a callback (send/heartbeat frames, drive, actuator,
-// stop, log, latch change). The Arduino transport lives in OpenVibeNode.h; nothing here touches WiFi, TLS, NVS or a
+// stop, log, latch change). The Arduino transport lives in OpenVibeLink.h; nothing here touches WiFi, TLS, NVS or a
 // board.
 //
-// Source of truth: docs/protocol.md and internal/protocol in OpenVibe.Node. Where this file diverges from the Go Node
+// Source of truth: docs/protocol.md and internal/protocol in OpenVibe.Link. Where this file diverges from the Go Node
 // it is because the ESP32 has no plugin supervisor, no worker and no WHIP publisher, and says so in the protocol's own
 // language (unknown kinds are `unsupported`, a job is `class not available`).
 #pragma once

@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
-	"github.com/OpenVibers/OpenVibe.Node/internal/link"
+	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
+	"github.com/OpenVibers/OpenVibe.Link/internal/link"
 )
 
 type Tokens interface {
@@ -95,7 +95,7 @@ func (c *Client) Open(ctx context.Context, session, credential, node string) (Gr
 }
 func (c *Client) Desk(ctx context.Context, desk string) (Plan, error) {
 	var p Plan
-	err := c.Call(ctx, "GET", "/api/v1/node/self/egress/desks/"+url.PathEscape(desk), nil, &p, true)
+	err := c.Call(ctx, "GET", "/api/v1/link/self/egress/desks/"+url.PathEscape(desk), nil, &p, true)
 	if err != nil {
 		return p, err
 	}

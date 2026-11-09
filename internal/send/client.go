@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
+	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
 )
 
 type Tokens interface {
@@ -47,23 +47,23 @@ type Item struct {
 }
 
 func (c *Client) Register(ctx context.Context, key JWK) error {
-	return c.do(ctx, http.MethodPut, "/api/v1/node/self/send/key", map[string]any{"public_key": Public(key)}, nil)
+	return c.do(ctx, http.MethodPut, "/api/v1/link/self/send/key", map[string]any{"public_key": Public(key)}, nil)
 }
 func (c *Client) Targets(ctx context.Context) ([]Machine, error) {
 	var out struct {
 		Machines []Machine `json:"machines"`
 	}
-	err := c.do(ctx, http.MethodGet, "/api/v1/node/self/send/targets", nil, &out)
+	err := c.do(ctx, http.MethodGet, "/api/v1/link/self/send/targets", nil, &out)
 	return out.Machines, err
 }
 func (c *Client) Send(ctx context.Context, target, envelope string) error {
-	return c.do(ctx, http.MethodPost, "/api/v1/node/self/send", map[string]string{"target_node": target, "envelope": envelope}, nil)
+	return c.do(ctx, http.MethodPost, "/api/v1/link/self/send", map[string]string{"target_node": target, "envelope": envelope}, nil)
 }
 func (c *Client) Inbox(ctx context.Context) ([]Item, error) {
 	var out struct {
 		Items []Item `json:"items"`
 	}
-	err := c.do(ctx, http.MethodGet, "/api/v1/node/self/send/inbox", nil, &out)
+	err := c.do(ctx, http.MethodGet, "/api/v1/link/self/send/inbox", nil, &out)
 	return out.Items, err
 }
 func (c *Client) Accept(ctx context.Context, id string) (string, error) {
@@ -73,20 +73,20 @@ func (c *Client) Accept(ctx context.Context, id string) (string, error) {
 	var out struct {
 		Envelope string `json:"envelope"`
 	}
-	err := c.do(ctx, http.MethodPost, "/api/v1/node/self/send/"+id+"/accept", map[string]string{}, &out)
+	err := c.do(ctx, http.MethodPost, "/api/v1/link/self/send/"+id+"/accept", map[string]string{}, &out)
 	return out.Envelope, err
 }
 func (c *Client) Decline(ctx context.Context, id string) error {
 	if !itemID.MatchString(id) {
 		return fmt.Errorf("this transfer is no longer available")
 	}
-	return c.do(ctx, http.MethodPost, "/api/v1/node/self/send/"+id+"/decline", map[string]string{}, nil)
+	return c.do(ctx, http.MethodPost, "/api/v1/link/self/send/"+id+"/decline", map[string]string{}, nil)
 }
 func (c *Client) Complete(ctx context.Context, id string) error {
 	if !itemID.MatchString(id) {
 		return fmt.Errorf("this transfer is no longer available")
 	}
-	return c.do(ctx, http.MethodPost, "/api/v1/node/self/send/"+id+"/complete", map[string]string{}, nil)
+	return c.do(ctx, http.MethodPost, "/api/v1/link/self/send/"+id+"/complete", map[string]string{}, nil)
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body any, out any) error {

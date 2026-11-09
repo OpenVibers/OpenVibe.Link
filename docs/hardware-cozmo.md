@@ -1,7 +1,7 @@
 # Anki / Digital Dream Labs Cozmo — bridge bring-up (O31)
 
-Cozmo runs closed firmware, makes its own Wi-Fi access point with no internet, and cannot run the Node itself. The
-device side is therefore a **bridge**: `openvibe-node` with the `cozmo` plugin runs on a computer next to the robot —
+Cozmo runs closed firmware, makes its own Wi-Fi access point with no internet, and cannot run the Link itself. The
+device side is therefore a **bridge**: `openvibe-link` with the `cozmo` plugin runs on a computer next to the robot —
 a Raspberry Pi or a laptop — and drives it over Wi-Fi through PyCozmo. The bridge joins Cozmo's network on one
 interface and reaches OpenVibe on another. Bot serves the one-paste installer; the panel is
 `openvibe.bot/panel/<rob_…>`.
@@ -14,7 +14,7 @@ Cozmo is an access point (`Cozmo_XXXXXX`, robot at `172.31.1.1`) and has no inte
 | interface | joined to | used for |
 |-----------|-----------|----------|
 | `wlan0` (or the built-in Wi-Fi) | Cozmo's Wi-Fi | PyCozmo's UDP link to the robot |
-| Ethernet, or a second Wi-Fi (USB dongle) | your home network | the Node's link to OpenVibe.Bot and video |
+| Ethernet, or a second Wi-Fi (USB dongle) | your home network | the Link's link to OpenVibe.Bot and video |
 
 1. Put Cozmo on its charger and turn it on. Raise and lower its lift: its face shows the network name and password.
 2. Join one interface to that network. Make sure the **default route stays on the internet interface**: Cozmo's network
@@ -26,7 +26,7 @@ Cozmo is an access point (`Cozmo_XXXXXX`, robot at `172.31.1.1`) and has no inte
 
 3. Close the Cozmo app on any phone: the robot accepts one controller at a time.
 4. The installer `pip install`s the plugin with the robot extra (`openvibe-cozmo[robot]`, which pulls PyCozmo) into the
-   Node's plugin virtual environment. It only *tips* about speech — install a TTS engine yourself:
+   Link's plugin virtual environment. It only *tips* about speech — install a TTS engine yourself:
 
    ```sh
    sudo apt install espeak-ng            # or libttspico-utils (pico2wave)
@@ -35,18 +35,18 @@ Cozmo is an access point (`Cozmo_XXXXXX`, robot at `172.31.1.1`) and has no inte
 ## 2. Pair (one pasted command from openvibe.bot)
 
 ```sh
-curl -fsSL https://node.openvibe.network/install | sh -s -- --robot rob_… --code XXXX-XXXX --driver cozmo
+curl -fsSL https://openvibe.link/install | sh -s -- --robot rob_… --code XXXX-XXXX --driver cozmo
 ```
 
 Network pairing, if openvibe.bot offers the Network form:
 
 ```sh
-curl -fsSL https://node.openvibe.network/install | sh -s -- --network https://openvibe.network --pairing pair_… --code XXXX-XXXX --driver cozmo
+curl -fsSL https://openvibe.link/install | sh -s -- --network https://openvibe.network --pairing pair_… --code XXXX-XXXX --driver cozmo
 ```
 
-Then check the written config (`cat /etc/openvibe-node/config.json`): `device_kind` is `bridge`, `plugins` names
+Then check the written config (`cat /etc/openvibe-link/config.json`): `device_kind` is `bridge`, `plugins` names
 `cozmo`, and `video.source` is `auto` (the plugin supplies JPEG camera frames). The config has no `video.whip_url`: the
-ingest URL + publish key the pairing returned is stored in `/etc/openvibe-node/credential.json`, and video publishes
+ingest URL + publish key the pairing returned is stored in `/etc/openvibe-link/credential.json`, and video publishes
 there unless a `video.whip_url` in the config overrides it. Setup waits `connect_timeout_s` (default 10 s) for the
 robot; if it is unreachable the plugin reports fault `not_connected`. `openvibe-link status --json` should show
 `link.connected: true`, `sensors` (`head_deg`, `lift_mm`, `cliff`, `picked_up`, `cubes`) and `video.state` at
@@ -84,7 +84,7 @@ Drive from openvibe.bot; watch `openvibe-link status --json` for telemetry.
   still on the internet NIC (`ip route`), the Cozmo app is closed everywhere, and the robot is on its charger.
 - **No video**: the plugin writes JPEG frames to `frame_dir` (a temp dir by default) and announces each as
   `{"op":"video","format":"jpeg","path":…,"seq":n}`; the core publishes them. Check `openvibe-link status --json` for
-  `video.state` / `video.last_error` and journalctl for `openvibe-node`. To check the WHIP path without the camera, set
-  `"video": {"source": "test"}` in `/etc/openvibe-node/config.json` and restart: the panel then shows the test pattern.
+  `video.state` / `video.last_error` and journalctl for `openvibe-link`. To check the WHIP path without the camera, set
+  `"video": {"source": "test"}` in `/etc/openvibe-link/config.json` and restart: the panel then shows the test pattern.
 - **A command answers `nack`**: read the fault — `firmware_unsupported` is the firmware latch above; `cliff` and
   `picked_up` are the safety stops in the checklist.

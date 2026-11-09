@@ -1,7 +1,7 @@
 package node
 
 // OpenVibe Connect shares, kept in the Node's own process so Link's window can start and end one while it runs. The
-// saved list is the same one `openvibe-node share add|list|remove` uses.
+// saved list is the same one `openvibe-link share add|list|remove` uses.
 
 import (
 	"context"
@@ -10,16 +10,16 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/connect"
-	"github.com/OpenVibers/OpenVibe.Node/internal/link"
-	"github.com/OpenVibers/OpenVibe.Node/internal/panel"
+	"github.com/OpenVibers/OpenVibe.Link/internal/connect"
+	"github.com/OpenVibers/OpenVibe.Link/internal/link"
+	"github.com/OpenVibers/OpenVibe.Link/internal/panel"
 )
 
 // shareOptions builds the Connect client: a Network-paired machine buys its own node token for a share it serves.
 func (n *Node) shareOptions() connect.Options {
 	o := connect.Options{Log: n.log, Version: n.opt.Version}
 	if n.opt.Creds != nil && n.opt.Creds.NetworkPaired() {
-		ts := link.NewTokenSourceFor(n.opt.Creds, nil, "openvibe-node/"+n.opt.Version, link.ConnectAudience)
+		ts := link.NewTokenSourceFor(n.opt.Creds, nil, "openvibe-link/"+n.opt.Version, link.ConnectAudience)
 		o.NodeToken = func(ctx context.Context) (string, error) {
 			tok, err := ts.Token(ctx)
 			if errors.Is(err, link.ErrNodeRevoked) {
@@ -48,7 +48,7 @@ func newShareSet(ctx context.Context, dir string, opts connect.Options) *shareSe
 	return &shareSet{ctx: ctx, dir: dir, opts: opts, running: map[int]context.CancelFunc{}}
 }
 
-// StartAll connects every saved share, as `openvibe-node run` always did.
+// StartAll connects every saved share, as `openvibe-link run` always did.
 func (s *shareSet) StartAll() {
 	shares, err := connect.Load(s.dir)
 	if err != nil {
@@ -80,7 +80,7 @@ func (s *shareSet) start(sh connect.Share) {
 		}
 		s.mu.Unlock()
 		if errors.Is(err, connect.ErrStopped) && s.opts.Log != nil {
-			s.opts.Log.Warn("connect: share stopped; remove it with `openvibe-node share remove`", "port", sh.Port, "share", sh.Label())
+			s.opts.Log.Warn("connect: share stopped; remove it with `openvibe-link share remove`", "port", sh.Port, "share", sh.Label())
 		}
 	}()
 }
@@ -91,7 +91,7 @@ func (s *shareSet) add(port int) (panel.Share, error) {
 		return panel.Share{}, errors.New("port is 1 to 65535")
 	}
 	if s.opts.NodeToken == nil {
-		return panel.Share{}, errors.New("this computer is not paired with OpenVibe: add it on openvibe.bot/machines first")
+		return panel.Share{}, errors.New("this computer is not paired with OpenVibe: add it on openvibe.link/machines first")
 	}
 	s.mu.Lock()
 	_, running := s.running[port]
@@ -103,7 +103,7 @@ func (s *shareSet) add(port int) (panel.Share, error) {
 	if err != nil {
 		return panel.Share{}, err
 	}
-	mine, err := connect.NodeShares(s.ctx, nil, connect.DefaultServer, tok, "openvibe-node/"+s.opts.Version)
+	mine, err := connect.NodeShares(s.ctx, nil, connect.DefaultServer, tok, "openvibe-link/"+s.opts.Version)
 	if err != nil {
 		return panel.Share{}, err
 	}

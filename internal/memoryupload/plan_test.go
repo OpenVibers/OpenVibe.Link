@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/memory"
+	"github.com/OpenVibers/OpenVibe.Link/internal/memory"
 )
 
 // TestSlugIsTheFolderName checks the name a project is known by.

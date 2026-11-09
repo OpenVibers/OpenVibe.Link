@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/OpenVibers/OpenVibe.Node/internal/egress"
+	"github.com/OpenVibers/OpenVibe.Link/internal/egress"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -17,12 +17,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/firstrun"
-	"github.com/OpenVibers/OpenVibe.Node/internal/link"
-	"github.com/OpenVibers/OpenVibe.Node/internal/panel"
-	"github.com/OpenVibers/OpenVibe.Node/internal/plugins"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
-	"github.com/OpenVibers/OpenVibe.Node/internal/send"
+	"github.com/OpenVibers/OpenVibe.Link/internal/firstrun"
+	"github.com/OpenVibers/OpenVibe.Link/internal/link"
+	"github.com/OpenVibers/OpenVibe.Link/internal/panel"
+	"github.com/OpenVibers/OpenVibe.Link/internal/plugins"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/send"
 )
 
 // panelCapabilities are the switches the window shows, in its order. Every one is a switch the daemon already has:
@@ -92,8 +92,8 @@ func (n *Node) panelSendOptions(ctx context.Context) panelSend {
 		return panelSend{}
 	}
 	client := &send.Client{BaseURL: n.opt.Creds.Network,
-		Tokens: link.NewTokenSourceFor(n.opt.Creds, nil, "openvibe-node/"+n.opt.Version, "openvibe.network"),
-		Agent:  "openvibe-node/" + n.opt.Version}
+		Tokens: link.NewTokenSourceFor(n.opt.Creds, nil, "openvibe-link/"+n.opt.Version, "openvibe.network"),
+		Agent:  "openvibe-link/" + n.opt.Version}
 	go func() {
 		t := time.NewTicker(time.Minute)
 		defer t.Stop()
@@ -110,7 +110,7 @@ func (n *Node) panelSendOptions(ctx context.Context) panelSend {
 	}()
 	return panelSend{
 		key: func() any {
-			return map[string]any{"private_key": key, "subject": map[string]string{"type": "node", "id": n.opt.Creds.Principal}}
+			return map[string]any{"private_key": key, "subject": map[string]string{"type": "link", "id": n.opt.Creds.Principal}}
 		},
 		targets: func() ([]panel.SendMachine, error) {
 			machines, err := client.Targets(ctx)

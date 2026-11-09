@@ -15,7 +15,7 @@
 // (XXXX-XXXX, 10 minutes). After the first pairing the device id and credential are kept in NVS, so OV_CODE is only
 // needed when there is no stored credential.
 #include <ArduinoJson.h>
-#include <OpenVibeNode.h>
+#include <OpenVibeLink.h>
 
 #define OV_WIFI_SSID "your-ssid"
 #define OV_WIFI_PASSWORD "your-password"
@@ -32,7 +32,7 @@ static const int PIN_IN4 = 33;
 static const int PWM_FREQ = 20000;
 static const int PWM_RES = 8;
 
-OpenVibeNode node;
+OpenVibeLink node;
 
 static void setMotor(int en, int in1, int in2, float speed) {
   speed = constrain(speed, -1.0f, 1.0f);

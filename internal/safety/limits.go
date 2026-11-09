@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 // Limits are the effective owner limits: the stricter of the server's config and the local config.

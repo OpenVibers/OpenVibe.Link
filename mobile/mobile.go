@@ -1,6 +1,6 @@
 // Package mobile is the Link phone's Go core. It is the same pairing and connection code the Node runs
 // (internal/link), bound with `gomobile bind` into an AAR the Android app links against, so the phone pairs and
-// stays connected exactly as `openvibe-node pair --network … --pairing … --code …` does.
+// stays connected exactly as `openvibe-link pair --network … --pairing … --code …` does.
 //
 // The core keeps no secret on disk: Pair returns the credentials as JSON for the app to encrypt with a key in the
 // Android Keystore, and every later call takes that JSON back. Nothing here logs a credential or a token: the link's
@@ -18,9 +18,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
-	"github.com/OpenVibers/OpenVibe.Node/internal/link"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
+	"github.com/OpenVibers/OpenVibe.Link/internal/link"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 // Version is what the phone tells the services it is.
@@ -63,7 +63,7 @@ func Pair(networkURL, botURL, code, name, pairingID string) (string, error) {
 		return "", err
 	}
 	// The QR on openvibe.bot/link/phone carries the pair_… id, so a wrong code is counted against that pairing's code,
-	// exactly as `openvibe-node pair --network … --pairing … --code …` does. A typed code may omit it.
+	// exactly as `openvibe-link pair --network … --pairing … --code …` does. A typed code may omit it.
 	if pairingID != "" && !link.PairingIDRe.MatchString(pairingID) {
 		return "", errors.New("the pairing id is not valid; scan the QR again for a fresh code")
 	}

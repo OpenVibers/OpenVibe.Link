@@ -1,0 +1,1117 @@
+// Command openvibe-link connects a computer, server, Raspberry Pi or robot to OpenVibe.
+//
+//	openvibe-link                 guided first run: pair, self-check, one first job, then what to do next
+//	openvibe-link pair <CODE>     redeem a one-time pairing code and store the device credential
+//	                              (--network/--pairing: pair on OpenVibe.Network and bind the device on Bot)
+//	openvibe-link credential import  take a rotated credential: reads the rotate response JSON on stdin
+//	openvibe-link run             run in the foreground (this is also what the service runs)
+//	openvibe-link install         install and start the system service
+//	openvibe-link uninstall       stop and remove the system service
+//	openvibe-link status          show the link, the plugins, the stop latch and video
+//	openvibe-link stop            local kill switch: stop every actuator and hold it stopped
+//	openvibe-link resume          release the local kill switch (and a server e-stop)
+//	openvibe-link quit            end the running node cleanly: every actuator stops, nothing is latched
+//	openvibe-link plugins         list plugins and their capabilities
+//	openvibe-link memory scan [--tools a,b] [--project DIR …] [--json]
+//	                              read the memory files of the coding tools (read-only, local)
+//	openvibe-link skills sync [--tools a,b] [--project DIR …] [--dry-run]
+//	                              write the skills you chose in the hub into each tool's own folders
+//	openvibe-link skills on|off|status  declare/remove/check the skill runner (sandboxed skill code)
+//	openvibe-link version
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"log/slog"
+	"net"
+	"os"
+	"os/user"
+	"path/filepath"
+	"runtime"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/connect"
+	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
+	"github.com/OpenVibers/OpenVibe.Link/internal/firstrun"
+	"github.com/OpenVibers/OpenVibe.Link/internal/link"
+	"github.com/OpenVibers/OpenVibe.Link/internal/localctl"
+	"github.com/OpenVibers/OpenVibe.Link/internal/node"
+	"github.com/OpenVibers/OpenVibe.Link/internal/plugins"
+	"github.com/OpenVibers/OpenVibe.Link/internal/profilesig"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/safety"
+	"github.com/OpenVibers/OpenVibe.Link/internal/service"
+)
+
+// version is set at build time: -ldflags "-X main.version=v0.1.0".
+var version = "dev"
+
+const usage = `openvibe-link %s: connect this device to OpenVibe.
+
+Usage:
+  openvibe-link [--code CODE] [--network URL --pairing pair_…] [--home DIR]
+                    guided first run: pair with a code from openvibe.bot/machines, check this machine can reach
+                    OpenVibe, run one harmless first job, and report each step; the same as 'openvibe-link first-run'
+  openvibe-link pair <CODE> [--robot rob_…] [--name NAME] [--server URL] [--kind onboard|bridge] [--force]
+  openvibe-link pair --network URL --pairing pair_… --code CODE [--name NAME] [--server URL] [--force]
+  openvibe-link credential import   store the credential from a rotate response, read as JSON on stdin
+  openvibe-link run [--dry-run]
+  openvibe-link install [--user NAME]
+  openvibe-link install --user-session --home DIR    Windows: start at sign-in in your own session (Bluetooth bridges)
+  openvibe-link uninstall [--user-session]
+  openvibe-link status [--json]
+  openvibe-link stop        stop every actuator now and hold them stopped
+  openvibe-link resume      release the stop
+  openvibe-link quit        end the running node cleanly: every actuator stops and nothing is latched, so the next
+                            start drives as before (stop is the kill switch, and holds until resume)
+  openvibe-link plugins [--json]
+  openvibe-link approvals [--json]   what the computer plugin waits to be approved (control level "ask")
+  openvibe-link approve <ID>         let it run
+  openvibe-link deny <ID>            refuse it
+  openvibe-link tray [--autostart on|off]
+                    the Node in your notification area (Linux, Windows): what waits with Approve and Deny, stop,
+                    resume, Open Link; --autostart starts it when you sign in
+  openvibe-link panel                print Link's own window's address (loopback, this run's token)
+  openvibe-link profile verify community.<name> [--server URL] [--key-id ID]
+                    check a community robot profile against the signature Bot made when it was reviewed
+  openvibe-link desk-sandbox [--memory-mb N] [--cpu-millis N] [--bind PATH]... [--egress public] -- PROGRAM [ARG]...
+                    run one desk's browser confined (a desk host that serves other people; the computer plugin
+                    calls it, with --remote-debugging-pipe on fds 3 and 4)
+  openvibe-link memory scan [--tools a,b] [--project DIR …] [--json]
+                    read the memory files of the coding tools on this machine
+                    (read-only, local, secrets removed)
+  openvibe-link skills sync [--tools a,b] [--project DIR …] [--dry-run] [--yes]
+  openvibe-link skills sync --undo
+                    write the skills and rules you chose at openvibe.codes/skills
+                    into each tool's own folders, inside one marked block
+  openvibe-link skills on|off|status [--dir DIR] [--node PATH] [--json]
+                    run a skill's code as a sandboxed job on this machine
+                    (openvibe-skill-runner@1.0.0; off until "on")
+  openvibe-link exchange serve --model <id> [--public-url URL]
+                    serve a local model as an OpenVibe.Exchange seller offer
+  openvibe-link stream --probe --whip-url URL [--seconds N] [--size WxH] [--json]
+                    publish a QR of the millisecond clock for the headless latency viewer (the ticket comes from
+                    OPENVIBE_STREAM_TICKET, never argv)
+  openvibe-link share --key ovc_… --port N           put this machine's port N on the web (OpenVibe Connect),
+                                                   behind OpenVibe sign-in, until Ctrl-C
+  openvibe-link share add|list|remove …             the shares the Node service keeps up (openvibe-link share)
+  openvibe-link party host <party-id>               host a shared browser for an openvibe.party room, until stopped
+  openvibe-link version
+
+Global flags (before or after the command):
+  --home DIR        keep config and state in DIR (also OPENVIBE_LINK_HOME)
+  --log-level LVL   debug, info, warn or error (default info)
+`
+
+func main() {
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+type globals struct {
+	home     string
+	logLevel string
+	paths    config.Paths
+	log      *slog.Logger
+}
+
+func run(args []string, stdout, stderr io.Writer) int {
+	return runWithStdin(args, os.Stdin, stdout, stderr)
+}
+
+// runWithStdin is run with the command's stdin, so tests can feed `credential import`.
+func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help" || args[0] == "--version") {
+		if args[0] == "--version" {
+			fmt.Fprintf(stdout, "openvibe-link %s %s/%s\n", version, runtime.GOOS, runtime.GOARCH)
+			return 0
+		}
+		fmt.Fprintf(stdout, usage, version)
+		return 0
+	}
+	// A bare `openvibe-link` (or flags with no command) is the guided first run; it needs its own flag set, because
+	// its flags include the pairing ones and there is no command word to hang them on.
+	if len(args) == 0 || args[0] == "first-run" || strings.HasPrefix(args[0], "-") {
+		g := &globals{}
+		var ga guideArgs
+		rest := args
+		if len(args) > 0 && args[0] == "first-run" {
+			rest = args[1:]
+		}
+		positional, err := parseGuideFlags(rest, g, &ga, stderr)
+		if err != nil {
+			return 2
+		}
+		g.paths = config.DefaultPaths(g.home)
+		g.log = newLogger(stderr, g.logLevel)
+		if err := cmdFirstRun(g, ga, positional, stdin, stdout); err != nil {
+			fmt.Fprintln(stderr, "error:", err)
+			return 1
+		}
+		return 0
+	}
+	cmd, rest := args[0], args[1:]
+	if cmd == "memory" {
+		// The memory scan has its own flags, so it parses its own arguments.
+		return cmdMemory(rest, stdin, stdout, stderr)
+	}
+	if cmd == "skills" {
+		// The sync has its own flags, so it parses its own arguments.
+		return cmdSkills(rest, stdin, stdout, stderr)
+	}
+	if cmd == "exchange" { // its own flags: serve, and the seller offer's
+		return cmdExchange(rest, stdout, stderr)
+	}
+	if cmd == "desk-sandbox" { // its own flags, up to "--": a browser's flags after it are never the Node's
+		return cmdDeskSandbox(rest, stderr)
+	}
+	if cmd == "stream" { // its own flags: --probe and the latency probe's
+		return cmdStream(rest, stdin, stdout, stderr)
+	}
+	if cmd == "party" {
+		if err := cmdParty(rest, stdout, stderr); err != nil {
+			fmt.Fprintln(stderr, "error:", err)
+			return 1
+		}
+		return 0
+	}
+	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	g := &globals{}
+	fs.StringVar(&g.home, "home", "", "config and state directory")
+	fs.StringVar(&g.logLevel, "log-level", "info", "log level")
+	var (
+		server  = fs.String("server", "", "OpenVibe.Bot origin (pair)")
+		kind    = fs.String("kind", "", "onboard or bridge (pair)")
+		robot   = fs.String("robot", "", "the rob_… id of the robot to pair with, from the installer command (pair)")
+		name    = fs.String("name", "", "a name for this device on openvibe.bot; default: the hostname (pair)")
+		codeArg = fs.String("code", "", "the pairing code, instead of the argument (pair)")
+		network = fs.String("network", "", "OpenVibe.Network origin: pair this machine there (pair)")
+		pairing = fs.String("pairing", "", "the pair_… id from the installer command (pair, with --network)")
+		force   = fs.Bool("force", false, "pair again even if already paired")
+		dryRun  = fs.Bool("dry-run", false, "run only the dry-run plugin and the test pattern (run)")
+		asJSON  = fs.Bool("json", false, "print JSON (status, plugins)")
+		svcUser = fs.String("user", "", "run the service as this account (install)")
+		session = fs.Bool("user-session", false, "Windows: start at sign-in in your own session instead of as a service (install, uninstall)")
+		keyID   = fs.String("key-id", "", "accept only this Bot signing key id (profile verify)")
+		autoArg = fs.String("autostart", "", "on or off: start the tray when you sign in (tray)")
+		shKey   = fs.String("key", "", "the share's ovc_… connect key from connect.openvibe.link (share)")
+		shPort  = fs.Int("port", 0, "the local port to share (share)")
+		shSrv   = fs.String("connect-server", "", "OpenVibe Connect's tunnel URL; default wss://connect.openvibe.link/tunnel (share)")
+		shID    = fs.String("share", "", "a share this computer serves itself, as OpenVibe Link: its shr_… id, no key (share)")
+	)
+	// Accept flags anywhere: split positionals out.
+	var positional []string
+	for len(rest) > 0 {
+		if err := fs.Parse(rest); err != nil {
+			return 2
+		}
+		rest = fs.Args()
+		if len(rest) > 0 {
+			positional = append(positional, rest[0])
+			rest = rest[1:]
+		}
+	}
+	g.paths = config.DefaultPaths(g.home)
+	g.log = newLogger(stderr, g.logLevel)
+
+	var err error
+	switch cmd {
+	case "pair":
+		if *codeArg != "" {
+			positional = append(positional, *codeArg)
+		}
+		p := pairArgs{robot: *robot, name: *name, server: *server, kind: *kind, force: *force, network: *network, pairing: *pairing}
+		// --pairing with no code is the code itself (`--pairing ABCD-1234`); a pair_… id needs --code beside it.
+		if p.pairing != "" && len(positional) == 0 && !strings.HasPrefix(p.pairing, "pair_") {
+			positional, p.pairing = []string{p.pairing}, ""
+		}
+		if len(positional) != 1 {
+			fmt.Fprintln(stderr, "usage: openvibe-link pair <CODE> [--robot rob_…] [--name NAME]\n       openvibe-link pair --network URL --pairing pair_… --code CODE [--name NAME]")
+			return 2
+		}
+		p.code = positional[0]
+		if p.network != "" || p.pairing != "" {
+			err = cmdPairNetwork(g, p, stdout)
+		} else {
+			err = cmdPair(g, p, stdout)
+		}
+	case "credential":
+		if len(positional) != 1 || positional[0] != "import" {
+			fmt.Fprintln(stderr, "usage: openvibe-link credential import  (reads the rotate response JSON on stdin)")
+			return 2
+		}
+		err = cmdCredentialImport(g, stdin, stdout)
+	case "run":
+		err = cmdRun(g, *dryRun)
+	case "install":
+		if *session {
+			err = cmdInstallUserSession(g, stdout)
+			break
+		}
+		err = cmdInstall(g, *svcUser, stdout)
+	case "uninstall":
+		if *session {
+			err = cmdUninstallUserSession(g, stdout)
+			break
+		}
+		err = service.Control(serviceOptions(g, ""), "stop")
+		if uerr := service.Control(serviceOptions(g, ""), "uninstall"); uerr != nil {
+			err = uerr
+		} else {
+			err = nil
+			fmt.Fprintln(stdout, "Service removed. Config and credential are kept in", g.paths.ConfigDir)
+		}
+	case "status":
+		err = cmdStatus(g, *asJSON, stdout)
+	case "stop":
+		err = cmdStop(g, stdout)
+	case "resume":
+		err = cmdResume(g, stdout)
+	case "quit":
+		err = cmdQuit(g, stdout)
+	case "plugins":
+		err = cmdPlugins(g, *asJSON, stdout)
+	case "approvals":
+		err = cmdApprovals(g, *asJSON, stdout)
+	case "approve", "deny":
+		if len(positional) != 1 {
+			fmt.Fprintf(stderr, "usage: openvibe-link %s <ID>   (openvibe-link approvals lists the ids)\n", cmd)
+			return 2
+		}
+		err = cmdAnswer(g, cmd, positional[0], stdout)
+	case "tray":
+		err = cmdTray(g, *autoArg, stdout)
+	case "panel":
+		err = cmdPanel(g, stdout)
+	case "profile":
+		if len(positional) != 2 || positional[0] != "verify" {
+			fmt.Fprintln(stderr, "usage: openvibe-link profile verify community.<name> [--server URL] [--key-id ID]")
+			return 2
+		}
+		err = cmdProfileVerify(g, positional[1], *server, *keyID, stdout)
+	case "share":
+		err = cmdShare(g, positional, shareArgs{key: *shKey, port: *shPort, server: *shSrv, share: *shID}, stdout, stderr)
+		if errors.Is(err, errUsage) {
+			return 2
+		}
+	case "version", "--version":
+		fmt.Fprintf(stdout, "openvibe-link %s %s/%s\n", version, runtime.GOOS, runtime.GOARCH)
+	default:
+		fmt.Fprintf(stderr, "unknown command %q\n\n", cmd)
+		fmt.Fprintf(stderr, usage, version)
+		return 2
+	}
+	if err != nil {
+		fmt.Fprintln(stderr, "error:", err)
+		if errors.Is(err, link.ErrNodeRevoked) {
+			return service.ExitPairAgain
+		}
+		return 1
+	}
+	return 0
+}
+
+func newLogger(w io.Writer, level string) *slog.Logger {
+	var l slog.Level
+	if err := l.UnmarshalText([]byte(level)); err != nil {
+		l = slog.LevelInfo
+	}
+	return slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: l}))
+}
+
+func loadConfig(g *globals) (*config.Config, error) {
+	return config.Load(g.paths.ConfigFile())
+}
+
+func pluginSpecs(cfg *config.Config, paths config.Paths) []plugins.Spec {
+	var out []plugins.Spec
+	for _, p := range cfg.Plugins {
+		if p.Disabled {
+			continue
+		}
+		var env []string
+		for k, v := range p.Env {
+			env = append(env, k+"="+v)
+		}
+		out = append(out, plugins.Spec{Name: p.Name, Argv: cfg.PluginCommand(p, paths), Env: env, Dir: p.Dir, Config: p.Config, StrictTiming: p.StrictTiming})
+	}
+	return out
+}
+
+// probeAll asks every plugin to describe itself without touching hardware.
+func probeAll(cfg *config.Config, paths config.Paths, log *slog.Logger) (map[string]*plugins.Describe, []string) {
+	out := map[string]*plugins.Describe{}
+	var failed []string
+	for _, s := range pluginSpecs(cfg, paths) {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		d, err := plugins.Probe(ctx, s)
+		cancel()
+		if err != nil {
+			log.Warn("plugin did not describe itself", "plugin", s.Name, "err", err)
+			failed = append(failed, s.Name)
+			continue
+		}
+		out[s.Name] = d
+	}
+	return out, failed
+}
+
+// pairArgs are the flags of `openvibe-link pair`.
+type pairArgs struct {
+	code, robot, name, server, kind string
+	network, pairing                string
+	force                           bool
+}
+
+// maxNameLen is the longest device name OpenVibe.Bot stores.
+const maxNameLen = 80
+
+// deviceName is --name, else the hostname, cut to maxNameLen.
+func deviceName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name, _ = os.Hostname()
+	}
+	if r := []rune(name); len(r) > maxNameLen {
+		name = string(r[:maxNameLen])
+	}
+	return name
+}
+
+// preparePair checks that this Node may pair (not paired yet, or --force) and returns the config with --server and
+// --kind applied, and whether config.json was missing (then pairing writes it).
+func preparePair(g *globals, a pairArgs) (*config.Config, bool, error) {
+	if err := g.paths.Ensure(); err != nil {
+		return nil, false, fmt.Errorf("cannot create %s (run with sudo, or use --home): %w", g.paths.ConfigDir, err)
+	}
+	if old, err := credentials.Load(g.paths.CredentialFile(), nil); err == nil && !a.force {
+		return nil, false, fmt.Errorf("already paired as %s; use --force to pair again (the old credential stops working once the owner removes it)", old.Label())
+	}
+	cfg, err := loadConfig(g)
+	if err != nil {
+		return nil, false, err
+	}
+	_, statErr := os.Stat(g.paths.ConfigFile())
+	if a.server != "" {
+		cfg.Server = a.server
+	}
+	if a.kind != "" {
+		cfg.DeviceKind = a.kind
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, false, err
+	}
+	return cfg, statErr != nil, nil
+}
+
+// finishPair writes config.json when it was missing or --server/--kind changed it, and restarts a running service
+// so it picks up the new credential.
+func finishPair(g *globals, a pairArgs, cfg *config.Config, noConfig bool, stdout io.Writer) error {
+	if noConfig || a.server != "" || a.kind != "" {
+		if err := config.Save(g.paths.ConfigFile(), cfg); err != nil {
+			return err
+		}
+		chownLikeDir(g.paths.ConfigFile(), g.paths.ConfigDir)
+	}
+	// The service has one name on a machine (service.Name) whatever --home it runs, so a pairing in another --home
+	// (a second node, a test node) must not restart it: that would restart a different node (11-02: a test node
+	// paired in its own folder beside a working robot's service). Only the default home's pairing restarts it.
+	if g.home != "" {
+		if serviceStatus(serviceOptions(g, "")) == "running" {
+			fmt.Fprintln(stdout, "A node service is running on this machine; it was left alone. If it runs this --home, restart it (Windows: `sc stop openvibe-link` then `sc start openvibe-link`; Linux: `sudo systemctl restart openvibe-link`).")
+		}
+		return nil
+	}
+	if serviceStatus(serviceOptions(g, "")) == "running" {
+		_ = serviceControl(serviceOptions(g, ""), "restart")
+		fmt.Fprintln(stdout, "The service was running and has been restarted with the new credential.")
+	}
+	return nil
+}
+
+// The service manager, behind seams so the pairing tests can watch it (service.Status and service.Control otherwise).
+var (
+	serviceStatus  = service.Status
+	serviceControl = service.Control
+)
+
+func cmdPair(g *globals, a pairArgs, stdout io.Writer) error {
+	code, err := link.NormalizeCode(a.code)
+	if err != nil {
+		return err
+	}
+	if a.robot != "" && !link.RobotRe.MatchString(a.robot) {
+		return fmt.Errorf("--robot must be a robot id like rob_01J8Z4M2Q0R7T9YV3K6N8P1W2X (a driver kind such as %q goes in the config's plugins)", a.robot)
+	}
+	name := deviceName(a.name)
+	cfg, noConfig, err := preparePair(g, a)
+	if err != nil {
+		return err
+	}
+	descs, _ := probeAll(cfg, g.paths, g.log)
+	req := protocol.PairRequest{Robot: a.robot, Code: code, AgentVersion: version, DeviceKind: cfg.DeviceKind, Drivers: []string{},
+		Capabilities: map[string]any{}, Name: name}
+	names := make([]string, 0, len(descs))
+	for n := range descs {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		req.Drivers = append(req.Drivers, descs[n].Driver)
+		req.Capabilities[n] = descs[n].Capabilities
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	creds, err := link.Pair(ctx, nil, cfg.Server, req)
+	if err != nil {
+		return err
+	}
+	if err := credentials.Save(g.paths.CredentialFile(), creds); err != nil {
+		return err
+	}
+	chownLikeDir(g.paths.CredentialFile(), g.paths.ConfigDir)
+	fmt.Fprintf(stdout, "Paired as %s (robot %s). Credential saved to %s (mode 600).\n", creds.DeviceID, creds.RobotID, g.paths.CredentialFile())
+	fmt.Fprintln(stdout, "Confirm the device on openvibe.bot, then start it: `openvibe-link run` or `sudo openvibe-link install`.")
+	reportCommunityProfile(ctx, cfg.Server, creds.Profile, stdout)
+	return finishPair(g, a, cfg, noConfig, stdout)
+}
+
+// cmdPairNetwork pairs through OpenVibe.Network: it redeems the code at <network>/api/v1/link-pairing, stores the
+// node principal and credential, then binds the device on Bot (POST /api/v1/devices/bind with a node token). A
+// failed bind keeps the credential: `openvibe-link run` binds on start.
+func cmdPairNetwork(g *globals, a pairArgs, stdout io.Writer) error {
+	code, err := link.NormalizeCode(a.code)
+	if err != nil {
+		return err
+	}
+	if a.pairing != "" && !link.PairingIDRe.MatchString(a.pairing) {
+		return errors.New("--pairing must be the pair_… id from the installer command on openvibe.bot")
+	}
+	network := strings.TrimSuffix(strings.TrimSpace(a.network), "/")
+	if network == "" {
+		return errors.New("--pairing needs --network, the OpenVibe.Network URL from the installer command")
+	}
+	cfg, noConfig, err := preparePair(g, a)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	ua := "openvibe-link/" + version
+	creds, err := link.PairNetwork(ctx, nil, network, protocol.NodePairingRequest{Code: code, Pairing: a.pairing, Name: deviceName(a.name)}, ua)
+	if err != nil {
+		return err
+	}
+	creds.Server = strings.TrimSuffix(cfg.Server, "/")
+	if err := saveCredentials(g, creds); err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "Paired on %s as %s. Credential saved to %s (mode 600).\n", network, creds.Principal, g.paths.CredentialFile())
+	if bound, err := link.Bind(ctx, nil, creds, link.NewTokenSource(creds, nil, ua), ua); err != nil {
+		if errors.Is(err, link.ErrNodeRevoked) {
+			return err
+		}
+		fmt.Fprintf(stdout, "Could not bind the device on %s yet (%v); the node binds it when it starts.\n", creds.Server, err)
+	} else {
+		if err := saveCredentials(g, bound); err != nil {
+			return err
+		}
+		if bound.RobotID != "" {
+			fmt.Fprintf(stdout, "Bound as %s (robot %s).\n", bound.DeviceID, bound.RobotID)
+			reportCommunityProfile(ctx, creds.Server, bound.Profile, stdout)
+		} else {
+			fmt.Fprintf(stdout, "Bound as %s (a machine for your jobs, no robot).\n", bound.DeviceID)
+		}
+	}
+	fmt.Fprintln(stdout, "Start it: `openvibe-link run` or `sudo openvibe-link install`.")
+	return finishPair(g, a, cfg, noConfig, stdout)
+}
+
+func saveCredentials(g *globals, c *credentials.Credentials) error {
+	if err := credentials.Save(g.paths.CredentialFile(), c); err != nil {
+		return err
+	}
+	chownLikeDir(g.paths.CredentialFile(), g.paths.ConfigDir)
+	return nil
+}
+
+// bindOnStart binds a Network-paired machine whose device record is missing (the bind at pairing failed) and saves
+// the answer. A refused node credential (ErrNodeRevoked) is returned; any other failure is logged and the Node
+// starts without a device record (no video); the next start binds again.
+func bindOnStart(g *globals, creds *credentials.Credentials, tokens *link.TokenSource, server string) (*credentials.Credentials, error) {
+	if !creds.NetworkPaired() || creds.Bound() {
+		return creds, nil
+	}
+	if creds.Server == "" {
+		creds.Server = server
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	bound, err := link.Bind(ctx, nil, creds, tokens, "openvibe-link/"+version)
+	if errors.Is(err, link.ErrNodeRevoked) {
+		return nil, err
+	}
+	if err != nil {
+		g.log.Warn("could not bind the device on Bot; starting without video until the next start", "err", err)
+		return creds, nil
+	}
+	if err := saveCredentials(g, bound); err != nil {
+		return nil, err
+	}
+	g.log.Info("bound the device on Bot", "device", bound.DeviceID, "robot", bound.RobotID)
+	return bound, nil
+}
+
+// maxRotateJSON caps what `credential import` reads from stdin: Bot's rotate answer is a few hundred bytes.
+const maxRotateJSON = 64 << 10
+
+// cmdCredentialImport replaces the stored credential and publish key with the pair from a credential rotation.
+// It reads OpenVibe.Bot's `POST /api/v1/devices/:id/rotate` response from stdin and keeps every other stored field,
+// so a rotated Node does not have to pair again. Neither secret is ever printed.
+func cmdCredentialImport(g *globals, stdin io.Reader, stdout io.Writer) error {
+	// The rotate answer is small; refuse a huge stream instead of buffering it.
+	b, err := io.ReadAll(io.LimitReader(stdin, maxRotateJSON+1))
+	if err != nil {
+		return fmt.Errorf("reading the rotate response from stdin: %w", err)
+	}
+	if len(b) > maxRotateJSON {
+		return fmt.Errorf("the rotate response is over %d KiB; pipe just the POST /api/v1/devices/:id/rotate body", maxRotateJSON>>10)
+	}
+	// The plain strings below live only in this function; nothing formats them.
+	var resp struct {
+		Device struct {
+			ID string `json:"id"`
+		} `json:"device"`
+
+		Credential string `json:"credential"`
+		PublishKey string `json:"publish_key"`
+	}
+	// Never wrap the decoder error: it can quote the response body, secrets and all.
+	if err := json.Unmarshal(b, &resp); err != nil {
+		return errors.New("stdin is not the JSON that POST /api/v1/devices/:id/rotate answered with")
+	}
+	if resp.Credential == "" || resp.PublishKey == "" {
+		return errors.New("the rotate response has no credential or publish_key; pipe the whole response body")
+	}
+	old, err := credentials.Load(g.paths.CredentialFile(), nil)
+	if errors.Is(err, credentials.ErrNotPaired) {
+		return errors.New("this Node is not paired yet; run `openvibe-link pair <CODE>` first")
+	}
+	if err != nil {
+		return err
+	}
+	if old.NetworkPaired() {
+		return errors.New("this Node is paired through OpenVibe.Network: it has no Bot credential to import")
+	}
+	if resp.Device.ID != old.DeviceID {
+		return fmt.Errorf("this rotation is for device %s, this Node is paired as %s", resp.Device.ID, old.DeviceID)
+	}
+	next := *old
+	next.Credential = credentials.NewSecret(resp.Credential)
+	next.PublishKey = credentials.NewSecret(resp.PublishKey)
+	if err := credentials.Save(g.paths.CredentialFile(), &next); err != nil {
+		return err
+	}
+	chownLikeDir(g.paths.CredentialFile(), g.paths.ConfigDir)
+	fmt.Fprintf(stdout, "Imported the rotated credential for %s. The old credential stops working after 60 s; restart the node (or it reconnects on its own).\n", old.DeviceID)
+	return nil
+}
+
+func cmdRun(g *globals, dryRun bool) error {
+	if err := g.paths.Ensure(); err != nil {
+		return fmt.Errorf("cannot create %s (run with sudo, or use --home): %w", g.paths.StateDir, err)
+	}
+	cfg, err := loadConfig(g)
+	if err != nil {
+		return err
+	}
+	if dryRun {
+		var keep []config.PluginConfig
+		for _, p := range cfg.Plugins {
+			if p.Name == "dryrun" {
+				keep = append(keep, p)
+			}
+		}
+		if len(keep) == 0 {
+			keep = []config.PluginConfig{{Name: "dryrun"}}
+		}
+		cfg.Plugins = keep
+		cfg.Video.Source = "test"
+	}
+	creds, err := credentials.Load(g.paths.CredentialFile(), func(s string) { g.log.Warn(s) })
+	if err != nil && !errors.Is(err, credentials.ErrNotPaired) {
+		return err
+	}
+	var tokens link.Tokens
+	if creds.NetworkPaired() {
+		ts := link.NewTokenSource(creds, nil, "openvibe-link/"+version)
+		if creds, err = bindOnStart(g, creds, ts, cfg.Server); err != nil {
+			return err
+		}
+		tokens = ts
+	}
+	n, err := node.New(node.Options{Config: cfg, Paths: g.paths, Creds: creds, Tokens: tokens, Log: g.log, Version: version, CanQuit: service.Interactive(), NoShares: dryRun})
+	if err != nil {
+		return err
+	}
+	g.log.Info("openvibe-link starting", "version", version, "config", g.paths.ConfigDir, "plugins", len(cfg.Plugins))
+	return service.Run(serviceOptions(g, ""), func(ctx context.Context) error {
+		if err := n.Run(ctx); !errors.Is(err, node.ErrQuit) {
+			return err
+		}
+		g.log.Info("openvibe-link exited: every actuator stopped, nothing latched")
+		return service.ErrQuit
+	})
+}
+
+func serviceOptions(g *globals, user string) service.Options {
+	args := []string{"run"}
+	if g.home != "" {
+		abs, _ := filepath.Abs(g.home)
+		args = append(args, "--home", abs)
+	}
+	if g.logLevel != "" && g.logLevel != "info" {
+		args = append(args, "--log-level", g.logLevel)
+	}
+	return service.Options{Arguments: args, UserName: user}
+}
+
+func cmdInstall(g *globals, user string, stdout io.Writer) error {
+	cfg, err := loadConfig(g)
+	if err != nil {
+		return err
+	}
+	if err := validateComputerService(cfg, user); err != nil {
+		return err
+	}
+
+	if err := g.paths.Ensure(); err != nil {
+		return fmt.Errorf("cannot create %s (run with sudo): %w", g.paths.ConfigDir, err)
+	}
+	if user != "" {
+		if err := chownTree(user, g.paths.ConfigDir, g.paths.StateDir); err != nil {
+			return err
+		}
+	}
+	opt := serviceOptions(g, user)
+	if err := service.Control(opt, "install"); err != nil {
+		return fmt.Errorf("install: %w (are you root?)", err)
+	}
+	if err := service.Control(opt, "start"); err != nil {
+		return fmt.Errorf("installed, but could not start: %w", err)
+	}
+	fmt.Fprintln(stdout, "Installed and started the openvibe-link service.")
+	// The guided first run's clock starts here. Best effort: a record that cannot be written never fails an install.
+	if r, rerr := firstrun.Load(g.paths.FirstRunFile()); rerr == nil && !r.Has(firstrun.StepInstalled) {
+		r.Upsert(firstrun.Step{Name: firstrun.StepInstalled, At: time.Now().UTC()})
+		_ = r.Save(g.paths.FirstRunFile())
+	}
+	if _, err := credentials.Load(g.paths.CredentialFile(), nil); err != nil {
+		fmt.Fprintln(stdout, "Not paired yet: run `sudo openvibe-link first-run` to pair and finish the setup.")
+	}
+	return nil
+}
+
+func cmdStop(g *globals, stdout io.Writer) error {
+	resp, err := localctl.Call(g.paths.SocketPath(), localctl.Request{Cmd: localctl.CmdStop}, 2*time.Second)
+	if err == nil {
+		fmt.Fprintln(stdout, "Stopped. Every actuator is held stopped until `openvibe-link resume`.")
+		return nil
+	}
+	if resp.Error != "" {
+		return fmt.Errorf("stop failed: %s", resp.Error)
+	}
+	var op *net.OpError
+	if !errors.As(err, &op) || op.Op != "dial" {
+		return fmt.Errorf("stop failed: %w", err)
+	}
+	// No running Node answered: latch it in the file, which a running Node polls and a starting Node obeys.
+	if ferr := safety.WriteLocalFile(g.paths.LatchFile(), true); ferr != nil {
+		return fmt.Errorf("could not reach the node (%v) nor write %s (%v); run with sudo", err, g.paths.LatchFile(), ferr)
+	}
+	chownLikeDir(g.paths.LatchFile(), g.paths.StateDir) // the service account must be able to read it
+	fmt.Fprintln(stdout, "The node did not answer; the stop is latched in", g.paths.LatchFile())
+	fmt.Fprintln(stdout, "A running node obeys it within a quarter second; a starting node starts stopped. Release with `openvibe-link resume`.")
+	return nil
+}
+
+// cmdQuit ends the running Node and waits until it has exited, so a script that runs it next can start it again.
+func cmdQuit(g *globals, stdout io.Writer) error {
+	sock := g.paths.SocketPath()
+	if _, err := localctl.Call(sock, localctl.Request{Cmd: localctl.CmdQuit}, 2*time.Second); err != nil {
+		var op *net.OpError
+		if errors.As(err, &op) && op.Op == "dial" {
+			fmt.Fprintln(stdout, "No node is running here: nothing to quit.")
+			return nil
+		}
+		return err
+	}
+	for deadline := time.Now().Add(20 * time.Second); time.Now().Before(deadline); time.Sleep(200 * time.Millisecond) {
+		c, err := net.DialTimeout("unix", sock, 200*time.Millisecond)
+		if err != nil {
+			fmt.Fprintln(stdout, "The node stopped every actuator and exited. Nothing is latched: the next start drives as before.")
+			return nil
+		}
+		c.Close()
+	}
+	return errors.New("the node took the quit but is still running after 20 s; `openvibe-link status` shows it")
+}
+
+func cmdResume(g *globals, stdout io.Writer) error {
+	_, err := localctl.Call(g.paths.SocketPath(), localctl.Request{Cmd: localctl.CmdResume}, 2*time.Second)
+	if err != nil {
+		if ferr := safety.WriteLocalFile(g.paths.LatchFile(), false); ferr != nil {
+			return fmt.Errorf("could not reach the node (%v) nor write %s (%v); run with sudo", err, g.paths.LatchFile(), ferr)
+		}
+		chownLikeDir(g.paths.LatchFile(), g.paths.StateDir)
+	}
+	fmt.Fprintln(stdout, "Resumed: the local stop and any server e-stop are released. Operators can drive again.")
+	return nil
+}
+
+// cmdApprovals lists what the computer plugin holds for its owner's answer (control level "ask").
+func cmdApprovals(g *globals, asJSON bool, stdout io.Writer) error {
+	resp, err := localctl.Call(g.paths.SocketPath(), localctl.Request{Cmd: localctl.CmdApprovals}, 2*time.Second)
+	if err != nil {
+		return fmt.Errorf("the node is not running (%v)", err)
+	}
+	if !resp.OK {
+		return errors.New(resp.Error)
+	}
+	if asJSON {
+		_, err := stdout.Write(append(resp.Data, '\n'))
+		return err
+	}
+	var list []node.Approval
+	if err := json.Unmarshal(resp.Data, &list); err != nil {
+		return err
+	}
+	if len(list) == 0 {
+		fmt.Fprintln(stdout, "Nothing waits for approval.")
+		return nil
+	}
+	for _, a := range list {
+		age := time.Since(time.UnixMilli(a.At)).Round(time.Second)
+		// The id is quoted so it can be copied into a command; kind and summary are untrusted text and are shown
+		// with their control, ANSI and bidi characters made visible.
+		fmt.Fprintf(stdout, "%q  %s, %s ago: %s\n", a.ID, safety.DisplayText(a.Kind), age, safety.DisplayText(a.Summary))
+	}
+	fmt.Fprintln(stdout, "\nopenvibe-link approve <ID> lets one run; openvibe-link deny <ID> refuses it.")
+	return nil
+}
+
+// cmdAnswer approves or denies one waiting computer command.
+func cmdAnswer(g *globals, cmd, id string, stdout io.Writer) error {
+	c := localctl.CmdApprove
+	if cmd == "deny" {
+		c = localctl.CmdDeny
+	}
+	resp, err := localctl.Call(g.paths.SocketPath(), localctl.Request{Cmd: c, ID: strings.TrimSpace(id)}, 2*time.Second)
+	if err != nil {
+		return fmt.Errorf("the node is not running (%v)", err)
+	}
+	if !resp.OK {
+		return errors.New(resp.Error)
+	}
+	if c == localctl.CmdApprove {
+		fmt.Fprintln(stdout, "Approved: it runs now.")
+	} else {
+		fmt.Fprintln(stdout, "Denied: it does not run.")
+	}
+	return nil
+}
+
+// sharesText lists the OpenVibe Connect shares this Node keeps up (CON-4). A share that is reconnecting says why; a
+// key-served share is named by its port and never shows the key.
+func sharesText(shares []connect.Status) string {
+	if len(shares) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Shares:   %d kept up\n", len(shares))
+	for _, s := range shares {
+		state := "not connected"
+		if s.Connected {
+			state = "connected"
+			if s.Requests > 0 {
+				state = fmt.Sprintf("connected, %d requests", s.Requests)
+			}
+		}
+		where := s.URL
+		if where == "" {
+			where = "(address shown once it connects)"
+		}
+		fmt.Fprintf(&b, "  localhost:%d  %s  %s", s.Port, where, state)
+		if !s.Connected && s.LastError != "" {
+			fmt.Fprintf(&b, " (%s)", s.LastError)
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+func cmdStatus(g *globals, asJSON bool, stdout io.Writer) error {
+	resp, err := localctl.Call(g.paths.SocketPath(), localctl.Request{Cmd: localctl.CmdStatus}, 2*time.Second)
+	if err != nil {
+		return offlineStatus(g, asJSON, stdout)
+	}
+	if asJSON {
+		_, err := stdout.Write(append(resp.Data, '\n'))
+		return err
+	}
+	var s node.Status
+	if err := json.Unmarshal(resp.Data, &s); err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "OpenVibe Link %s, running for %s (service: %s)\n", s.Version, s.Uptime, service.Status(serviceOptions(g, "")))
+	if s.Paired {
+		fmt.Fprintf(stdout, "Device:   %s\n", deviceLine(s.DeviceID, s.Principal, s.Server))
+	} else {
+		fmt.Fprintln(stdout, "Device:   not paired (openvibe-link pair <CODE>)")
+	}
+	link := "down"
+	if s.Link.Connected {
+		link = fmt.Sprintf("up (rtt %d ms)", s.Link.RTTMS)
+	} else if s.Link.LastError != "" {
+		link = "down: " + s.Link.LastError
+	}
+	fmt.Fprintf(stdout, "Link:     %s, %d reconnects\n", link, s.Link.Reconnects)
+	fmt.Fprint(stdout, sharesText(s.Shares))
+	fmt.Fprintf(stdout, "Stop:     %s\n", latchText(s.Latch))
+	fmt.Fprintf(stdout, "Limits:   speed %.2f, turn %.2f, command deadline ≤ %d ms\n", s.Limits.MaxSpeed, s.Limits.MaxTurn, s.Limits.MaxCommandMS)
+	fmt.Fprintf(stdout, "Video:    %s", s.Video.State)
+	if s.Video.Source != "" {
+		fmt.Fprintf(stdout, " from %s, %d frames", s.Video.Source, s.Video.Frames)
+	}
+	if s.Video.LastError != "" && s.Video.State != "live" {
+		fmt.Fprintf(stdout, " (%s)", s.Video.LastError)
+	}
+	fmt.Fprintln(stdout)
+	if s.Screen.State != "" && s.Screen.State != "off" {
+		// Shown only while it runs: the owner sees at a glance that their screen is live.
+		fmt.Fprintf(stdout, "Screen:   %s to your OpenVibe account until %s, %d frames", s.Screen.State, s.Screen.Until, s.Screen.Frames)
+		if s.Screen.LastError != "" && s.Screen.State != "live" {
+			fmt.Fprintf(stdout, " (%s)", s.Screen.LastError)
+		}
+		fmt.Fprintln(stdout, "; `openvibe-link stop` ends it")
+	}
+	fmt.Fprintln(stdout, "Plugins:")
+	for _, p := range s.Plugins {
+		fmt.Fprintf(stdout, "  %-15s %-9s %s %s", p.Name, p.State, p.Driver, p.Version)
+		if p.Restarts > 0 {
+			fmt.Fprintf(stdout, ", %d restarts", p.Restarts)
+		}
+		if p.Fault != nil {
+			fmt.Fprintf(stdout, ", fault %s: %s", p.Fault.Code, p.Fault.Message)
+		}
+		fmt.Fprintln(stdout)
+	}
+	if len(s.Jobs) > 0 {
+		fmt.Fprintln(stdout, "Jobs:")
+		for _, j := range s.Jobs {
+			fmt.Fprintf(stdout, "  %s %s %s\n", j.ID, j.Function, j.State)
+		}
+	}
+	if b := s.Telemetry.Battery; b != nil {
+		fmt.Fprintf(stdout, "Battery:  %.0f%%\n", *b*100)
+	}
+	return nil
+}
+
+// deviceLine is "dev_… on <server>", with the node principal of a Network-paired machine ("not bound yet" before
+// Bot has bound it).
+func deviceLine(device, principal, server string) string {
+	switch {
+	case principal == "":
+		return device + " on " + server
+	case device == "":
+		return principal + " (not bound yet) on " + server
+	}
+	return device + " (" + principal + ") on " + server
+}
+
+func latchText(l safety.LatchState) string {
+	if l.Computer {
+		return "STOPPED for computer control (an e-stop on this computer); `openvibe-link resume` on this machine is required"
+	}
+	switch {
+	case l.Local && l.Remote:
+		return "STOPPED locally and by the server (" + l.RemoteReason + "); `openvibe-link resume` releases both"
+	case l.Local:
+		return "STOPPED locally; `openvibe-link resume` releases it"
+	case l.Remote:
+		return "E-STOPPED by the server (" + l.RemoteReason + "); the owner clears it on openvibe.bot"
+	}
+	return "clear"
+}
+
+func offlineStatus(g *globals, asJSON bool, stdout io.Writer) error {
+	type offline struct {
+		Running   bool              `json:"running"`
+		Service   string            `json:"service"`
+		Paired    bool              `json:"paired"`
+		DeviceID  string            `json:"device_id,omitempty"`
+		Principal string            `json:"principal,omitempty"`
+		Server    string            `json:"server,omitempty"`
+		Latch     safety.LatchState `json:"latch"`
+		Config    string            `json:"config_dir"`
+	}
+	o := offline{Service: service.Status(serviceOptions(g, "")), Config: g.paths.ConfigDir}
+	if c, err := credentials.Load(g.paths.CredentialFile(), nil); err == nil {
+		o.Paired, o.DeviceID, o.Principal, o.Server = true, c.DeviceID, c.Principal, c.Server
+	}
+	if l, _ := safety.OpenLatch(g.paths.LatchFile()); l != nil {
+		o.Latch = l.State()
+	}
+	if asJSON {
+		return json.NewEncoder(stdout).Encode(o)
+	}
+	fmt.Fprintf(stdout, "OpenVibe Link %s is not running (service: %s).\n", version, o.Service)
+	if o.Paired {
+		fmt.Fprintf(stdout, "Device:   %s\n", deviceLine(o.DeviceID, o.Principal, o.Server))
+	} else {
+		fmt.Fprintln(stdout, "Device:   not paired (openvibe-link pair <CODE>)")
+	}
+	fmt.Fprintf(stdout, "Stop:     %s\n", latchText(o.Latch))
+	fmt.Fprintf(stdout, "Config:   %s\n", o.Config)
+	return nil
+}
+
+func cmdPlugins(g *globals, asJSON bool, stdout io.Writer) error {
+	type entry struct {
+		Name         string         `json:"name"`
+		State        string         `json:"state"`
+		Driver       string         `json:"driver,omitempty"`
+		Version      string         `json:"version,omitempty"`
+		Capabilities map[string]any `json:"capabilities,omitempty"`
+	}
+	var list []entry
+	if resp, err := localctl.Call(g.paths.SocketPath(), localctl.Request{Cmd: localctl.CmdPlugins}, 2*time.Second); err == nil {
+		var s node.Status
+		if err := json.Unmarshal(resp.Data, &s); err != nil {
+			return err
+		}
+		for _, p := range s.Plugins {
+			list = append(list, entry{p.Name, p.State, p.Driver, p.Version, p.Capabilities})
+		}
+	} else {
+		cfg, err := loadConfig(g)
+		if err != nil {
+			return err
+		}
+		descs, _ := probeAll(cfg, g.paths, g.log)
+		for _, s := range pluginSpecs(cfg, g.paths) {
+			e := entry{Name: s.Name, State: "not running"}
+			if d := descs[s.Name]; d != nil {
+				e.Driver, e.Version, e.Capabilities = d.Driver, d.Version, d.Capabilities
+			} else {
+				e.State = "not installed or broken (" + strings.Join(s.Argv, " ") + ")"
+			}
+			list = append(list, e)
+		}
+	}
+	if asJSON {
+		return json.NewEncoder(stdout).Encode(list)
+	}
+	for _, e := range list {
+		fmt.Fprintf(stdout, "%s  [%s]  %s %s\n", e.Name, e.State, e.Driver, e.Version)
+		keys := make([]string, 0, len(e.Capabilities))
+		for k := range e.Capabilities {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			b, _ := json.Marshal(e.Capabilities[k])
+			fmt.Fprintf(stdout, "    %-9s %s\n", k, b)
+		}
+	}
+	if len(list) == 0 {
+		fmt.Fprintln(stdout, "No plugins configured in", g.paths.ConfigFile())
+	}
+	return nil
+}
+
+// cmdProfileVerify checks the community profile id against the signature Bot made when an OpenVibe admin approved it
+// (internal/profilesig), on server or the config's Bot, and says which plugin its robots run. A failed check is an error.
+func cmdProfileVerify(g *globals, id, server, keyID string, stdout io.Writer) error {
+	if server == "" {
+		server = "https://openvibe.bot"
+		if cfg, err := loadConfig(g); err == nil && cfg.Server != "" {
+			server = cfg.Server
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	res, err := profilesig.Check(ctx, nil, server, id, nil, keyID)
+	if err != nil {
+		return fmt.Errorf("%s: %w; do not install its driver", id, err)
+	}
+	fmt.Fprintf(stdout, "%s version %s: signed by %s (Bot key %s), as reviewed.\n", res.ID, res.Version, strings.TrimSuffix(server, "/"), res.KeyID)
+	if res.Plugin != "" {
+		fmt.Fprintf(stdout, "Its robots run the Node plugin %q: install it from the source its page links to, then list it in the config's plugins.\n", res.Plugin)
+	}
+	return nil
+}
+
+// reportCommunityProfile says, after pairing, whether a community profile the robot uses is the signed one Bot
+// reviewed. It never fails the pairing: the plugin is installed by hand, and this tells the owner whether to.
+func reportCommunityProfile(ctx context.Context, server string, profile json.RawMessage, stdout io.Writer) {
+	var p struct {
+		ID string `json:"id"`
+	}
+	if len(profile) == 0 || json.Unmarshal(profile, &p) != nil || !profilesig.CommunityRe.MatchString(p.ID) {
+		return
+	}
+	res, err := profilesig.Check(ctx, nil, server, p.ID, profile, "")
+	if err != nil {
+		fmt.Fprintf(stdout, "WARNING: the robot's community profile %s did not check out (%v). Do not install its driver until it does: openvibe-link profile verify %s\n", p.ID, err, p.ID)
+		return
+	}
+	fmt.Fprintf(stdout, "The robot's community profile %s (version %s) is the one Bot reviewed and signed (key %s).\n", res.ID, res.Version, res.KeyID)
+}
+
+// validateComputerService refuses a privileged service for a computer plugin that is not the documented
+// shared desk host: the computer plugin must not run as root on an ordinary machine.
+func validateComputerService(cfg *config.Config, account string) error {
+	for _, p := range cfg.Plugins {
+		if p.Disabled || p.Name != "computer" {
+			continue
+		}
+		if sharedDeskHost(cfg, p) {
+			continue
+		}
+		if account == "" {
+			return errors.New("computer control requires an unprivileged service user; only a configured shared desk host may install a privileged service")
+		}
+		u, err := user.Lookup(account)
+		if err != nil {
+			return fmt.Errorf("computer service user: %w", err)
+		}
+		if u.Uid == "0" {
+			return errors.New("computer service user must not have UID 0")
+		}
+	}
+	return nil
+}
+
+// sharedDeskHost is the one documented mode that runs as root (docs/computer.md, "Desk hosts for other
+// people"): Linux, every desk in the worker's sandbox, the worker on, and the computer plugin at the level
+// the installer gives such a host (trusted, or observe: nobody sits at it to approve).
+func sharedDeskHost(cfg *config.Config, p config.PluginConfig) bool {
+	if runtime.GOOS != "linux" || !cfg.Worker.Enabled || p.Config["desk_isolation"] != "sandbox" {
+		return false
+	}
+	switch p.Config["level"] {
+	case "trusted", "observe":
+		return true
+	}
+	return false
+}

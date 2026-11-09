@@ -4,8 +4,8 @@
 // The Node opens one outgoing WebSocket per share to wss://connect.openvibe.link/tunnel and speaks ovconnect-ws/1,
 // the same protocol as the one-file client (OpenVibe.Connect public/ov-connect.js):
 //
-//	→ {"t":"hello","v":1,"key":"ovc_…","client":"openvibe-node/…","port":8790}
-//	  or, served by this computer as OpenVibe Node (node.go, CON-4): {"t":"hello","v":1,"share":"shr_…","node_token":…,"tunnel":"ovt_…",…}
+//	→ {"t":"hello","v":1,"key":"ovc_…","client":"openvibe-link/…","port":8790}
+//	  or, served by this computer as OpenVibe Link (node.go, CON-4): {"t":"hello","v":1,"share":"shr_…","node_token":…,"tunnel":"ovt_…",…}
 //	← {"t":"ready","v":1,"share":{"id","host","url","mode"}}            or {"t":"error",…} and a close
 //	← {"t":"req","id":N,"method","path","headers":[[k,v]…]}             an HTTP request for the local port
 //	← {"t":"raw","id":N,"head":"GET /ws HTTP/1.1\r\n…"}                  a WebSocket upgrade: a byte pipe
@@ -48,7 +48,7 @@ const (
 	chunkSize       = 32 * 1024
 )
 
-// Share is one share the Node keeps up: its connect key (or, served by this computer as OpenVibe Node, its id) and
+// Share is one share the Node keeps up: its connect key (or, served by this computer as OpenVibe Link, its id) and
 // the local port it serves.
 type Share struct {
 	Key    string `json:"key,omitempty"`
@@ -107,7 +107,7 @@ func Run(ctx context.Context, s Share, o Options) error {
 			return errors.New("connect: the share is its shr_… id from connect.openvibe.link")
 		}
 		if o.NodeToken == nil {
-			return errors.New("connect: this share is served by the computer itself; pair the Node with OpenVibe first (openvibe.bot/machines)")
+			return errors.New("connect: this share is served by the computer itself; pair the Node with OpenVibe first (openvibe.link/machines)")
 		}
 	case !strings.HasPrefix(s.Key, "ovc_"):
 		return errors.New("connect: the key is the share's ovc_… connect key")
@@ -235,7 +235,7 @@ func runOnce(ctx context.Context, s Share, o Options, onReady func()) error {
 	if server == "" {
 		server = DefaultServer
 	}
-	hello := map[string]any{"t": "hello", "v": protocolVersion, "client": "openvibe-node/" + o.Version, "port": s.Port}
+	hello := map[string]any{"t": "hello", "v": protocolVersion, "client": "openvibe-link/" + o.Version, "port": s.Port}
 	if s.ID != "" {
 		// Served by this computer (node.go): a fresh node token and a tunnel token for this one hello.
 		tok, err := o.NodeToken(ctx)
@@ -257,7 +257,7 @@ func runOnce(ctx context.Context, s Share, o Options, onReady func()) error {
 	if dialer == nil {
 		dialer = &websocket.Dialer{HandshakeTimeout: 15 * time.Second, Proxy: http.ProxyFromEnvironment}
 	}
-	ws, _, err := dialer.DialContext(ctx, server, http.Header{"User-Agent": {"openvibe-node/" + o.Version}})
+	ws, _, err := dialer.DialContext(ctx, server, http.Header{"User-Agent": {"openvibe-link/" + o.Version}})
 	if err != nil {
 		return err
 	}

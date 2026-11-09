@@ -17,15 +17,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/config"
-	"github.com/OpenVibers/OpenVibe.Node/internal/fakebot"
-	"github.com/OpenVibers/OpenVibe.Node/internal/link"
-	"github.com/OpenVibers/OpenVibe.Node/internal/localctl"
-	"github.com/OpenVibers/OpenVibe.Node/internal/panel"
-	"github.com/OpenVibers/OpenVibe.Node/internal/plugins"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
-	"github.com/OpenVibers/OpenVibe.Node/internal/safety"
-	"github.com/OpenVibers/OpenVibe.Node/internal/video"
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/fakebot"
+	"github.com/OpenVibers/OpenVibe.Link/internal/link"
+	"github.com/OpenVibers/OpenVibe.Link/internal/localctl"
+	"github.com/OpenVibers/OpenVibe.Link/internal/panel"
+	"github.com/OpenVibers/OpenVibe.Link/internal/plugins"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/safety"
+	"github.com/OpenVibers/OpenVibe.Link/internal/video"
 )
 
 func init() {
@@ -295,7 +295,7 @@ func TestPairConnectAndStatus(t *testing.T) {
 	if !st.Paired || !st.Link.Connected || len(st.Plugins) != 1 || st.Plugins[0].Driver != "dryrun" || st.Limits.MaxSpeed != 0.5 {
 		t.Fatalf("%+v", st)
 	}
-	// The status (and so `openvibe-node status`) never shows the credential or publish key.
+	// The status (and so `openvibe-link status`) never shows the credential or publish key.
 	if strings.Contains(string(resp.Data), e.node.opt.Creds.Credential.Reveal()) || strings.Contains(string(resp.Data), e.node.opt.Creds.PublishKey.Reveal()) {
 		t.Fatal("secret in status")
 	}
@@ -382,7 +382,7 @@ func TestMissedHeartbeatsStop(t *testing.T) {
 
 // TestRobotEstopLatchedUntilOwnerClears: the remote latch is the server's to clear, and the owner clears it
 // with `estop latched:false`. The computer plugin is the one exception: an e-stop on a computer waits for a
-// local `openvibe-node resume` (TestComputerRemoteStopRequiresLocalResume).
+// local `openvibe-link resume` (TestComputerRemoteStopRequiresLocalResume).
 func TestRobotEstopLatchedUntilOwnerClears(t *testing.T) {
 	e := start(t)
 	n := len(e.records())

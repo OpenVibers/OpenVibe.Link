@@ -1,6 +1,6 @@
 package node
 
-import "github.com/OpenVibers/OpenVibe.Node/internal/config"
+import "github.com/OpenVibers/OpenVibe.Link/internal/config"
 
 // codesProbeCommand builds the fleet probe (Codes C9c) from the worker's declared OpenVibe.Codes entry: the same
 // interpreter and script the jobs run, asked for `logins --json` instead of `job`. Nil when the machine has no such

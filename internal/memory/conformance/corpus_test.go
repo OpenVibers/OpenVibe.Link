@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/memory"
+	"github.com/OpenVibers/OpenVibe.Link/internal/memory"
 )
 
 type corpusCase struct {

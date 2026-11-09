@@ -1,9 +1,9 @@
 // Package credentials stores the device credential and publish key the pairing returned. The file is mode 0600 and
 // the secret values are wrapped in Secret, whose every string form is "[redacted]", so they cannot reach a log line,
-// an error or `openvibe-node status` by accident.
+// an error or `openvibe-link status` by accident.
 //
 // Two kinds of pairing share the file. Legacy (OpenVibe.Bot's POST /api/v1/pair): a Bot device credential. Network
-// (OpenVibe.Network's POST /api/v1/node-pairing): a node principal and its node credential, which buys node tokens;
+// (OpenVibe.Network's POST /api/v1/link-pairing): a node principal and its node credential, which buys node tokens;
 // the device fields (device id, publish key, WHIP URL, robot, profile) come from Bot's POST /api/v1/devices/bind and
 // are empty until that bind has succeeded once.
 package credentials
@@ -18,7 +18,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 const redacted = "[redacted]"
@@ -46,12 +46,12 @@ func (s *Secret) UnmarshalJSON([]byte) error {
 	return errors.New("credentials: secrets are not decoded from JSON")
 }
 
-// Credentials is what `openvibe-node pair` stores.
+// Credentials is what `openvibe-link pair` stores.
 type Credentials struct {
 	DeviceID   string
 	RobotID    string // rob_… the device was paired to
 	Credential Secret // a Bot device credential (legacy pairing); zero for a Network-paired machine
-	// Network pairing: the node principal (nod_…), its credential, the Network origin and what it was paired for.
+	// Network pairing: the node principal (lnk_…), its credential, the Network origin and what it was paired for.
 	Principal      string
 	NodeCredential Secret
 	Network        string
@@ -110,7 +110,7 @@ func valid(principal, nodeCredential, network, deviceID, credential string) bool
 }
 
 // ErrNotPaired is returned by Load when there is no credential file.
-var ErrNotPaired = errors.New("this device is not paired; run `openvibe-node pair <CODE>`")
+var ErrNotPaired = errors.New("this device is not paired; run `openvibe-link pair <CODE>`")
 
 // Save writes the credentials atomically with mode 0600.
 func Save(path string, c *Credentials) error {

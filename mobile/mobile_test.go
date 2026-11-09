@@ -13,7 +13,7 @@ func fakeNetwork(t *testing.T, principal, credential, ref string) (*httptest.Ser
 	var codes []string
 	n := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/v1/node-pairing":
+		case "/api/v1/link-pairing":
 			var body struct {
 				Code    string `json:"code"`
 				Pairing string `json:"pairing"`
@@ -58,7 +58,7 @@ func fakeBot(t *testing.T) *httptest.Server {
 }
 
 func TestPairBindsThePhone(t *testing.T) {
-	net, codes := fakeNetwork(t, "nod_01234567890123456789012345", "node-secret", "phone:usr_01")
+	net, codes := fakeNetwork(t, "lnk_01234567890123456789012345", "node-secret", "phone:usr_01")
 	bot := fakeBot(t)
 	creds, err := Pair(net.URL, bot.URL, "abcd-2345", "Phone", "")
 	if err != nil {
@@ -71,7 +71,7 @@ func TestPairBindsThePhone(t *testing.T) {
 	if err := json.Unmarshal([]byte(creds), &p); err != nil {
 		t.Fatalf("Pair returned no JSON: %v", err)
 	}
-	if p.DeviceID != "dev_phone" || p.Principal != "nod_01234567890123456789012345" || p.NodeCredential != "node-secret" {
+	if p.DeviceID != "dev_phone" || p.Principal != "lnk_01234567890123456789012345" || p.NodeCredential != "node-secret" {
 		t.Fatalf("pairing = %+v", p)
 	}
 	if p.Server != bot.URL || p.Network != net.URL {
@@ -83,7 +83,7 @@ func TestPairBindsThePhone(t *testing.T) {
 }
 
 func TestPairRefusesAWrongCode(t *testing.T) {
-	net, _ := fakeNetwork(t, "nod_01234567890123456789012345", "node-secret", "phone:usr_01")
+	net, _ := fakeNetwork(t, "lnk_01234567890123456789012345", "node-secret", "phone:usr_01")
 	bot := fakeBot(t)
 	_, err := Pair(net.URL, bot.URL, "ZZZZ-9999", "Phone", "")
 	if err == nil || !strings.Contains(err.Error(), "pairing code") {
@@ -98,7 +98,7 @@ func TestPairRejectsAMalformedCode(t *testing.T) {
 }
 
 func TestInfoNamesThePhone(t *testing.T) {
-	creds := `{"principal":"nod_01234567890123456789012345","node_credential":"s","network":"https://openvibe.network","device_id":"dev_phone","server":"https://openvibe.bot"}`
+	creds := `{"principal":"lnk_01234567890123456789012345","node_credential":"s","network":"https://openvibe.network","device_id":"dev_phone","server":"https://openvibe.bot"}`
 	got, err := Info(creds)
 	if err != nil {
 		t.Fatalf("Info: %v", err)
@@ -126,7 +126,7 @@ func TestNewLinkNeedsAPairing(t *testing.T) {
 }
 
 func TestNewLinkUsesTheBotSocket(t *testing.T) {
-	l, err := NewLink(`{"principal":"nod_01234567890123456789012345","node_credential":"s","network":"https://openvibe.network","server":"https://openvibe.bot"}`)
+	l, err := NewLink(`{"principal":"lnk_01234567890123456789012345","node_credential":"s","network":"https://openvibe.network","server":"https://openvibe.bot"}`)
 	if err != nil {
 		t.Fatalf("NewLink: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestNewLinkUsesTheBotSocket(t *testing.T) {
 }
 
 func TestPairCarriesThePairingIDFromTheQR(t *testing.T) {
-	net, _ := fakeNetwork(t, "nod_01234567890123456789012345", "node-secret", "phone:usr_01")
+	net, _ := fakeNetwork(t, "lnk_01234567890123456789012345", "node-secret", "phone:usr_01")
 	bot := fakeBot(t)
 	if _, err := Pair(net.URL, bot.URL, "abcd-2345", "Phone", "pair_01JD2C3D4E5F6G7H8J9K0MNPQR"); err != nil {
 		t.Fatalf("Pair with a pairing id: %v", err)

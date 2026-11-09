@@ -3,7 +3,7 @@
 //
 //	link lost (disconnect, deadman)       → StopAll
 //	server estop                          → latch (persisted) → EstopAll
-//	`openvibe-node stop` (socket or file) → latch (persisted) → EstopAll
+//	`openvibe-link stop` (socket or file) → latch (persisted) → EstopAll
 //	core shutdown                         → StopAll, then each plugin's stdin is closed (plugins stop on EOF)
 //	plugin crash                          → restarted stopped, estop re-sent if latched
 //	core dies without cleanup             → plugins stop on EOF or after 1 s without a heartbeat
@@ -25,21 +25,21 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/config"
-	"github.com/OpenVibers/OpenVibe.Node/internal/connect"
-	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
-	"github.com/OpenVibers/OpenVibe.Node/internal/firstrun"
-	"github.com/OpenVibers/OpenVibe.Node/internal/fleet"
-	"github.com/OpenVibers/OpenVibe.Node/internal/link"
-	"github.com/OpenVibers/OpenVibe.Node/internal/localctl"
-	"github.com/OpenVibers/OpenVibe.Node/internal/mono"
-	"github.com/OpenVibers/OpenVibe.Node/internal/panel"
-	"github.com/OpenVibers/OpenVibe.Node/internal/plugins"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
-	"github.com/OpenVibers/OpenVibe.Node/internal/safety"
-	"github.com/OpenVibers/OpenVibe.Node/internal/stream"
-	"github.com/OpenVibers/OpenVibe.Node/internal/video"
-	"github.com/OpenVibers/OpenVibe.Node/internal/worker"
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/connect"
+	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
+	"github.com/OpenVibers/OpenVibe.Link/internal/firstrun"
+	"github.com/OpenVibers/OpenVibe.Link/internal/fleet"
+	"github.com/OpenVibers/OpenVibe.Link/internal/link"
+	"github.com/OpenVibers/OpenVibe.Link/internal/localctl"
+	"github.com/OpenVibers/OpenVibe.Link/internal/mono"
+	"github.com/OpenVibers/OpenVibe.Link/internal/panel"
+	"github.com/OpenVibers/OpenVibe.Link/internal/plugins"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/safety"
+	"github.com/OpenVibers/OpenVibe.Link/internal/stream"
+	"github.com/OpenVibers/OpenVibe.Link/internal/video"
+	"github.com/OpenVibers/OpenVibe.Link/internal/worker"
 )
 
 // Options configure a Node.
@@ -53,7 +53,7 @@ type Options struct {
 	// Tokens are a Network-paired machine's node tokens; nil builds them from Creds.
 	Tokens link.Tokens
 
-	// CanQuit lets `openvibe-node quit` end the process: true when it runs from a terminal or a sign-in start, false
+	// CanQuit lets `openvibe-link quit` end the process: true when it runs from a terminal or a sign-in start, false
 	// under a service manager, which would only start it again.
 	CanQuit bool
 
@@ -97,7 +97,7 @@ type Node struct {
 	liveTokens *link.TokenSource
 
 	ctx context.Context
-	// quit ends Run on `openvibe-node quit` (control), and quitting tells Run to answer ErrQuit.
+	// quit ends Run on `openvibe-link quit` (control), and quitting tells Run to answer ErrQuit.
 	quit     context.CancelFunc
 	quitting atomic.Bool
 
@@ -134,7 +134,7 @@ type Node struct {
 	session  string   // the connection's session id, from its hello: each command's provenance
 
 	// approvals waiting on the machine (the computer plugin at level "ask"), by command id: what
-	// `openvibe-node approvals` lists and `approve`/`deny` answer.
+	// `openvibe-link approvals` lists and `approve`/`deny` answer.
 	approvals map[string]Approval
 	// input commands in flight, by id, and when the last one finished: `approve` is refused while the agent drives
 	// the mouse or keyboard and for InputGuard after, so an approved click cannot press another request's Approve.
@@ -156,7 +156,7 @@ type Node struct {
 	shares *shareSet
 }
 
-// ErrQuit is what Run returns after `openvibe-node quit`: every actuator stopped, nothing latched, the process may exit.
+// ErrQuit is what Run returns after `openvibe-link quit`: every actuator stopped, nothing latched, the process may exit.
 var ErrQuit = errors.New("quit by its owner")
 
 // InputGuard is how long after an input command `approve` stays refused.
@@ -215,7 +215,7 @@ func New(opt Options) (*Node, error) {
 		sort.Strings(env)
 		env = append(env, config.EnvStateDir+"="+opt.Paths.StateDir, config.EnvConfigDir+"="+opt.Paths.ConfigDir)
 		if exe != "" {
-			env = append(env, "OPENVIBE_NODE_EXE="+exe) // `openvibe-node desk-sandbox` for the computer plugin's shared desks
+			env = append(env, "OPENVIBE_LINK_EXE="+exe) // `openvibe-link desk-sandbox` for the computer plugin's shared desks
 		}
 		cfg := map[string]any{}
 		for k, v := range p.Config {
@@ -250,7 +250,7 @@ func New(opt Options) (*Node, error) {
 				return nil, err
 			}
 		}
-		lo := link.Options{URL: u, Credential: opt.Creds.Credential, UserAgent: "openvibe-node/" + opt.Version,
+		lo := link.Options{URL: u, Credential: opt.Creds.Credential, UserAgent: "openvibe-link/" + opt.Version,
 			Log: opt.Log, HeartbeatInterval: opt.HeartbeatInterval, BackoffMin: opt.LinkBackoffMin, ReauthInterval: opt.ReauthInterval}
 		if n.fleet != nil {
 			lo.Fleet = n.fleet.Latest
@@ -349,7 +349,7 @@ func (n *Node) Run(parent context.Context) error {
 			}
 		}()
 	} else {
-		n.log.Warn("not paired: running local only (run `openvibe-node pair <CODE>`)")
+		n.log.Warn("not paired: running local only (run `openvibe-link pair <CODE>`)")
 	}
 	<-ctx.Done()
 	n.mu.Lock()
@@ -493,7 +493,7 @@ func (n *Node) applyConfig(c protocol.Config) {
 const (
 	RoleCodesWorker = "codes.worker" // the Codes job runner: this machine runs its owner's coding jobs
 	RoleDesksHost   = "desks.host"   // the desk sandbox: this machine hosts desks for agents
-	RoleAIHost      = "ai.host"      // the local model server, as OpenVibe Node's ai plugin
+	RoleAIHost      = "ai.host"      // the local model server, as OpenVibe Link's ai plugin
 	RoleBotRobot    = "bot.robot"    // the robot drivers the profile asks for
 )
 
@@ -719,7 +719,7 @@ func (n *Node) command(c protocol.Command, sentMS int64, seq uint64, received mo
 	if protocol.GuardedKinds[c.Kind] {
 		st := n.latch.State()
 		if st.Local {
-			nack(protocol.FaultLocalStop, "stopped on the device with `openvibe-node stop`")
+			nack(protocol.FaultLocalStop, "stopped on the device with `openvibe-link stop`")
 			return
 		}
 		if st.Remote {
@@ -820,11 +820,11 @@ func (n *Node) computer(c protocol.Command, entry *safety.Entry, sentMS int64, r
 	if protocol.ComputerActs(c.Kind, c.Value) {
 		st := n.latch.State()
 		if st.Local {
-			nack(protocol.FaultLocalStop, "stopped on the machine with `openvibe-node stop`: observe only")
+			nack(protocol.FaultLocalStop, "stopped on the machine with `openvibe-link stop`: observe only")
 			return
 		}
 		if st.Computer {
-			nack(protocol.FaultLocalStop, "the emergency stop on this computer needs a local `openvibe-node resume`: observe only")
+			nack(protocol.FaultLocalStop, "the emergency stop on this computer needs a local `openvibe-link resume`: observe only")
 			return
 		}
 		if st.Remote {
@@ -943,7 +943,7 @@ func latchReason(st safety.LatchState) string {
 	case st.Local:
 		return st.LocalReason
 	default:
-		return "the computer's emergency stop: `openvibe-node resume` on this machine releases it"
+		return "the computer's emergency stop: `openvibe-link resume` on this machine releases it"
 	}
 }
 
@@ -1313,11 +1313,11 @@ func strSlice(v any) []string {
 
 // ---- status and local control ----
 
-// Status is what `openvibe-node status` prints. It never contains the credential or the publish key.
+// Status is what `openvibe-link status` prints. It never contains the credential or the publish key.
 type Status struct {
 	Version   string            `json:"version"`
 	DeviceID  string            `json:"device_id,omitempty"`
-	Principal string            `json:"principal,omitempty"` // nod_… of a Network-paired machine
+	Principal string            `json:"principal,omitempty"` // lnk_… of a Network-paired machine
 	Server    string            `json:"server,omitempty"`
 	Paired    bool              `json:"paired"`
 	Uptime    string            `json:"uptime"`
@@ -1416,7 +1416,7 @@ func (n *Node) sendStatus() {
 		return
 	}
 	st := n.latch.State()
-	s := protocol.Status{Firmware: "openvibe-node-" + n.opt.Version, Capabilities: map[string]any{}, AgentVersion: n.opt.Version,
+	s := protocol.Status{Firmware: "openvibe-link-" + n.opt.Version, Capabilities: map[string]any{}, AgentVersion: n.opt.Version,
 		DeviceKind: n.opt.Config.DeviceKind, OS: runtime.GOOS, Arch: runtime.GOARCH, EstopLatched: st.Stopped(), LocalStop: st.Local,
 		Drivers: []protocol.DriverStatus{}, Faults: []protocol.Fault{}}
 	for _, i := range n.mgr.Infos() {
@@ -1442,7 +1442,7 @@ func (n *Node) sendStatus() {
 	n.send(s)
 }
 
-// trackApproval keeps the list `openvibe-node approvals` shows from the computer plugin's approval events.
+// trackApproval keeps the list `openvibe-link approvals` shows from the computer plugin's approval events.
 func (n *Node) trackApproval(plugin, name string, data map[string]any, at time.Time, binding *plugins.ApprovalRequest) {
 	id, _ := data["id"].(string)
 	if id == "" || binding == nil || (name != "approval" && name != "approval_done") {
@@ -1586,7 +1586,7 @@ func (n *Node) control(r localctl.Request) localctl.Response {
 		}
 		return localctl.Response{OK: true}
 	case localctl.CmdStop:
-		if err := n.stopEverything("openvibe-node stop"); err != nil {
+		if err := n.stopEverything("openvibe-link stop"); err != nil {
 			return localctl.Response{Error: "stopped, but the latch could not be saved: " + err.Error()}
 		}
 		return localctl.Response{OK: true}
@@ -1595,9 +1595,9 @@ func (n *Node) control(r localctl.Request) localctl.Response {
 		// stopped the Node with `stop` left it latched, and had to kill the process to end it).
 		if !n.opt.CanQuit {
 			return localctl.Response{Error: "this node runs as a system service, which would start it again: stop it there " +
-				"(sudo systemctl stop openvibe-node; on Windows, Services), or remove it with `openvibe-node uninstall`"}
+				"(sudo systemctl stop openvibe-link; on Windows, Services), or remove it with `openvibe-link uninstall`"}
 		}
-		n.log.Info("quit by its owner (openvibe-node quit)")
+		n.log.Info("quit by its owner (openvibe-link quit)")
 		n.mgr.StopAll(plugins.StopShutdown) // at once; Run stops everything again on the way out
 		n.quitting.Store(true)
 		go func() { time.Sleep(100 * time.Millisecond); n.quit() }() // after this answer is written

@@ -48,7 +48,7 @@ class Registry:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 token = json.loads(response.read(65536))
             self.token, self.expires = token['access_token'], time.monotonic() + min(int(token['expires_in']), 240)
-        request = urllib.request.Request(network + '/api/v1/node/self/pools' + path,
+        request = urllib.request.Request(network + '/api/v1/link/self/pools' + path,
                                          method=method, data=json.dumps(body).encode() if body is not None else None,
                                          headers={'Authorization': 'Bearer ' + self.token, 'Content-Type': 'application/json'})
         with urllib.request.urlopen(request, timeout=self.timeout) as response:

@@ -17,8 +17,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/config"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 // clkTck is USER_HZ, the unit of /proc/<pid>/stat times: 100 on every architecture Go runs Linux on.

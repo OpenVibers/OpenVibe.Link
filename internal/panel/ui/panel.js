@@ -205,7 +205,7 @@
         return moduleLocker().then(function (locker) {
             var publicKey = JSON.parse(opt.dataset.publicKey || '{}');
             var content = packed(name, mime, data);
-            return locker.seal(content, { lock: 'people', keys: [{ subject: { type: 'node', id: opt.value }, publicKey: publicKey }] }).then(function (sealed) {
+            return locker.seal(content, { lock: 'people', keys: [{ subject: { type: 'link', id: opt.value }, publicKey: publicKey }] }).then(function (sealed) {
                 say('Sending encrypted data…');
                 return panelApi('files', 'POST', { target_node: opt.value, envelope: base64(sealed.bytes) });
             });

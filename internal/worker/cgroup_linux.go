@@ -16,14 +16,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/config"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 const (
 	cgroupFS    = "/sys/fs/cgroup"
 	cgroup2     = 0x63677270 // CGROUP2_SUPER_MAGIC
-	nodeLeaf    = "openvibe-node"
+	nodeLeaf    = "openvibe-link"
 	cpuPeriodUS = 100000
 )
 
@@ -45,7 +45,7 @@ func jobCgroupBase() (string, error) {
 }
 
 // setupCgroupBase enables the controllers for the children of the Node's own cgroup. cgroup v2 lets a cgroup other
-// than the root do that only while it holds no process, so the Node's processes move to a leaf, openvibe-node, first
+// than the root do that only while it holds no process, so the Node's processes move to a leaf, openvibe-link, first
 // (a Node already in that leaf uses its parent). Nothing moves unless every controller is available.
 func setupCgroupBase() (string, error) {
 	var st syscall.Statfs_t
@@ -110,7 +110,7 @@ func setupCgroupBase() (string, error) {
 	}
 }
 
-// moveProcs moves every process of base into its openvibe-node leaf (none from the root cgroup). They must all be the
+// moveProcs moves every process of base into its openvibe-link leaf (none from the root cgroup). They must all be the
 // Node and its descendants: a cgroup holding other processes (a login session's scope, the parent of a Node that
 // was moved into a leaf it does not own) is not the Node's to rearrange, and nothing moves.
 func moveProcs(base string) error {

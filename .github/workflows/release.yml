@@ -34,7 +34,7 @@ jobs:
       - name: the release carries every OS, architecture and package the site offers
         run: |
           test -s dist/install.sh
-          test -s dist/openvibe-node-plugins.tar.gz
+          test -s dist/openvibe-link-plugins.tar.gz
           test -s dist/SHA256SUMS
           for f in \
             dist/openvibe-link-linux-amd64 dist/openvibe-link-linux-arm64 \
@@ -44,7 +44,7 @@ jobs:
             dist/openvibe-link-*-1.x86_64.rpm dist/openvibe-link-*-1.aarch64.rpm \
             dist/openvibe-link_*_linux_amd64.tar.gz dist/openvibe-link_*_linux_arm64.tar.gz \
             dist/openvibe-link_*_darwin_amd64.tar.gz dist/openvibe-link_*_darwin_arm64.tar.gz \
-            dist/openvibe-node-linux-amd64 dist/openvibe-node-windows-amd64.exe; do
+            dist/openvibe-link-linux-amd64 dist/openvibe-link-windows-amd64.exe; do
             test -s "$f" || { echo "missing $f"; exit 1; }
           done
       - name: publish the release

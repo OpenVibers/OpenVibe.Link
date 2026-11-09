@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/connect"
+	"github.com/OpenVibers/OpenVibe.Link/internal/connect"
 )
 
 func Host(ctx context.Context, client Client, version string, stdout io.Writer) error {

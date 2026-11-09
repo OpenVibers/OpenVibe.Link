@@ -32,8 +32,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/config"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 // TestHelperProcess is the job's process when this test binary runs as a function (`-- <mode>`); otherwise it does
@@ -335,7 +335,7 @@ func TestRunStreamsAndMeters(t *testing.T) {
 // TestIsolation: the job sees none of the Node's environment, has no network (not even loopback), is PID 1 of its own
 // PID namespace, runs as the configured user, and its working directory is fresh and removed afterwards.
 func TestIsolation(t *testing.T) {
-	t.Setenv("OPENVIBE_NODE_SECRET", "leak")
+	t.Setenv("OPENVIBE_LINK_SECRET", "leak")
 	w, s := newRunWorker(t, config.WorkerCaps{}, "env")
 	j := testJob(1, "env")
 	run(t, w, j)
@@ -360,7 +360,7 @@ func TestIsolation(t *testing.T) {
 		t.Fatalf("network reachable: loopback %s, dial %s", r.Loopback, r.Dial)
 	}
 	for _, kv := range r.Env {
-		if strings.HasPrefix(kv, "OPENVIBE_NODE_SECRET=") {
+		if strings.HasPrefix(kv, "OPENVIBE_LINK_SECRET=") {
 			t.Fatalf("the Node's environment leaked: %v", r.Env)
 		}
 	}
@@ -1406,16 +1406,16 @@ func TestEgressRuleset(t *testing.T) {
 // certificates are copied, not bound), the Node's directories nor /var; a system path holding a Node directory is
 // refused.
 func TestRootPlan(t *testing.T) {
-	if _, _, err := rootPlan([]string{"/usr/local/openvibe-node"}); err == nil {
+	if _, _, err := rootPlan([]string{"/usr/local/openvibe-link"}); err == nil {
 		t.Error("a Node directory in /usr was not refused")
 	}
-	binds, _, err := rootPlan([]string{"/var/lib/openvibe-node", "/etc/openvibe-node"})
+	binds, _, err := rootPlan([]string{"/var/lib/openvibe-link", "/etc/openvibe-link"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, b := range binds {
 		if _, ok := overlaps(b.path, []string{"/etc/ssl", "/etc/pki", "/etc/ca-certificates", "/etc/shadow"}); ok ||
-			under(b.path, []string{"/var", "/etc/openvibe-node", "/home", "/root", "/run"}) {
+			under(b.path, []string{"/var", "/etc/openvibe-link", "/home", "/root", "/run"}) {
 			t.Errorf("%s is bound", b.path)
 		}
 	}

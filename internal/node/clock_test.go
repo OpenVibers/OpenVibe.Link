@@ -1,7 +1,7 @@
 package node
 
 import (
-	"github.com/OpenVibers/OpenVibe.Node/internal/mono"
+	"github.com/OpenVibers/OpenVibe.Link/internal/mono"
 	"testing"
 	"time"
 )

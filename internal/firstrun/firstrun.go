@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 // EventName is the telemetry event the Node sends for every step. Bot stores these as the machine's first run.
@@ -175,7 +175,7 @@ func ValidStep(name string) bool {
 	return false
 }
 
-// ValidEvent is what the running Node accepts from `openvibe-node`: a first-run event for a known step, with the
+// ValidEvent is what the running Node accepts from `openvibe-link`: a first-run event for a known step, with the
 // version and OS every one carries. Anything else from the local socket is refused rather than forwarded.
 func ValidEvent(e protocol.Event) bool {
 	if e.Name != EventName || e.Fields == nil {

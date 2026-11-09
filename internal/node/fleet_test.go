@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
 )
 
 func TestCodesProbeCommand(t *testing.T) {

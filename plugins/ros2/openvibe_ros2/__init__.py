@@ -42,7 +42,7 @@ FRAME_RING = 4
 DEFAULTS = {
     "transport": "auto",                      # auto | rclpy | rosbridge
     "rosbridge_url": "ws://127.0.0.1:9090",
-    "node_name": "openvibe_node",
+    "node_name": "openvibe_link",
     "cmd_vel": "/cmd_vel",
     "max_linear": 0.3,                        # m/s at full throttle
     "max_angular": 1.5,                       # rad/s at full steer

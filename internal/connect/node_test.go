@@ -35,13 +35,13 @@ func newNodeServer(t *testing.T) *nodeServer {
 	n := &nodeServer{hellos: make(chan map[string]any, 8), reauths: make(chan string, 16), pagePort: 8790}
 	up := websocket.Upgrader{}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/node/shares", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v1/link/shares", func(w http.ResponseWriter, r *http.Request) {
 		n.mu.Lock()
 		n.bearers = append(n.bearers, r.Header.Get("Authorization"))
 		n.mu.Unlock()
 		_ = json.NewEncoder(w).Encode(map[string]any{"shares": []map[string]any{{"id": testShareID, "host": "portal--alex.openvibe.link", "url": "https://portal--alex.openvibe.link", "local_port": n.pagePort, "mode": "owner"}}})
 	})
-	mux.HandleFunc("/api/v1/node/shares/"+testShareID+"/tunnel-token", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v1/link/shares/"+testShareID+"/tunnel-token", func(w http.ResponseWriter, r *http.Request) {
 		n.mu.Lock()
 		n.bearers = append(n.bearers, r.Header.Get("Authorization"))
 		n.mu.Unlock()
@@ -162,7 +162,7 @@ func TestARemovedMachineStops(t *testing.T) {
 }
 
 func TestAShareByIDNeedsThePairing(t *testing.T) {
-	if err := Run(context.Background(), Share{ID: testShareID, Port: 9100}, Options{}); err == nil || !strings.Contains(err.Error(), "openvibe.bot/machines") {
+	if err := Run(context.Background(), Share{ID: testShareID, Port: 9100}, Options{}); err == nil || !strings.Contains(err.Error(), "openvibe.link/machines") {
 		t.Fatalf("got %v", err)
 	}
 	if err := Run(context.Background(), Share{ID: "shr_nope", Port: 9100}, Options{NodeToken: func(context.Context) (string, error) { return "x", nil }}); err == nil {

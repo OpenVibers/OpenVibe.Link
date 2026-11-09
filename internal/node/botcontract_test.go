@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/fakebot"
-	"github.com/OpenVibers/OpenVibe.Node/internal/localctl"
-	"github.com/OpenVibers/OpenVibe.Node/internal/plugins"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/fakebot"
+	"github.com/OpenVibers/OpenVibe.Link/internal/localctl"
+	"github.com/OpenVibers/OpenVibe.Link/internal/plugins"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 // These tests drive the Node with the frames OpenVibe.Bot sends, recorded from its docs/protocol.md into
@@ -312,7 +312,7 @@ func TestPluginLocalStop(t *testing.T) {
 	e.expectEstopState(false, false)
 }
 
-// A remote clear never clears the local latch (`openvibe-node stop`): the device keeps refusing motion and keeps
+// A remote clear never clears the local latch (`openvibe-link stop`): the device keeps refusing motion and keeps
 // reporting itself latched, across a reconnect, until the local resume (which clears both latches on the device).
 // Its latched:false after the resume is only a report; Bot's latch stays for the owner to clear.
 func TestLocalLatchSurvivesRemoteClear(t *testing.T) {

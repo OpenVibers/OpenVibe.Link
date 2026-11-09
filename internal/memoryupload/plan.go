@@ -13,8 +13,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/memory"
-	"github.com/OpenVibers/OpenVibe.Node/internal/memorystore"
+	"github.com/OpenVibers/OpenVibe.Link/internal/memory"
+	"github.com/OpenVibers/OpenVibe.Link/internal/memorystore"
 )
 
 // MaxSlug is the length of a project slug. The store takes at most 64.

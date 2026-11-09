@@ -126,7 +126,7 @@ func RunAll(ctx context.Context, dir string, o Options) {
 			defer wg.Done()
 			err := Run(ctx, s, so)
 			if errors.Is(err, ErrStopped) && o.Log != nil {
-				o.Log.Warn("connect: share stopped; remove it with `openvibe-node share remove`", "port", s.Port, "share", s.Label())
+				o.Log.Warn("connect: share stopped; remove it with `openvibe-link share remove`", "port", s.Port, "share", s.Label())
 			}
 		}()
 	}

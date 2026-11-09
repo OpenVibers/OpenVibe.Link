@@ -492,7 +492,7 @@ class RuntimeTest(unittest.TestCase):
         rt.feed_line(json.dumps({"op": "command", "id": "c2", "kind": "drive"}))
         self.assertEqual(lines(out)[-1]["fault_code"], "estopped")
         rt.feed_line(json.dumps({"op": "estop"}))  # the core latched it
-        rt.feed_line(json.dumps({"op": "resume"}))  # `openvibe-node resume` on the machine
+        rt.feed_line(json.dumps({"op": "resume"}))  # `openvibe-link resume` on the machine
         rt.feed_line(json.dumps({"op": "command", "id": "c3", "kind": "drive"}))
         self.assertEqual(lines(out)[-1]["op"], "ack")
 

@@ -41,22 +41,21 @@ for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
 	mkdir -p "$root"
 	# The installer's --local layout: the OS-specific binary name and the plugin bundle beside install.sh.
 	cp "$bin" "$root/openvibe-link-$os-$arch"
-	cp "$bin" "$root/openvibe-node-$os-$arch"
-	cp dist/openvibe-node-plugins.tar.gz "$root/"
+	cp "$bin" "$root/openvibe-link-$os-$arch"
+	cp dist/openvibe-link-plugins.tar.gz "$root/"
 	cp install/install.sh "$root/install.sh"
 	docs "$root"
 	tar -czf "dist/openvibe-link_${pkgver}_${os}_${arch}.tar.gz" -C "$work" "openvibe-link-$pkgver-$os-$arch"
 	echo "built dist/openvibe-link_${pkgver}_${os}_${arch}.tar.gz"
 done
 
-# ---- .deb: the program and the old-name alias, plus docs; no scripts, no network in postinst ----
+# ---- .deb: the program and docs; no scripts or network in postinst ----
 for arch in amd64 arm64; do
 	bin="dist/openvibe-link-linux-$arch"
 	test -s "$bin" || { echo "package: $bin is missing" >&2; exit 1; }
 	root="$work/deb-$arch"
 	mkdir -p "$root/DEBIAN" "$root/usr/local/bin" "$root/usr/share/doc/openvibe-link"
 	install -m 0755 "$bin" "$root/usr/local/bin/openvibe-link"
-	ln -s openvibe-link "$root/usr/local/bin/openvibe-node"
 	cp README.md "$root/usr/share/doc/openvibe-link/README.md"
 	cp docs/install.md "$root/usr/share/doc/openvibe-link/install.md"
 	size="$(du -sk "$root/usr" | cut -f1)"
@@ -72,7 +71,7 @@ Depends: ca-certificates
 Homepage: https://openvibe.link
 Description: OpenVibe Link: your machines, connected
  OpenVibe Link runs on your computer or server and connects out to OpenVibe: your agents can use it only as far as
- you allow, and you choose what it offers the network. The openvibe-node command is kept as an alias.
+ you allow, and you choose what it offers the network.
 EOF
 	( cd "$root" && find . -type f -exec md5sum {} + | sed 's|  \./|  |' | sort -k2 >DEBIAN/md5sums )
 	dpkg-deb --build --root-owner-group "$root" "dist/openvibe-link_${pkgver}_${arch}.deb" >/dev/null
@@ -108,7 +107,7 @@ AutoReqProv:    no
 %description
 OpenVibe Link runs on your computer or server and connects out to OpenVibe: your agents
 can use it only as far as you allow, and you choose what it offers the network. The
-openvibe-node command is kept as an alias.
+
 
 %prep
 
@@ -117,13 +116,12 @@ openvibe-node command is kept as an alias.
 %install
 mkdir -p %{buildroot}/usr/local/bin %{buildroot}/usr/share/doc/openvibe-link
 install -m 0755 %{SOURCE0} %{buildroot}/usr/local/bin/openvibe-link
-ln -s openvibe-link %{buildroot}/usr/local/bin/openvibe-node
 install -m 0644 %{SOURCE1} %{buildroot}/usr/share/doc/openvibe-link/README.md
 install -m 0644 %{SOURCE2} %{buildroot}/usr/share/doc/openvibe-link/install.md
 
 %files
 /usr/local/bin/openvibe-link
-/usr/local/bin/openvibe-node
+/usr/local/bin/openvibe-link
 /usr/share/doc/openvibe-link/README.md
 /usr/share/doc/openvibe-link/install.md
 EOF

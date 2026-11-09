@@ -12,8 +12,8 @@ import (
 
 	qrcode "github.com/skip2/go-qrcode"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
-	"github.com/OpenVibers/OpenVibe.Node/internal/video"
+	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
+	"github.com/OpenVibers/OpenVibe.Link/internal/video"
 )
 
 // Probe QR: each frame carries the millisecond clock the desk drew it. The headless viewer decodes it and subtracts
@@ -25,7 +25,7 @@ const (
 	ProbeDefaultFPS     = 10
 )
 
-// ProbeOptions configure `openvibe-node stream --probe`.
+// ProbeOptions configure `openvibe-link stream --probe`.
 type ProbeOptions struct {
 	WHIPURL  string
 	Ticket   credentials.Secret
@@ -178,7 +178,7 @@ func Probe(ctx context.Context, o ProbeOptions) (int64, error) {
 		return 0, errors.New("stream: --probe needs the stream's publish ticket (--ticket wpt_…)")
 	}
 	opts := video.Options{WHIPURL: o.WHIPURL, PublishKey: o.Ticket, Audio: true,
-		UserAgent: "openvibe-node/stream-probe", IncludeLoopback: o.Loopback, Log: o.Log}
+		UserAgent: "openvibe-link/stream-probe", IncludeLoopback: o.Loopback, Log: o.Log}
 	src := &ProbeSource{W: o.Width, H: o.Height, FPS: o.FPS, Now: o.Now}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(o.Seconds)*time.Second)
 	defer cancel()

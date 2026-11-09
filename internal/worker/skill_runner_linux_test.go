@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/config"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
-	"github.com/OpenVibers/OpenVibe.Node/internal/skills"
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/skills"
 )
 
 // skillRunnerWorker declares the real openvibe-skill-runner@1.0.0 (skills.Enable writes the script it embedded) and a

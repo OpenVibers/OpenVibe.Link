@@ -4,7 +4,7 @@
  * openvibe-skill-runner@1.0.0: run one tool of a declared skill as an OpenVibe Run job.
  *
  * The Node's job worker runs this file as the job's function (declared in worker.functions by
- * `openvibe-node skills on`). The job's args are one JSON line on stdin:
+ * `openvibe-link skills on`). The job's args are one JSON line on stdin:
  *
  *   { tool, entry, input }
  *

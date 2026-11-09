@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
 )
 
 func testNode(t *testing.T) Node {

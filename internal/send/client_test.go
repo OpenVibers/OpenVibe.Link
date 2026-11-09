@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
+	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
 )
 
 type staticToken string
@@ -24,7 +24,7 @@ func TestClientUsesNodeTokenAndOnlyPublishesPublicReceiveKey(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer node-token" {
 			t.Errorf("authorization = %q", r.Header.Get("Authorization"))
 		}
-		if r.URL.Path != "/api/v1/node/self/send/key" || r.Method != http.MethodPut {
+		if r.URL.Path != "/api/v1/link/self/send/key" || r.Method != http.MethodPut {
 			t.Errorf("request = %s %s", r.Method, r.URL.Path)
 		}
 		var body struct {
@@ -37,7 +37,7 @@ func TestClientUsesNodeTokenAndOnlyPublishesPublicReceiveKey(t *testing.T) {
 			t.Errorf("registered key includes private data or is empty: %#v", body.PublicKey)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"node_id":"nod_test","key_thumbprint":"thumb"}`))
+		_, _ = w.Write([]byte(`{"node_id":"lnk_test","key_thumbprint":"thumb"}`))
 	}))
 	defer server.Close()
 	key, err := LoadOrCreate(t.TempDir())

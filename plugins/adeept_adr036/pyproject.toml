@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "openvibe-adeept-adr036"
 version = "0.1.0"
-description = "OpenVibe Node plugin for the Adeept 4WD Smart Car Kit for Raspberry Pi (ADR036)"
+description = "OpenVibe Link plugin for the Adeept 4WD Smart Car Kit for Raspberry Pi (ADR036)"
 requires-python = ">=3.9"
 license = { text = "AGPL-3.0-or-later" }
 dependencies = ["openvibe-plugin"]

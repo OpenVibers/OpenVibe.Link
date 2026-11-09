@@ -24,7 +24,7 @@ fragment: `/panel/#t=<token>`. The page sends that token as `X-Link-Panel` on ev
 | `GET /panel/api/send/targets` | — | The person's other paired machines with receive keys. |
 | `GET /panel/api/send/inbox` | — | Pending encrypted items, shown with Accept and Decline. |
 | `GET /panel/api/send/key` | — | This machine's Locker private key, returned only to the token-protected loopback window. |
-| `POST /panel/api/files` | `{ "target_node": "nod_…", "envelope": "base64" }` | Relays Locker ciphertext to one of the person's other machines. |
+| `POST /panel/api/files` | `{ "target_node": "lnk_…", "envelope": "base64" }` | Relays Locker ciphertext to one of the person's other machines. |
 | `POST /panel/api/files/:id/accept` | — | Returns ciphertext for local Locker opening after the person chooses Accept. |
 | `POST /panel/api/files/:id/decline` | — | Removes the incoming item. |
 | `POST /panel/api/files/:id/complete` | — | Removes the accepted item after download starts. |

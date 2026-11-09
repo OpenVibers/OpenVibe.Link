@@ -19,7 +19,7 @@ The REST pairing answer has no example in the doc; tests derive it from `paired.
 `POST /api/v1/pair` handler (`server/api/v1.js`) builds it: `device_id, credential, publish_key, whip_url, robot_id`
 (`robot_ids[0]`), `profile` (see `protocol.PairBodyFromPaired`).
 
-Used by `internal/protocol` (every frame decodes, with the fields the Node reads), `internal/link`
+Used by `internal/protocol` (every frame decodes, with the fields the Link reads), `internal/link`
 (`TestBotFixturesEndToEnd`: pair → hello + config → command → ack → reconnect through `internal/fakebot`) and
 `internal/node` (`TestBotFramesDriveAndAck`, `TestExpiredDriveNeverReachesPlugin`). The command examples carry a
 2025 deadline: replayed as recorded they are expired, and the node tests move `ts`/`deadline_ms` to now (keeping the

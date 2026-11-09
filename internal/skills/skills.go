@@ -1,4 +1,4 @@
-// Package skills declares OpenVibe.Node's skill runner: the function that runs one tool of a declared skill as a Run
+// Package skills declares OpenVibe.Link's skill runner: the function that runs one tool of a declared skill as a Run
 // job, with this Node's Node.js in the function sandbox (docs/worker.md, "Skills that run code").
 package skills
 
@@ -12,7 +12,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
 )
 
 const (

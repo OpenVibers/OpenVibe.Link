@@ -31,7 +31,7 @@ func TestProgramStartStop(t *testing.T) {
 
 func TestConfig(t *testing.T) {
 	c := config(Options{Arguments: []string{"run"}})
-	if c.Name != "openvibe-node" || c.Arguments[0] != "run" || c.Option["Restart"] != "always" {
+	if c.Name != "openvibe-link" || c.Arguments[0] != "run" || c.Option["Restart"] != "always" {
 		t.Fatalf("%+v", c)
 	}
 	if u, _ := c.Option["SystemdScript"].(string); !strings.Contains(u, "\n[Service]\n") || !strings.Contains(u, "\nDelegate=yes\n") {

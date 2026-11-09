@@ -18,7 +18,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
 )
 
 // A job under worker.egress public or openvibe-only (docs/worker.md, "Egress") gets, in its network namespace, one end

@@ -50,11 +50,11 @@ disabled="$(printf '%s\n' "$out" | grep -c "stock server autostart" || true)"
 [ "$disabled" = 3 ] || fail "expected 3 disabled lines, got $disabled"
 
 # The stock lines are commented out with the marker, not deleted.
-grep -q '^#openvibe-node-disabled: @reboot python3 /home/pi/adeept_awr/Server/Server_OrdinaryWheels/WebServer\.py$' "$root_cron" ||
+grep -q '^#openvibe-link-disabled: @reboot python3 /home/pi/adeept_awr/Server/Server_OrdinaryWheels/WebServer\.py$' "$root_cron" ||
 	fail "root crontab stock line not commented out"
-grep -q '^#openvibe-node-disabled: @reboot python3 /home/pi/adeept_awr/Server/Server_OrdinaryWheels/app\.py$' "$user_cron" ||
+grep -q '^#openvibe-link-disabled: @reboot python3 /home/pi/adeept_awr/Server/Server_OrdinaryWheels/app\.py$' "$user_cron" ||
 	fail "user crontab @reboot stock line not commented out"
-grep -q '^#openvibe-node-disabled: python3 /home/pi/adeept_awr/Server/Server_MecanumWheels/WebServer\.py &$' "$rc_local" ||
+grep -q '^#openvibe-link-disabled: python3 /home/pi/adeept_awr/Server/Server_MecanumWheels/WebServer\.py &$' "$rc_local" ||
 	fail "rc.local stock line not commented out"
 
 # Unrelated lines are untouched.
@@ -126,7 +126,7 @@ out4="$(
 )"
 printf '%s\n' "$out4" | grep -q 'stock server autostart in the crontab of invoking_user' ||
 	fail "logged-in user's crontab was not scanned without SUDO_USER"
-grep -q '^#openvibe-node-disabled: @reboot python3 /home/pi/adeept_awr/Server/Server_OrdinaryWheels/WebServer\.py$' \
+grep -q '^#openvibe-link-disabled: @reboot python3 /home/pi/adeept_awr/Server/Server_OrdinaryWheels/WebServer\.py$' \
 	"$fallback_cron" || fail "logged-in user's stock line was not commented out"
 
 printf 'ok: install.sh stock-server crontab/rc.local handling\n'

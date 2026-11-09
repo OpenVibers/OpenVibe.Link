@@ -1,7 +1,7 @@
 package link
 
 // The Network pairing (ADR-043 B3 v2): the machine redeems a one-time code on OpenVibe.Network for a node principal
-// (nod_…) and its node credential, buys short-lived node tokens with that credential, and presents a token (audience
+// (lnk_…) and its node credential, buys short-lived node tokens with that credential, and presents a token (audience
 // openvibe.bot) to Bot: once to POST /api/v1/devices/bind for its device and WHIP publish key, then on every /device
 // upgrade and in `reauth` frames. Neither the code, the credential nor a token is ever logged or put in an error.
 
@@ -19,20 +19,20 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 // PairingIDRe matches a Network pairing id (pair_ + a ULID), the --pairing of the installer command.
 var PairingIDRe = regexp.MustCompile(`^pair_[0-9A-HJKMNP-TV-Z]{26}$`)
 
-// principalRe matches a node principal (nod_ + a ULID).
-var principalRe = regexp.MustCompile(`^nod_[0-9A-HJKMNP-TV-Z]{26}$`)
+// principalRe matches a node principal (lnk_ + a ULID).
+var principalRe = regexp.MustCompile(`^lnk_[0-9A-HJKMNP-TV-Z]{26}$`)
 
 // ErrNodeRevoked is Network refusing the node credential at /oauth/token (401 invalid_client): the machine was
 // revoked or removed. Retrying cannot help, so the Node stops and says how to pair again.
 var ErrNodeRevoked = errors.New("OpenVibe.Network refused this machine's node credential (revoked or removed): " +
-	"get a new installer command on openvibe.bot and pair again with `sudo openvibe-node pair --force --network <URL> --pairing <pair_…> --code <CODE>`")
+	"get a new installer command on openvibe.bot and pair again with `sudo openvibe-link pair --force --network <URL> --pairing <pair_…> --code <CODE>`")
 
 // TokenSkew is how long before its expiry a cached node token is replaced.
 const TokenSkew = 30 * time.Second
@@ -66,7 +66,7 @@ func defaultClient(c *http.Client) *http.Client {
 	return c
 }
 
-// PairNetwork redeems a Network pairing code with POST <network>/api/v1/node-pairing. The result holds the node
+// PairNetwork redeems a Network pairing code with POST <network>/api/v1/link-pairing. The result holds the node
 // principal and credential but no device yet: Bind fills that in.
 func PairNetwork(ctx context.Context, client *http.Client, network string, req protocol.NodePairingRequest, userAgent string) (*credentials.Credentials, error) {
 	network = strings.TrimSuffix(network, "/")

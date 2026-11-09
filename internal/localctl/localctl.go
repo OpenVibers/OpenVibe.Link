@@ -1,4 +1,4 @@
-// Package localctl is the running Node's local control socket: `openvibe-node stop`, `resume`, `quit`, `status`, `plugins`,
+// Package localctl is the running Node's local control socket: `openvibe-link stop`, `resume`, `quit`, `status`, `plugins`,
 // `approvals`, `approve`, `deny` and `tray` talk to it. It is a Unix domain socket (Windows 10+ supports them too) in the state directory with mode
 // 0600, so only the account running the Node and root can use it. One JSON request per connection, one JSON answer.
 package localctl
@@ -25,7 +25,7 @@ const (
 	CmdApprovals = "approvals"
 	CmdApprove   = "approve"
 	CmdDeny      = "deny"
-	// CmdTray: `openvibe-node tray` shows the approvals (On) or has quit; the computer plugin's own desktop prompts
+	// CmdTray: `openvibe-link tray` shows the approvals (On) or has quit; the computer plugin's own desktop prompts
 	// stay quiet while it does.
 	CmdTray = "tray"
 	// CmdFirstRun carries the guided first run's telemetry events (Data) to the running Node, which sends them on the
@@ -33,7 +33,7 @@ const (
 	// replace it.
 	CmdFirstRun = "first_run"
 	// CmdPanel answers where OpenVibe Link's own window is: its loopback URL with the per-run token in the fragment.
-	// It goes to the tray (or `openvibe-node panel`), which runs as the Node's owner, never into a status line.
+	// It goes to the tray (or `openvibe-link panel`), which runs as the Node's owner, never into a status line.
 	CmdPanel     = "panel"
 	CmdPartyHost = "party_host"
 	CmdPartyStop = "party_stop"
@@ -64,7 +64,7 @@ func Serve(ctx context.Context, path string, h Handler) error {
 	if _, err := os.Stat(path); err == nil {
 		if c, err := net.DialTimeout("unix", path, 200*time.Millisecond); err == nil {
 			c.Close()
-			return errors.New("another openvibe-node is already running (its control socket answers)")
+			return errors.New("another openvibe-link is already running (its control socket answers)")
 		}
 		_ = os.Remove(path)
 	}

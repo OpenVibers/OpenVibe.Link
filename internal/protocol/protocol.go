@@ -27,7 +27,7 @@ const (
 
 // OpenVibe.Network paths, relative to the Network origin (server/registry/node-principals.js).
 const (
-	NodePairingPath = "/api/v1/node-pairing" // redeems a Network pairing code for a node principal and its credential
+	NodePairingPath = "/api/v1/link-pairing" // redeems a Network pairing code for a node principal and its credential
 	TokenPath       = "/oauth/token"         // client_credentials: the node credential buys a node token
 )
 
@@ -261,7 +261,7 @@ const (
 	FaultUnsupported   = "unsupported"    // no driver on this device handles the kind or the actuator
 	FaultNotAllowed    = "not_allowed"    // the kind is not in config.allowed
 	FaultEstopped      = "estopped"       // the remote e-stop is latched
-	FaultLocalStop     = "local_stop"     // the local kill switch (`openvibe-node stop`) is latched
+	FaultLocalStop     = "local_stop"     // the local kill switch (`openvibe-link stop`) is latched
 	FaultNoHeartbeat   = "no_heartbeat"   // a plugin lost the core's heartbeat
 	FaultNotReady      = "not_ready"      // the driver is starting or restarting, or the server's config has not arrived
 	FaultExpired       = "expired"        // the command's deadline_ms had passed when it arrived
@@ -928,7 +928,7 @@ type PairResponse struct {
 	Profile    json.RawMessage `json:"profile,omitempty"`
 }
 
-// NodePairingRequest is the body of POST <network>/api/v1/node-pairing: the code is the credential. Pairing is the
+// NodePairingRequest is the body of POST <network>/api/v1/link-pairing: the code is the credential. Pairing is the
 // pair_… id from the installer command; with it a wrong try counts against that pairing's code.
 type NodePairingRequest struct {
 	Code    string `json:"code"`
@@ -942,9 +942,9 @@ type PairedFor struct {
 	Ref     string `json:"ref,omitempty"`
 }
 
-// NodePairingResponse is the 201 answer of POST /api/v1/node-pairing. The credential appears only here.
+// NodePairingResponse is the 201 answer of POST /api/v1/link-pairing. The credential appears only here.
 type NodePairingResponse struct {
-	Principal     string     `json:"principal"` // nod_…
+	Principal     string     `json:"principal"` // lnk_…
 	NodeID        string     `json:"node_id"`
 	HomeCell      string     `json:"home_cell"`
 	Credential    string     `json:"credential"`

@@ -31,7 +31,7 @@ import (
 // the process is sure to be alive. The function's execve then closes statusFD. artifactFD is the function's artifact
 // directory, opened by the Node, when the init is to copy it.
 const (
-	sandboxArg0 = "openvibe-node-sandbox"
+	sandboxArg0 = "openvibe-link-sandbox"
 	statusFD    = 4 // fd 3 is the function's result
 	goFD        = 5
 	specFD      = 6

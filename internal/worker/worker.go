@@ -26,8 +26,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/config"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 const (
@@ -275,7 +275,7 @@ func (w *Worker) SetStopped(fault string) {
 	}
 }
 
-// JobInfo is a job that has not ended, as `openvibe-node status` lists it.
+// JobInfo is a job that has not ended, as `openvibe-link status` lists it.
 type JobInfo struct {
 	ID        string `json:"id"`
 	Function  string `json:"function"` // name@version

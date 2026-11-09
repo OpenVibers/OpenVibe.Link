@@ -8,7 +8,7 @@ keeps, and this plugin relays it to the local model server and answers with the 
 It reaches one place only, the server in its config, and it reads and changes nothing else on the machine. A request
 runs at once up to the owner's ``offer.concurrency`` (1 by default: a model is heavy); another is refused as busy,
 never queued. The owner turns it on twice: by adding the plugin here, and by "Let my AI use this computer's models" on
-openvibe.bot/machines.
+openvibe.link/machines.
 
 Offer to the network (the /sell settings, plugin 0.3.0): ``offer.enabled`` lets other people's requests that opt in to
 community capacity run here; the plugin advertises the offer in ``describe`` (status.capabilities.ai.ai.offer), Bot
@@ -43,7 +43,7 @@ them and sends the next command with the assistant's message (its ``tool_calls``
 
 Machine pools (plugin 0.4.0, Linux; the pooled machines design, 2026-11-06): with ``pool_directory`` set, this machine
 serves one model together with other machines of the same owner on the same local network, through llama.cpp RPC
-(``rpc-server`` on the members, ``llama-server --rpc`` on the head). The pool is proposed on openvibe.network/machines
+(``rpc-server`` on the members, ``llama-server --rpc`` on the head). The pool is proposed on openvibe.link/machines
 and approved on each machine with ``python -m openvibe_ai.pool_cli approve``; until then the plugin announces the
 machine every minute (``pool_credential_file``, ``pool_address``, ``pool_port``). ``pool_engine`` names the engine:
 ``{rpc_binary, llama_binary, model_path, model: {model, parameters_b, memory_mb}, context?}``. The RPC engine is

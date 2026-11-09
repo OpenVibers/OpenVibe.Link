@@ -18,12 +18,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/config"
-	"github.com/OpenVibers/OpenVibe.Node/internal/fakebot"
-	"github.com/OpenVibers/OpenVibe.Node/internal/link"
-	"github.com/OpenVibers/OpenVibe.Node/internal/localctl"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
-	"github.com/OpenVibers/OpenVibe.Node/internal/worker"
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/fakebot"
+	"github.com/OpenVibers/OpenVibe.Link/internal/link"
+	"github.com/OpenVibers/OpenVibe.Link/internal/localctl"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/worker"
 )
 
 // TestWorkerHelperProcess is the job's process when this test binary runs as the `hello` function (`-- job`): it
@@ -347,7 +347,7 @@ func TestJobRunsOverTheLink(t *testing.T) {
 	}
 }
 
-// statusJobs is the jobs field of `openvibe-node status` (over the local control socket).
+// statusJobs is the jobs field of `openvibe-link status` (over the local control socket).
 func (e *env) statusJobs() []worker.JobInfo {
 	e.t.Helper()
 	r, err := localctl.Call(e.paths.SocketPath(), localctl.Request{Cmd: localctl.CmdStatus}, 2*time.Second)
@@ -363,7 +363,7 @@ func (e *env) statusJobs() []worker.JobInfo {
 	return s.Jobs
 }
 
-// TestLocalStopEndsJobs: `openvibe-node status` lists a running job; `openvibe-node stop` ends it stopped and new jobs
+// TestLocalStopEndsJobs: `openvibe-link status` lists a running job; `openvibe-link stop` ends it stopped and new jobs
 // are refused with local_stop; after `resume` jobs run again, and status lists none once they ended.
 func TestLocalStopEndsJobs(t *testing.T) {
 	e := startWorkerNode(t)

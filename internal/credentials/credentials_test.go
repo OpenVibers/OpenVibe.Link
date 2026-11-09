@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 const secret = "s3cr3t-credential-value"
@@ -90,7 +90,7 @@ func TestCorruptFileErrorHasNoContents(t *testing.T) {
 // bound; neither secret prints.
 func TestSaveLoadNetworkPaired(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "credential.json")
-	c := &Credentials{Principal: "nod_01J8Z4M2Q0R7T9YV3K6N8P1W2X", NodeCredential: NewSecret(secret), Network: "https://openvibe.network",
+	c := &Credentials{Principal: "lnk_01J8Z4M2Q0R7T9YV3K6N8P1W2X", NodeCredential: NewSecret(secret), Network: "https://openvibe.network",
 		PairedFor: &protocol.PairedFor{Service: "bot", Ref: "rob_1"}, Server: "https://openvibe.bot"}
 	if s := fmt.Sprintf("%v %+v", c, *c); strings.Contains(s, secret) {
 		t.Fatalf("secret printed: %s", s)

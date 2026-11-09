@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// `openvibe-node status` lists the shares the service keeps up: their port, the address Connect gave, whether the
+// `openvibe-link status` lists the shares the service keeps up: their port, the address Connect gave, whether the
 // tunnel is up, how many requests the app answered, and why it last went down.
 func TestLiveSharesForStatus(t *testing.T) {
 	s := Share{ID: "shr_01K9ZZZZZZZZZZZZZZZZZZZZZZ", Port: 8790, Key: "ovc_hidden"}
@@ -52,7 +52,7 @@ func TestLiveSharesHidesTheKey(t *testing.T) {
 	forgetLive(s)
 }
 
-// The service's shares are listed while it runs and stop when its context ends: `openvibe-node status` is the service
+// The service's shares are listed while it runs and stop when its context ends: `openvibe-link status` is the service
 // process, and ending the Node ends every share it keeps up.
 func TestRunAllListsAndStopsWithTheNode(t *testing.T) {
 	f := newFakeServer(t, 0)

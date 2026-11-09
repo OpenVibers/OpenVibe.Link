@@ -2,11 +2,11 @@
 //
 // Layout (system install):
 //
-//	Linux    /etc/openvibe-node/{config.json,credential.json}   /var/lib/openvibe-node/{latch.json,node.sock,venv}
-//	macOS    /Library/Application Support/OpenVibe Node/ (both)
-//	Windows  %ProgramData%\OpenVibe Node\ (both)
+//	Linux    /etc/openvibe-link/{config.json,credential.json}   /var/lib/openvibe-link/{latch.json,node.sock,venv}
+//	macOS    /Library/Application Support/OpenVibe Link/ (both)
+//	Windows  %ProgramData%\OpenVibe Link\ (both)
 //
-// OPENVIBE_NODE_HOME (or --home) puts everything in one directory, which is how tests and people trying the Node
+// OPENVIBE_LINK_HOME (or --home) puts everything in one directory, which is how tests and people trying the Node
 // without root run it. A non-root user on a machine without a system install gets the per-user config directory.
 package config
 
@@ -28,11 +28,11 @@ import (
 
 const (
 	DefaultServer = "https://openvibe.bot"
-	EnvHome       = "OPENVIBE_NODE_HOME"
+	EnvHome       = "OPENVIBE_LINK_HOME"
 	// EnvConfigDir and EnvStateDir are the Node's directories as it gives them to its plugins, so a command a plugin
-	// runs (`openvibe-node desk-sandbox`) reads the same config as the Node that started it.
-	EnvConfigDir = "OPENVIBE_NODE_CONFIG"
-	EnvStateDir  = "OPENVIBE_NODE_STATE"
+	// runs (`openvibe-link desk-sandbox`) reads the same config as the Node that started it.
+	EnvConfigDir = "OPENVIBE_LINK_CONFIG"
+	EnvStateDir  = "OPENVIBE_LINK_STATE"
 )
 
 // Paths are the Node's directories.
@@ -68,20 +68,20 @@ func SystemPaths() Paths {
 		if base == "" {
 			base = `C:\ProgramData`
 		}
-		d := filepath.Join(base, "OpenVibe Node")
+		d := filepath.Join(base, "OpenVibe Link")
 		return Paths{ConfigDir: d, StateDir: d}
 	case "darwin":
-		d := "/Library/Application Support/OpenVibe Node"
+		d := "/Library/Application Support/OpenVibe Link"
 		return Paths{ConfigDir: d, StateDir: d}
 	default:
-		return Paths{ConfigDir: "/etc/openvibe-node", StateDir: "/var/lib/openvibe-node"}
+		return Paths{ConfigDir: "/etc/openvibe-link", StateDir: "/var/lib/openvibe-link"}
 	}
 }
 
 // HomePaths puts config and state in one directory.
 func HomePaths(dir string) Paths { return Paths{ConfigDir: dir, StateDir: dir} }
 
-// DefaultPaths picks the directories: --home / OPENVIBE_NODE_HOME, else the system install when running as root (or
+// DefaultPaths picks the directories: --home / OPENVIBE_LINK_HOME, else the system install when running as root (or
 // when one exists), else the per-user config directory.
 func DefaultPaths(home string) Paths {
 	if home == "" {
@@ -98,7 +98,7 @@ func DefaultPaths(home string) Paths {
 		return sys
 	}
 	if d, err := os.UserConfigDir(); err == nil {
-		return HomePaths(filepath.Join(d, "openvibe-node"))
+		return HomePaths(filepath.Join(d, "openvibe-link"))
 	}
 	return sys
 }
@@ -401,7 +401,7 @@ var Bundled = map[string]string{
 	"looi":          "openvibe_looi",
 }
 
-// Default is the config written by `openvibe-node pair` when none exists: the dry-run plugin and its test pattern.
+// Default is the config written by `openvibe-link pair` when none exists: the dry-run plugin and its test pattern.
 func Default() *Config {
 	return &Config{
 		Server:     DefaultServer,
@@ -585,7 +585,7 @@ func (c *Config) PythonPath(paths Paths) string {
 }
 
 // planLoginHome is the home worker.plan_logins must be under. Under sudo it is the sudo user's home: install.sh
-// --plan-logins sets the service's HOME to it, and a `sudo openvibe-node ...` must see the same folder, not root's.
+// --plan-logins sets the service's HOME to it, and a `sudo openvibe-link ...` must see the same folder, not root's.
 // The service itself has HOME set, so os.UserHomeDir is right there.
 func planLoginHome() (string, error) {
 	if u := os.Getenv("SUDO_USER"); u != "" && u != "root" {

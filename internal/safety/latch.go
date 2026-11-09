@@ -17,8 +17,8 @@ import (
 // LatchState is the persisted e-stop state. Two independent latches:
 //
 //   - Remote: set by a server `estop`; cleared by a server `estop` with latched:false (the owner) or a local `resume`.
-//   - Local: set on the machine itself — `openvibe-node stop`, or a driver's own stop (`local_stop`); cleared only by
-//     `openvibe-node resume`. A remote clear never touches it.
+//   - Local: set on the machine itself — `openvibe-link stop`, or a driver's own stop (`local_stop`); cleared only by
+//     `openvibe-link resume`. A remote clear never touches it.
 //
 // Anything that moves is refused while either is set.
 type LatchState struct {
@@ -70,7 +70,7 @@ func readLatch(path string) (LatchState, []byte, error) {
 		return st, nil, err
 	}
 	if err := json.Unmarshal(raw, &st); err != nil {
-		return st, raw, errors.New("latch file is corrupt; holding the local stop until `openvibe-node resume`")
+		return st, raw, errors.New("latch file is corrupt; holding the local stop until `openvibe-link resume`")
 	}
 	return st, raw, nil
 }
@@ -186,7 +186,7 @@ func CleanReason(reason string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// Resume clears both latches (`openvibe-node resume`).
+// Resume clears both latches (`openvibe-link resume`).
 func (l *Latch) Resume() (LatchState, error) {
 	return l.update(func(s *LatchState) { *s = LatchState{} })
 }

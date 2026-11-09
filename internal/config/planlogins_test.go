@@ -39,7 +39,7 @@ func TestWorkerPlanLogins(t *testing.T) {
 	}
 }
 
-// TestPlanLoginHomeUnderSudo: a `sudo openvibe-node ...` reads the plan logins under the sudo user's home (the home
+// TestPlanLoginHomeUnderSudo: a `sudo openvibe-link ...` reads the plan logins under the sudo user's home (the home
 // install.sh --plan-logins gives the service), not root's; without sudo it is the Node user's own home.
 func TestPlanLoginHomeUnderSudo(t *testing.T) {
 	if runtime.GOOS != "linux" {

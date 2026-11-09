@@ -39,7 +39,7 @@ a Cozmo-based robot).
    robot and reaches it over the robot's own link (Cozmo first through PyCozmo; later Vector, Tello, Sphero, LEGO); a
    bridge joins the robot's network on one interface and reaches OpenVibe on another. **Server-side**: Bot itself
    connects to ONVIF/RTSP cameras (credentials by secret reference, never in the profile). The agent is a Python 3 package
-   (the Pi, PyCozmo and the kit libraries are Python), installed by `curl -fsSL https://node.openvibe.network/install | sh` into a
+   (the Pi, PyCozmo and the kit libraries are Python), installed by `curl -fsSL https://openvibe.link/install | sh` into a
    virtual environment with a systemd unit and the hardware watchdog.
 4. **Control runs over one outbound WebSocket per device; video over WHIP.** The device dials Bot
    (`wss://openvibe.bot/device`), authenticates with its credential, and keeps one connection for commands, telemetry and

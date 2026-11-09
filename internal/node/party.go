@@ -7,9 +7,9 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/connect"
-	"github.com/OpenVibers/OpenVibe.Node/internal/link"
-	"github.com/OpenVibers/OpenVibe.Node/internal/party"
+	"github.com/OpenVibers/OpenVibe.Link/internal/connect"
+	"github.com/OpenVibers/OpenVibe.Link/internal/link"
+	"github.com/OpenVibers/OpenVibe.Link/internal/party"
 )
 
 var validPartyID = regexp.MustCompile(`^party-[a-f0-9]{8}$`)
@@ -36,8 +36,8 @@ func (n *Node) startParty(id string) error {
 	n.partyID, n.partyCancel, n.partyDone = id, cancel, done
 	n.mu.Unlock()
 
-	chatTokens := link.NewTokenSourceFor(n.opt.Creds, nil, "openvibe-node/"+n.opt.Version, "openvibe.chat")
-	connectTokens := link.NewTokenSourceFor(n.opt.Creds, nil, "openvibe-node/"+n.opt.Version, link.ConnectAudience)
+	chatTokens := link.NewTokenSourceFor(n.opt.Creds, nil, "openvibe-link/"+n.opt.Version, "openvibe.chat")
+	connectTokens := link.NewTokenSourceFor(n.opt.Creds, nil, "openvibe-link/"+n.opt.Version, link.ConnectAudience)
 	client := party.Client{PartyURL: "https://openvibe.party", ConnectServer: connect.DefaultServer, PartyID: id,
 		ChatToken: func(ctx context.Context) (string, error) {
 			t, err := chatTokens.Token(ctx)

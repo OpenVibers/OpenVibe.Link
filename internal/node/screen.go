@@ -9,12 +9,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
-	"github.com/OpenVibers/OpenVibe.Node/internal/mono"
-	"github.com/OpenVibers/OpenVibe.Node/internal/plugins"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
-	"github.com/OpenVibers/OpenVibe.Node/internal/safety"
-	"github.com/OpenVibers/OpenVibe.Node/internal/video"
+	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
+	"github.com/OpenVibers/OpenVibe.Link/internal/mono"
+	"github.com/OpenVibers/OpenVibe.Link/internal/plugins"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/safety"
+	"github.com/OpenVibers/OpenVibe.Link/internal/video"
 )
 
 // The screen stream (screen_stream, contracts 0.182.0): the machine's screen shown live to its owner. Bot mints the
@@ -49,7 +49,7 @@ type screenState struct {
 	cur *screenStream
 }
 
-// ScreenStatus is the screen stream in `openvibe-node status`.
+// ScreenStatus is the screen stream in `openvibe-link status`.
 type ScreenStatus struct {
 	State     string `json:"state"`
 	Until     string `json:"until,omitempty"`
@@ -94,7 +94,7 @@ func (n *Node) screenCommand(c protocol.Command, entry *safety.Entry, received m
 	}
 	st := n.latch.State()
 	if st.Local || st.Computer {
-		nack(protocol.FaultLocalStop, "stopped on the machine: `openvibe-node resume` on this machine is required")
+		nack(protocol.FaultLocalStop, "stopped on the machine: `openvibe-link resume` on this machine is required")
 		return
 	}
 	if st.Remote {

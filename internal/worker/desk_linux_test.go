@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
 )
 
 // deskConfig is a worker config a desk can run under here, or the test skips (fails under OPENVIBE_WORKER_TESTS=require,
