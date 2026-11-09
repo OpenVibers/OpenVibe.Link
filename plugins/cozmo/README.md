@@ -1,8 +1,8 @@
 # openvibe-cozmo
 
-OpenVibe Node plugin for Anki / Digital Dream Labs **Cozmo**, built on
+OpenVibe Link plugin for Anki / Digital Dream Labs **Cozmo**, built on
 [PyCozmo](https://github.com/zayfod/pycozmo) (MIT). It is a *bridge* plugin: Cozmo runs closed firmware and cannot run
-the Node itself, so the Node runs on a computer next to the robot and drives it over Wi-Fi.
+the Link itself, so the Link runs on a computer next to the robot and drives it over Wi-Fi.
 
 ## Bridge setup
 
@@ -12,7 +12,7 @@ computer (a Raspberry Pi or a laptop) therefore needs **two network interfaces**
 | interface | joined to | used for |
 |-----------|-----------|----------|
 | `wlan0` (or the built-in Wi-Fi) | Cozmo's Wi-Fi | PyCozmo's UDP link to the robot |
-| Ethernet, or a second Wi-Fi (USB dongle) | your home network | the Node's link to OpenVibe.Bot and video |
+| Ethernet, or a second Wi-Fi (USB dongle) | your home network | the Link's link to OpenVibe.Bot and video |
 
 1. Put Cozmo on its charger and turn it on. Raise and lower its lift: its face shows the network name and password.
 2. Join one interface to that network. Make sure the *default route stays on the internet interface*: Cozmo's network
@@ -24,7 +24,7 @@ computer (a Raspberry Pi or a laptop) therefore needs **two network interfaces**
    pip install 'openvibe-cozmo[robot]'   # pulls pycozmo
    sudo apt install espeak-ng            # or libttspico-utils (pico2wave)
    ```
-5. Add the plugin to the Node's config (`driver: cozmo`) and start the Node. Setup waits `connect_timeout_s` for the
+5. Add the plugin to the Link's config (`driver: cozmo`) and start the Link. Setup waits `connect_timeout_s` for the
    robot; if it is unreachable the plugin reports fault `not_connected`.
 
 ## Firmware

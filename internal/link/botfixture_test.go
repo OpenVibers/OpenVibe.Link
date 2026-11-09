@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/fakebot"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/fakebot"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 func botFixture(t *testing.T, name string) []byte {
@@ -33,7 +33,7 @@ func TestBotFixturesEndToEnd(t *testing.T) {
 	srv.PairBody = protocol.PairBodyFromPaired(botFixture(t, "paired"))
 	srv.Greeting = [][]byte{botFixture(t, "hello"), botFixture(t, "config")}
 
-	// Pair with the fields of Bot's pair frame (the code normalized, as `openvibe-node pair` does).
+	// Pair with the fields of Bot's pair frame (the code normalized, as `openvibe-link pair` does).
 	var req protocol.PairRequest
 	if err := json.Unmarshal(botFixture(t, "pair"), &req); err != nil {
 		t.Fatal(err)

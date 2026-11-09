@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/config"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 // sink records every frame the worker sends.
@@ -321,7 +321,7 @@ func TestUsageHelperProcess(t *testing.T) {
 
 // TestEgressFor: an absent net (the contract's declared deny) is no network whatever the host allows; net deny and
 // none are that too; a named public or openvibe-only runs under the host's policy when that is at least as strict and
-// still a network, and is refused when the host is none (or unset) or wider than asked; a net this Node does not know
+// still a network, and is refused when the host is none (or unset) or wider than asked; a net this Link does not know
 // is refused, never run weaker.
 func TestEgressFor(t *testing.T) {
 	for _, c := range []struct {

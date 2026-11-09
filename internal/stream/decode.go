@@ -8,7 +8,7 @@ import (
 	"github.com/makiuchi-d/gozxing"
 	"github.com/makiuchi-d/gozxing/qrcode"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/video"
+	"github.com/OpenVibers/OpenVibe.Link/internal/video"
 )
 
 // DecodeProbe reads a probe frame's QR payload: the millisecond clock the desk drew it with. It is the same decode the

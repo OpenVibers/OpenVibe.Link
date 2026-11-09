@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "openvibe-ros2"
 version = "0.1.0"
-description = "OpenVibe Node bridge plugin for ROS 2 robots (rclpy or rosbridge)"
+description = "OpenVibe Link bridge plugin for ROS 2 robots (rclpy or rosbridge)"
 requires-python = ">=3.9"
 license = { text = "AGPL-3.0-or-later" }
 dependencies = ["openvibe-plugin"]

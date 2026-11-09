@@ -1,6 +1,6 @@
 // Package firstrun is the guided first run's local record: which steps this machine reached, what it found, and the
-// one telemetry event per step the Node reports to Bot. The record never holds a path, a username, an IP or a secret:
-// it is the material for `node.first_run` events and for the terminal, nothing else.
+// one telemetry event per step the Link reports to Bot. The record never holds a path, a username, an IP or a secret:
+// it is the material for `link.first_run` events and for the terminal, nothing else.
 package firstrun
 
 import (
@@ -16,11 +16,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
-// EventName is the telemetry event the Node sends for every step. Bot stores these as the machine's first run.
-const EventName = "node.first_run"
+// EventName is the telemetry event the Link sends for every step. Bot stores these as the machine's first run.
+const EventName = "link.first_run"
 
 // The steps, in order. A self-check that failed is still the self_check step (with ok false and a reason), so a
 // funnel never counts a failure as a step it did not reach.
@@ -34,7 +34,7 @@ const (
 // Steps is the order the guide runs them in.
 var Steps = []string{StepInstalled, StepPaired, StepCheck, StepFirstJob}
 
-// UsesStep is the node.first_run event that carries the window's answer to "What's this computer for?". It is not in
+// UsesStep is the link.first_run event that carries the window's answer to "What's this computer for?". It is not in
 // Steps: the funnel counts the guide's four steps, and this one carries what the person said.
 const UsesStep = "uses"
 
@@ -68,7 +68,7 @@ func CleanUses(in []string) []string {
 	return out
 }
 
-// UsesEvent is the one node.first_run event that carries the person's answer: the step, the uses, and the version, OS
+// UsesEvent is the one link.first_run event that carries the person's answer: the step, the uses, and the version, OS
 // and architecture every event carries. It never carries a path, a username, an address or a secret.
 func UsesEvent(uses []string, version, goos, goarch string) protocol.Event {
 	f := map[string]any{"step": UsesStep, "uses": CleanUses(uses), "version": version, "os": goos}
@@ -93,7 +93,7 @@ type Report struct {
 	Steps   []Step `json:"steps"`
 }
 
-// FileName is the record's name in the Node's state directory.
+// FileName is the record's name in the Link's state directory.
 const FileName = "firstrun.json"
 
 // Load reads the record; a missing one is an empty report, not an error.
@@ -175,7 +175,7 @@ func ValidStep(name string) bool {
 	return false
 }
 
-// ValidEvent is what the running Node accepts from `openvibe-node`: a first-run event for a known step, with the
+// ValidEvent is what the running Link accepts from `openvibe-link`: a first-run event for a known step, with the
 // version and OS every one carries. Anything else from the local socket is refused rather than forwarded.
 func ValidEvent(e protocol.Event) bool {
 	if e.Name != EventName || e.Fields == nil {

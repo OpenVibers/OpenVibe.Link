@@ -88,7 +88,7 @@ class PreviewActivity : ComponentActivity() {
 
         val SAMPLE_DEVICE = JSONObject()
             .put("device_id", "dev_01J9Z8K4Q7X2M5N8P3R6T0V")
-            .put("principal", "nod_01J9Z8K4Q7X2M5N8P3R6T0V")
+            .put("principal", "lnk_01J9Z8K4Q7X2M5N8P3R6T0V")
             .put("server", "https://openvibe.bot")
             .put("network", "https://openvibe.network")
             .put("kind", "phone")

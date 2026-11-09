@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/config"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
-	"github.com/OpenVibers/OpenVibe.Node/internal/skills"
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/skills"
 )
 
 // skillRunnerWorker declares the real openvibe-skill-runner@1.0.0 (skills.Enable writes the script it embedded) and a
@@ -117,7 +117,7 @@ process.stdin.on('data', (d) => input += d).on('end', () => {
 }
 
 // TestSkillRunnerJobNetDeny: the job names no net, so the worker's network namespace holds no network: the tool's socket
-// to the internet fails, not because Node's permission model stopped it but because the sandbox has nowhere to send it.
+// to the internet fails, not because Link's permission model stopped it but because the sandbox has nowhere to send it.
 func TestSkillRunnerJobNetDeny(t *testing.T) {
 	tool := []byte(`
 const net = require('net');

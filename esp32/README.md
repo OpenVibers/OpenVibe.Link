@@ -1,6 +1,6 @@
-# OpenVibeNode — the ESP32 client
+# OpenVibeLink — the ESP32 client
 
-`OpenVibeNode` is an Arduino/ESP32 library that makes a board a **device** on OpenVibe.Bot's device protocol
+`OpenVibeLink` is an Arduino/ESP32 library that makes a board a **device** on OpenVibe.Bot's device protocol
 (`bot.device-message@1`, [docs/protocol.md](../docs/protocol.md) sections 1–3): pair once, keep an outbound control
 link, drive the motors, report telemetry, and hold the safety rules locally.
 
@@ -13,7 +13,7 @@ ArduinoJson (7.4.2) and WebSockets (2.6.1). Nothing here has been on real hardwa
 
 - **Pairing** — `POST /api/v1/pair` over HTTPS with the code normalised as Bot does (upper case, dash/space removed,
   `I`/`L` → `1`, `O` → `0`); the device id and credential are kept in NVS. A refusal is turned into the same sentence
-  the Node prints. A 4xx answer (wrong, used, locked or expired code) is definitive: the board stops trying until it
+  the Link prints. A 4xx answer (wrong, used, locked or expired code) is definitive: the board stops trying until it
   is rebooted with a new code, so it never burns extra tries toward Bot's 5-try lock. Transport errors and 5xx answers
   retry with backoff (30 s doubling to 5 min). A plain `http://`/`ws://` origin whose host is not `localhost` or
   `127.0.0.1` is refused outright — the host is cleared and both the pairing POST and the control link are suppressed
@@ -36,7 +36,7 @@ ArduinoJson (7.4.2) and WebSockets (2.6.1). Nothing here has been on real hardwa
   49.7 days and an NTP step cannot move the deadman, a deadline or the cadence; the wall clock is read only for the
   envelope `ts` and the protocol's Unix timestamps.
 - **E-stop** — the server's `estop` latches or clears the remote stop (`config.estop_latched` re-applies a latch set
-  while offline); a frame with a wrong-typed `latched`/`estop_latched` is ignored and keeps the latch, as the Go Node's
+  while offline); a frame with a wrong-typed `latched`/`estop_latched` is ignored and keeps the latch, as the Go Link's
   decoder does. The local kill switch (`setLocalStop(true)` / `resume()`) is persisted in NVS and restored in
   `begin()` before WiFi comes up; if NVS cannot be opened, `begin()` fails closed and treats the switch as latched
   until the sketch calls `resume()`. Only `resume()` clears it. Every stop path calls `on_stop`.
@@ -45,7 +45,7 @@ ArduinoJson (7.4.2) and WebSockets (2.6.1). Nothing here has been on real hardwa
   it. A failed NVS write is logged rather than passed over silently.
 - **Close codes** — 4002 and 4003 (and an upgrade refused with 401/403) stop the motors and wait at least 10 s, with
   jitter that only adds, logging "pair again, or import the owner's rotation"; other drops use the documented
-  exponential backoff with full jitter, and a link that has been up for 30 s resets it (as the Go Node does).
+  exponential backoff with full jitter, and a link that has been up for 30 s resets it (as the Go Link does).
   arduinoWebSockets 2.x does not surface the close code or the upgrade's status, so the transport treats a socket that
   ends before `hello` as the refused case and logs that the cause is uncertain; see *Limitations* below.
 - **Frame and memory bounds** — the protocol allows frames up to 1 MiB; this device bounds them at 16 KiB and a JSON
@@ -60,14 +60,14 @@ ArduinoJson (7.4.2) and WebSockets (2.6.1). Nothing here has been on real hardwa
   limits` when those are the first problem).
 - **Video / WHIP** — no camera publishing.
 - **OpenVibe.Network pairing and node tokens** — only Bot credential pairing.
-- **The local CLI** — there is no `openvibe-node` binary on a board; the local kill switch is the API, not a command.
+- **The local CLI** — there is no `openvibe-link` binary on a board; the local kill switch is the API, not a command.
 
 ## Layout
 
 - `src/ov_core.{h,cpp}` — the protocol core in portable C++17, no Arduino headers, only ArduinoJson v7 (header-only).
   Everything stateful lives here; time is injected as two clocks (monotonic and Unix) and every side effect is a
   callback, so it runs on desktop.
-- `src/OpenVibeNode.{h,cpp}` — the Arduino transport: WiFi, TLS with the ESP32 CA bundle (never `setInsecure()`), the
+- `src/OpenVibeLink.{h,cpp}` — the Arduino transport: WiFi, TLS with the ESP32 CA bundle (never `setInsecure()`), the
   arduinoWebSockets client, `HTTPClient` for pairing, and `Preferences` (NVS) for the device id, credential and local
   kill switch. TLS verifies against the core's embedded bundle (`_binary_x509_crt_bundle_start`), the same one the
   core's own HTTPS client uses.
@@ -82,7 +82,7 @@ ArduinoJson (7.4.2) and WebSockets (2.6.1). Nothing here has been on real hardwa
    `OV_CODE`. `OV_NAME` is what the owner sees. On later boots the stored credential is reused, so `OV_CODE` is only
    needed for the first pairing.
 3. Install the ESP32 core (3.x) and the `ArduinoJson` (7.x) and `WebSockets` (2.x) libraries, then compile and upload
-   `examples/Basic` for your board with the `OpenVibeNode` library from this tree.
+   `examples/Basic` for your board with the `OpenVibeLink` library from this tree.
 4. The library never starts SNTP. Add `configTime(...)` in the sketch (NTP) so the protocol's Unix timestamps are
    right; the safety timers do not depend on it.
 

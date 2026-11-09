@@ -32,8 +32,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/config"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 // TestHelperProcess is the job's process when this test binary runs as a function (`-- <mode>`); otherwise it does
@@ -332,10 +332,10 @@ func TestRunStreamsAndMeters(t *testing.T) {
 	}
 }
 
-// TestIsolation: the job sees none of the Node's environment, has no network (not even loopback), is PID 1 of its own
+// TestIsolation: the job sees none of the Link's environment, has no network (not even loopback), is PID 1 of its own
 // PID namespace, runs as the configured user, and its working directory is fresh and removed afterwards.
 func TestIsolation(t *testing.T) {
-	t.Setenv("OPENVIBE_NODE_SECRET", "leak")
+	t.Setenv("OPENVIBE_LINK_SECRET", "leak")
 	w, s := newRunWorker(t, config.WorkerCaps{}, "env")
 	j := testJob(1, "env")
 	run(t, w, j)
@@ -360,8 +360,8 @@ func TestIsolation(t *testing.T) {
 		t.Fatalf("network reachable: loopback %s, dial %s", r.Loopback, r.Dial)
 	}
 	for _, kv := range r.Env {
-		if strings.HasPrefix(kv, "OPENVIBE_NODE_SECRET=") {
-			t.Fatalf("the Node's environment leaked: %v", r.Env)
+		if strings.HasPrefix(kv, "OPENVIBE_LINK_SECRET=") {
+			t.Fatalf("the Link's environment leaked: %v", r.Env)
 		}
 	}
 	if !slices.Contains(r.Env, "OPENVIBE_JOB_ID="+j.ID) || !slices.Contains(r.Env, "HOME="+r.Cwd) {
@@ -496,7 +496,7 @@ func TestLatchKillsAndRefuses(t *testing.T) {
 	}
 }
 
-// TestEscape: the job cannot see the Node's directories (a secret file, the control socket), nor /var, /home, /root,
+// TestEscape: the job cannot see the Link's directories (a secret file, the control socket), nor /var, /home, /root,
 // /sys, /run or the rest of /etc (/etc/ssl/private, the host's TLS keys, included); it cannot write / nor its
 // artifact; mount, unshare, chroot and packet sockets are refused; it runs with no_new_privs and the seccomp filter,
 // and only its own /tmp is writable.
@@ -511,7 +511,7 @@ func TestEscape(t *testing.T) {
 	}
 	defer l.Close()
 	cfg := helperConfig(t, config.WorkerCaps{MaxMemBytes: 8 << 30}, "escape")
-	cfg.NodeDirs = []string{node}
+	cfg.LinkDirs = []string{node}
 	cfg.Functions[0].Env["OPENVIBE_TEST_NODE_DIR"] = node
 	w, s := newRunWorkerConfig(t, cfg)
 	j := testJob(1, "escape")
@@ -780,7 +780,7 @@ func TestStageArtifactInSystemPath(t *testing.T) {
 	}
 }
 
-// TestOwnProcess: the Node moves only itself and its descendants out of its cgroup (moveProcs).
+// TestOwnProcess: the Link moves only itself and its descendants out of its cgroup (moveProcs).
 func TestOwnProcess(t *testing.T) {
 	cmd := exec.Command("sleep", "5")
 	if err := cmd.Start(); err != nil {
@@ -789,10 +789,10 @@ func TestOwnProcess(t *testing.T) {
 	defer cmd.Wait()
 	defer cmd.Process.Kill()
 	if !ownProcess(os.Getpid()) || !ownProcess(cmd.Process.Pid) {
-		t.Error("the Node or its child is not the Node's")
+		t.Error("the Link or its child is not the Link's")
 	}
 	if ownProcess(1) || ownProcess(os.Getppid()) {
-		t.Error("init or the Node's parent is the Node's")
+		t.Error("init or the Link's parent is the Link's")
 	}
 }
 
@@ -820,7 +820,7 @@ func TestTrustedGroup(t *testing.T) {
 		want bool
 	}{
 		{0, false},    // ops (1001) has root's group as its primary group
-		{1000, true},  // the Node's own
+		{1000, true},  // the Link's own
 		{10, false},   // bob is listed
 		{50, false},   // ghost is no known user
 		{1002, false}, // bob's primary group
@@ -836,7 +836,7 @@ func TestTrustedGroup(t *testing.T) {
 }
 
 // TestArtifactRoute: an artifact directory whose path crosses a directory of a bound system path that a host user
-// other than root or the Node's own could change is refused, as the Node opens it for a job and at boot: in such a
+// other than root or the Link's own could change is refused, as the Link opens it for a job and at boot: in such a
 // directory a host writer could, after every check, switch a symlink on the path (or rename a directory on it) so that
 // the job's path leads to a live host directory holding a socket or FIFO. A path that leaves the bound paths is the
 // private root's own, writable by anyone on the host or not.
@@ -962,7 +962,7 @@ func TestArtifactRouteSwitched(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg.Functions[0].ArtifactDir, cfg.Functions[0].Command[0] = link, filepath.Join(link, "worker.test")
-	w, s := newRunWorkerConfig(t, cfg) // the probe passes: only the Node's user may change the path yet
+	w, s := newRunWorkerConfig(t, cfg) // the probe passes: only the Link's user may change the path yet
 	if err := os.Chmod(pub, 0o777); err != nil {
 		t.Fatal(err)
 	}
@@ -1014,11 +1014,11 @@ func moveHelper(t *testing.T, cfg *config.WorkerConfig, dir string) {
 }
 
 // TestArtifactUnreachable: a job's user must reach its artifact directory by its path: one under a directory it may
-// not search fails the job without running, though the Node (root) opens it; once that directory may be searched, the
-// job runs (as root only: otherwise jobs run as the Node's own user, who could not open it either).
+// not search fails the job without running, though the Link (root) opens it; once that directory may be searched, the
+// job runs (as root only: otherwise jobs run as the Link's own user, who could not open it either).
 func TestArtifactUnreachable(t *testing.T) {
 	if os.Geteuid() != 0 {
-		t.Skip("jobs run as the Node's own user unless it is root")
+		t.Skip("jobs run as the Link's own user unless it is root")
 	}
 	cfg := helperConfig(t, config.WorkerCaps{MaxMemBytes: 8 << 30}, "quick")
 	top := t.TempDir()
@@ -1209,7 +1209,7 @@ func TestCAStaged(t *testing.T) {
 	}
 }
 
-// TestShortLivedJob: a function that exits at once still starts, and its result and code arrive: the Node checks its
+// TestShortLivedJob: a function that exits at once still starts, and its result and code arrive: the Link checks its
 // confinement and sets RLIMIT_CPU while the sandbox init waits to execute it, never once it may have ended.
 func TestShortLivedJob(t *testing.T) {
 	w, s := newRunWorker(t, config.WorkerCaps{}, "quick")
@@ -1240,7 +1240,7 @@ func TestRunLinuxClass(t *testing.T) {
 	}
 }
 
-// TestForkBomb: pids.max and RLIMIT_NPROC stop a job that starts processes without end; the Node is untouched and the
+// TestForkBomb: pids.max and RLIMIT_NPROC stop a job that starts processes without end; the Link is untouched and the
 // job ends when its first process exits, taking the others with it.
 func TestForkBomb(t *testing.T) {
 	const pids = 32
@@ -1265,7 +1265,7 @@ func TestForkBomb(t *testing.T) {
 }
 
 // TestEgressUnenforceable: an egress policy the host cannot enforce (here ip, nsenter and nft are not found, or the
-// Node is not root) fails the probe, so the class is not advertised, and a job asking for that network fails without
+// Link is not root) fails the probe, so the class is not advertised, and a job asking for that network fails without
 // running: never a silent none nor an open network. (A job naming no net runs under none and needs no egress.)
 func TestEgressUnenforceable(t *testing.T) {
 	dirs := egressToolDirs
@@ -1293,7 +1293,7 @@ func TestEgressUnenforceable(t *testing.T) {
 }
 
 // TestEgress: under none a job has no route at all; under public it has one, but 10.0.0.1, 169.254.169.254 (cloud
-// metadata) and the host's end of its veth are refused by the Node's table (refused, not unreachable nor a timeout);
+// metadata) and the host's end of its veth are refused by the Link's table (refused, not unreachable nor a timeout);
 // under openvibe-only an unlisted public host is refused too; a job naming net "deny" or no net at all under public
 // gets none whatever the host allows, and one naming public under openvibe-only gets public. It needs root, ip,
 // nsenter, nft and IPv4 forwarding: it skips without the programs even where OPENVIBE_WORKER_TESTS=require.
@@ -1403,19 +1403,19 @@ func TestEgressRuleset(t *testing.T) {
 }
 
 // TestRootPlan: the private root holds the device nodes; no bind is, holds or lies in /etc/ssl, /etc/pki (whose CA
-// certificates are copied, not bound), the Node's directories nor /var; a system path holding a Node directory is
+// certificates are copied, not bound), the Link's directories nor /var; a system path holding a Link directory is
 // refused.
 func TestRootPlan(t *testing.T) {
-	if _, _, err := rootPlan([]string{"/usr/local/openvibe-node"}); err == nil {
-		t.Error("a Node directory in /usr was not refused")
+	if _, _, err := rootPlan([]string{"/usr/local/openvibe-link"}); err == nil {
+		t.Error("a Link directory in /usr was not refused")
 	}
-	binds, _, err := rootPlan([]string{"/var/lib/openvibe-node", "/etc/openvibe-node"})
+	binds, _, err := rootPlan([]string{"/var/lib/openvibe-link", "/etc/openvibe-link"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, b := range binds {
 		if _, ok := overlaps(b.path, []string{"/etc/ssl", "/etc/pki", "/etc/ca-certificates", "/etc/shadow"}); ok ||
-			under(b.path, []string{"/var", "/etc/openvibe-node", "/home", "/root", "/run"}) {
+			under(b.path, []string{"/var", "/etc/openvibe-link", "/home", "/root", "/run"}) {
 			t.Errorf("%s is bound", b.path)
 		}
 	}
@@ -1425,7 +1425,7 @@ func TestRootPlan(t *testing.T) {
 }
 
 // TestArtifactRefused: an artifact directory that is, holds or lies in the host's kernel interfaces, runtime sockets,
-// configuration or the Node's directories, or that is or holds a shared directory, is refused; one whose tree holds a
+// configuration or the Link's directories, or that is or holds a shared directory, is refused; one whose tree holds a
 // Unix socket or a FIFO is refused at boot; a function with one keeps the probe from passing; and the directory a job
 // opens is checked where its path leads at that moment.
 func TestArtifactRefused(t *testing.T) {
@@ -1438,7 +1438,7 @@ func TestArtifactRefused(t *testing.T) {
 	for _, c := range []struct{ node, artifact string }{{"/srv/ov/state", "/srv/ov"}, {"/srv/ov", "/srv/ov/bin"},
 		{"/srv/ov", "/srv/ov"}} {
 		if err := checkArtifact([]string{c.node}, c.artifact); err == nil {
-			t.Errorf("artifact %s with the Node in %s was not refused", c.artifact, c.node)
+			t.Errorf("artifact %s with the Link in %s was not refused", c.artifact, c.node)
 		}
 	}
 	dir := t.TempDir()
@@ -1630,7 +1630,7 @@ func TestLimitSwap(t *testing.T) {
 }
 
 // TestSpecNotInCmdline: the sandbox init gets its spec, the function's environment included, on specFD and never in
-// its argv: while it waits for the Node's go, its /proc/<pid>/cmdline is its name alone. It needs only user, mount and
+// its argv: while it waits for the Link's go, its /proc/<pid>/cmdline is its name alone. It needs only user, mount and
 // PID namespaces, no cgroup: it runs where the sandboxed jobs cannot.
 func TestSpecNotInCmdline(t *testing.T) {
 	const envMarker = "marker-from-the-environment"

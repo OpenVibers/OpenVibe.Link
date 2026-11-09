@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
+	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
 )
 
 const (

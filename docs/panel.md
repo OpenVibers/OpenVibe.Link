@@ -1,6 +1,6 @@
 # Link's own window
 
-`openvibe-node` serves a small page on the machine itself: what runs here, what this computer allows, the shares it
+`openvibe-link` serves a small page on the machine itself: what runs here, what this computer allows, the shares it
 keeps, and what happened. The design and the JSON it reads are in
 [`internal/panel/ui/README.md`](../internal/panel/ui/README.md); this page is how it is served and what protects it.
 
@@ -42,13 +42,13 @@ A restart makes a new port and a new token: an old link stops working.
 | `GET /panel/api/send/targets` | Your other active machines that have a receive key | Real for Network-paired machines |
 | `GET /panel/api/send/inbox` | Pending encrypted items | Real; the envelope remains ciphertext until you accept |
 | `GET /panel/api/send/key` | This machine's receive key for opening an accepted envelope | Real; loopback panel token required |
-| `POST /panel/api/files` `{ "target_node": "nod_…", "envelope": "…" }` | Relays an already encrypted item to one of your other machines | Real for Network-paired machines; 20 MB file limit |
+| `POST /panel/api/files` `{ "target_node": "lnk_…", "envelope": "…" }` | Relays an already encrypted item to one of your other machines | Real for Network-paired machines; 20 MB file limit |
 | `POST /panel/api/files/:id/accept` | Gets the pending envelope after you choose Accept | Real; the window opens it locally and downloads it |
 | `POST /panel/api/files/:id/decline` | Removes a pending item | Real |
 | `POST /panel/api/files/:id/complete` | Removes an accepted item after the browser download starts | Real |
 
-`state` omits what the Node cannot fill truthfully: `devices` (the paired account's machine list is not read here),
-`gpu` (no GPU detection), and `earnings_today`. `activity` is the Node's own record of what it saw (an approval
+`state` omits what the Link cannot fill truthfully: `devices` (the paired account's machine list is not read here),
+`gpu` (no GPU detection), and `earnings_today`. `activity` is the Link's own record of what it saw (an approval
 waiting or answered, a pause, a share, a capability), newest first, at most 30.
 
 `codes` is the desktop's Codes module: `agents` are the coding CLIs on this machine, read the way OpenVibe.Codes reads
@@ -63,11 +63,11 @@ Each card is a permission switch the daemon already has, from the `computer` plu
 `screen`, `input`, `browser`, `desk`) and the `ai` plugin (`ai`). A switch is **on** when the plugin offers it, the
 computer is not at level `observe`, and it was not turned off here.
 
-Turning one **off** adds a local restriction the Node enforces itself: a command of that kind is refused with
+Turning one **off** adds a local restriction the Link enforces itself: a command of that kind is refused with
 `not_allowed` before it reaches the plugin. Turning it **on** removes only that restriction; it never grants more than
 the plugin already offers, and it cannot raise the computer's level.
 
 **Desktop (`desk`) and Terminal (`terminal`)** turn on only by their own switch, after the window says in plain words
 what that means (the capability's `confirm` text); the first-run answer never turns them on. They were gated until
-the 11-05 review's fixes landed (Node #102-#104, 2026-11-06); [computer.md](computer.md) says what a program run at
+the 11-05 review's fixes landed (Link #102-#104, 2026-11-06); [computer.md](computer.md) says what a program run at
 `trusted` can reach. At level `observe` nothing can be turned on from the panel: the level is set on the machine.

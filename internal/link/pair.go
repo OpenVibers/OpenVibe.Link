@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 // Pairing codes are 8 Crockford base32 characters, shown as XXXX-XXXX (ADR-043 decision 2).
@@ -58,7 +58,7 @@ func Pair(ctx context.Context, client *http.Client, server string, req protocol.
 		return nil, err
 	}
 	hreq.Header.Set("Content-Type", "application/json")
-	hreq.Header.Set("User-Agent", "openvibe-node/"+req.AgentVersion)
+	hreq.Header.Set("User-Agent", "openvibe-link/"+req.AgentVersion)
 	resp, err := defaultClient(client).Do(hreq)
 	if err != nil {
 		return nil, fmt.Errorf("pairing request failed: %w", err)

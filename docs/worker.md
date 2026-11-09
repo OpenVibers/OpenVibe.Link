@@ -1,18 +1,18 @@
 # The job worker (`function`, `code` and `linux` jobs)
 
-The Node can run **function, code and linux jobs** (OpenVibe.Contracts `platform.job@1`, class `function`, `code` or
+The Link can run **function, code and linux jobs** (OpenVibe.Contracts `platform.job@1`, class `function`, `code` or
 `linux`) sent over the control link ([protocol.md](protocol.md#jobs)). A job is untrusted input: it names an artifact,
-and the Node runs it only if the owner declared that artifact, at that exact version and for that class, in the local
-config. Nothing is downloaded and no path comes from the server. The worker is **off by default**; off, the Node refuses
+and the Link runs it only if the owner declared that artifact, at that exact version and for that class, in the local
+config. Nothing is downloaded and no path comes from the server. The worker is **off by default**; off, the Link refuses
 every job `class not available`, as before. A `linux` entry is an arbitrary declared Linux command, not a language
 runtime: it runs through the same isolate path as a `code` entry, with the same sandbox, limits and net policy.
-It is single-shot like a `code` job: the Node does not offer the persistent Linux environment that lives across
+It is single-shot like a `code` job: the Link does not offer the persistent Linux environment that lives across
 commands, which `platform.runtime-class@1` also lets `linux` describe.
 
 ## A machine that runs your coding tasks (`--worker`)
 
-The simplest way to turn the worker on is the installer's `--worker` (Linux), which openvibe.bot/machines prints with a
-one-time code: `curl -fsSL https://node.openvibe.network/install | sh -s -- --network … --pairing pair_… --code … --worker`. It:
+The simplest way to turn the worker on is the installer's `--worker` (Linux), which openvibe.link/machines prints with a
+one-time code: `curl -fsSL https://openvibe.link/install | sh -s -- --network … --pairing pair_… --code … --worker`. It:
 
 - pairs the machine for its owner's own jobs (a Network pairing with ref `worker:<owner>`; OpenVibe.Bot reports it to
   the network as a `user-owned` offer naming the owner, OpenVibe.Run places only that person's jobs on it, and Bot
@@ -23,7 +23,7 @@ one-time code: `curl -fsSL https://node.openvibe.network/install | sh -s -- --ne
   `/opt/openvibe-codes` when Node.js 20 or newer is installed system-wide, and declares it as a `code` entry;
 - with `--plan-logins` (which turns the worker on too), names the coding tools' own login files that are already signed
   in on this computer as the worker's `plan_logins`, and sets the service's HOME to your home so they sit under the
-  Node user's home. A tool whose login file is missing or empty is skipped with a line giving its own login command; a
+  Link user's home. A tool whose login file is missing or empty is skipped with a line giving its own login command; a
   login file whose CLI is not on this PATH is still named, with a line to install the CLI system-wide. The installer
   only looks at whether a login file is there; it never reads, copies or prints its content;
 - sizes the caps for a coding task (an hour, 4 GiB of memory, 3 GiB of scratch, one job at a time). Your own values win
@@ -44,7 +44,7 @@ alone, through `GIT_CONFIG_*` variables: it is never on a command line, in the c
 
 ## Skills that run code (`openvibe-skill-runner@1.0.0`)
 
-A skill that declares `runs: "sandbox"` has tools whose code runs as a **function job** on a Node that declared the
+A skill that declares `runs: "sandbox"` has tools whose code runs as a **function job** on a Link that declared the
 skill runner. The runner is a declared function like the Codes runner, and it is **off until the owner turns it on**:
 
 ```sh
@@ -64,7 +64,7 @@ this entry to `worker.functions`:
  "artifact_dir": "/opt/openvibe-skill-runner"}
 ```
 
-It does not turn `worker.enabled` on: the installer's `--worker` does. Restart the Node to load the entry. `skills off`
+It does not turn `worker.enabled` on: the installer's `--worker` does. Restart the Link to load the entry. `skills off`
 removes the entry and keeps the script, so `on` is instant again.
 
 ### What a job of the runner runs
@@ -74,9 +74,9 @@ one of the job's `inputs` (the contract's file-name pattern), which the worker s
 job started; a missing, non-regular or symlinked entry fails before anything runs. A digest mismatch on an input ends
 the job `failed` before the runner starts (the worker's rule), so nothing runs.
 
-The runner runs the entry with **this Node's own node binary** (`process.execPath`, the one in the entry's command), cwd
+The runner runs the entry with **this Link's own node binary** (`process.execPath`, the one in the entry's command), cwd
 the job's directory, `input` as one JSON value on the tool's stdin, and an **environment with nothing in it** (not the
-Node's, not the function's):
+Link's, not the function's):
 
 ```sh
 node --permission --allow-fs-read=<the job directory> --disallow-code-generation-from-strings <entry>
@@ -87,7 +87,7 @@ It passes **none** of `--allow-child-process`, `--allow-worker`, `--allow-addons
 write any file (in the job directory included), read anything outside the job directory, or use `eval`/`new Function`.
 The runner adds no network of its own: the tool has the job sandbox's network namespace, so under `net: deny` (the
 default) there is no network at all, and under `public` or `openvibe-only` only what the job's `net` and the owner's
-egress allow. The tool also has the job's uid/gid, private root, seccomp filter, cgroups and rlimits; it sees no Node
+egress allow. The tool also has the job's uid/gid, private root, seccomp filter, cgroups and rlimits; it sees no Link
 credential, no owner home and no state.
 
 The tool writes **one JSON value to stdout, at most 64 KiB**. More is stopped and the result says `limit`; stderr is
@@ -107,8 +107,8 @@ happened instead of a bare job failure. The job's own wall, CPU, memory and outp
 
 It never fetches code, installs a dependency, runs `npm`, writes a file back to the person, keeps state between jobs,
 or calls another tool or the network on the skill's behalf: the only bytes it runs are the input files the worker
-fetched and checked against their pinned sha256. It never runs on an OpenVibe server; the job runs on the Node that
-declared the runner, in the same sandbox as every function job. Node's permission model is a seat belt against a
+fetched and checked against their pinned sha256. It never runs on an OpenVibe server; the job runs on the Link that
+declared the runner, in the same sandbox as every function job. Link's permission model is a seat belt against a
 tool's accidents, not a boundary against deliberately malicious code; the kernel sandbox (namespaces, seccomp,
 cgroups, no network) is that boundary.
 
@@ -162,15 +162,15 @@ cgroups, no network) is that boundary.
   a function job, never weaker. `artifact_dir` (default: the directory
   of `command[0]`) is the one host directory a job gets besides the system paths, as a **copy** made as the job
   starts, read-only, at the same path: nothing the host adds to it or changes in it later reaches the job (a Unix
-  socket or a FIFO that appears there, say, through which a job could reach a host process). The Node opens the
+  socket or a FIFO that appears there, say, through which a job could reach a host process). The Link opens the
   directory and checks where it leads at that moment; the job's sandbox opens it again by its path, as the job's user
   (who must be able to search every directory above it and list it, or the job fails), checks that it is the
-  directory the Node checked (or the job fails), and copies it from there, as the job's user, into a tmpfs of at most `max_disk_bytes` (it counts towards the job's memory, and its reads towards its
+  directory the Link checked (or the job fails), and copies it from there, as the job's user, into a tmpfs of at most `max_disk_bytes` (it counts towards the job's memory, and its reads towards its
   `io.max`; it must be done within the 10 s the sandbox has to stand). The copy holds directories, regular files and
   symlinks (copied as symlinks, never followed) with their permission bits and modification times, without owner,
   set-id or sticky bits; what the job's user may not read is left out; a socket, FIFO or device in the tree, or a
   mount nested in it (a bind mount of the same filesystem included), fails the job. `artifact_dir` must not be `/`;
-  nor be, hold or lie in the Node's config or state directory, `/proc`, `/sys`, `/dev`, `/run`, `/var/run`,
+  nor be, hold or lie in the Link's config or state directory, `/proc`, `/sys`, `/dev`, `/run`, `/var/run`,
   `/var/lock`, `/etc`, `/boot` or `/root`; nor be or hold `/tmp`, `/var/tmp` or `/home`; nor hold a socket, FIFO or
   device at boot (the tree is walked then, so the probe says so before any job). The probe refuses the whole worker
   otherwise, and a job of such a function ends `failed`. A directory in `/usr` (or another system path; the default
@@ -178,14 +178,14 @@ cgroups, no network) is that boundary.
   to in the job's root, and the job fails unless its own path to it leads to the copy: point `artifact_dir` at the
   function's own directory, since a copy of all of `/usr/bin` does not fit `max_disk_bytes`. Every directory of a
   system path that its path crosses (as the job follows it: through `/lib` to `/usr/lib` or a symlink in `/usr`, say)
-  must belong to root (or the Node's own user) and be writable by no other user, nor by a group with any other member
+  must belong to root (or the Link's own user) and be writable by no other user, nor by a group with any other member
   (listed in `/etc/group` or by primary group in `/etc/passwd`; a group not in `/etc/group` counts as untrusted), or the probe and
   each job refuse it: there a host user could switch a symlink or rename a directory on the path while the job runs,
   and lead the job to a live host directory instead of its copy. A missing `artifact_dir` does not fail the probe; its
   jobs end `failed`.
-- `run_as`: the unprivileged uid and gid jobs run as (not 0; no supplementary groups). It needs the Node to run as
+- `run_as`: the unprivileged uid and gid jobs run as (not 0; no supplementary groups). It needs the Link to run as
   root, which the system install does. Create a dedicated user for it with no login and no groups.
-- `allow_same_user`: run jobs as the Node's own (non-root) user instead, with its groups (`gpio`, `dialout`,
+- `allow_same_user`: run jobs as the Link's own (non-root) user instead, with its groups (`gpio`, `dialout`,
   `video`), on what the job's private root holds: **for development only**. With neither `run_as` nor
   `allow_same_user` the worker stays off.
 - `caps`: the owner's local caps. A job's `ttl_ms`, `limits.wall_ms`, `limits.cpu_ms` and `limits.mem_bytes` are
@@ -203,13 +203,13 @@ cgroups, no network) is that boundary.
   control, the probe and each job are refused unless the host has no swap at all; an OOM kills the whole job).
 - `egress`: the most a job may reach on the network; all three policies are enforced (see "Egress" below). `none`
   (the default): a network namespace with nothing but a loopback that is down. `public`: IPv4 to public addresses
-  only, through a veth the Node NATs; private (`10/8`, `172.16/12`, `192.168/16`), shared (`100.64/10`, most
+  only, through a veth the Link NATs; private (`10/8`, `172.16/12`, `192.168/16`), shared (`100.64/10`, most
   WireGuard meshes), loopback, link-local (`169.254/16`, cloud metadata included), multicast, documentation and
   reserved ranges, `egress_deny`, the host itself (every address it holds) and anything not routed through the
   host's default route (a WireGuard peer, a container bridge) are refused; there is no IPv6 (`fe80::/10` included).
   `openvibe-only`: `public`, further restricted to `egress_allow`. A job runs under the **stricter** of the `net` the
   contract's job names and this. `net` absent means `deny` (`platform.job@1`'s declared default), so **a job that names
-  no `net` runs with no network at all** however open this is set: the Node never widens the contract's default. A job
+  no `net` runs with no network at all** however open this is set: the Link never widens the contract's default. A job
   naming `deny` or `none` gets the same. One naming `public` runs under `egress` when that is `public` or
   `openvibe-only` (so under `openvibe-only` it is restricted to `egress_allow`); one naming `openvibe-only` needs
   `egress` `openvibe-only` (a `public` host has no `egress_allow` to hold it to). Otherwise, `egress` `none` (or unset)
@@ -217,14 +217,14 @@ cgroups, no network) is that boundary.
   one, in place of what it asked. A policy the host cannot enforce fails the
   probe and keeps the worker off: never a silent `none` nor an open network.
 - `egress_allow` (with `openvibe-only` only, and required by it): the IPv4 CIDRs a job may reach, the OpenVibe
-  network's own ranges. They are configured, not guessed nor resolved from names: the Node trusts no DNS answer for
+  network's own ranges. They are configured, not guessed nor resolved from names: the Link trusts no DNS answer for
   them. The refused ranges above still win over an entry that overlaps them.
 - `egress_deny` (with `public` or `openvibe-only`): more IPv4 CIDRs to refuse, on top of those always refused: the
-  Node's own cell or WireGuard peers when they hold public addresses.
+  Link's own cell or WireGuard peers when they hold public addresses.
 - `media` (off by default): the OpenVibe.Media objects API (`/api/v2/<app>/objects`) a job's `inputs` are fetched
   from and a result over 256 KiB is uploaded to. `enabled` needs `endpoint` (https only, no credentials, query or
-  fragment) and `app`. Which app and token a Node uses is deployment configuration, chosen by the operator who enables
-  it: OpenVibe.Run's own app (a token holding `media.object.read` and `media.object.upload`), never Node's. The token
+  fragment) and `app`. Which app and token a Link uses is deployment configuration, chosen by the operator who enables
+  it: OpenVibe.Run's own app (a token holding `media.object.read` and `media.object.upload`), never Link's. The token
   is read from the environment variable `token_env` names (default `OPENVIBE_MEDIA_TOKEN`) when a job needs it: it is
   never written in `config.json` (a `token` key fails the load), and it appears in no job's environment, no log line
   and no error; it is sent only to `endpoint`'s own host. `max_bytes` caps each input and each uploaded result.
@@ -238,21 +238,21 @@ the way a job is started and checks every control from the host: the sandbox was
 mount, network, PID, IPC, UTS and cgroup namespaces of its own, `NoNewPrivs` and a seccomp filter; nothing in its
 root but `/tmp`, `/proc` and the device nodes is mounted writable; it is in its own cgroup with every controller
 (cpu, memory, pids, io) and every block device holds its `io.max`; its rlimits (`RLIMIT_AS` included) are set; its
-root holds none of `/var`, `/etc/shadow`, `/etc/ssl/private`, `/etc/pki/tls/private` and the Node's directories; its CPU limit can be set and its usage read; no function's `artifact_dir`
+root holds none of `/var`, `/etc/shadow`, `/etc/ssl/private`, `/etc/pki/tls/private` and the Link's directories; its CPU limit can be set and its usage read; no function's `artifact_dir`
 is refused (above). It does so under `none` and, when `egress` is `public` or `openvibe-only`, again under that
 policy, whose veth must then stand as the process's only interface up, with the default route through it and the
-Node's nftables table written (and first: the Node runs as root, `ip`, `nsenter` and `nft` are installed, IPv4
-forwarding is on). If any check fails the Node logs why (`worker off: …`) and refuses every job,
+Link's nftables table written (and first: the Link runs as root, `ip`, `nsenter` and `nft` are installed, IPv4
+forwarding is on). If any check fails the Link logs why (`worker off: …`) and refuses every job,
 exactly as with the worker off: there is no weaker mode. A job whose sandbox fails at run time ends `failed` without
 its function having run.
 
-Requirements: Linux 5.14 or later with cgroup v2; the Node's cgroup **delegated** to it (`Delegate=yes` on its
+Requirements: Linux 5.14 or later with cgroup v2; the Link's cgroup **delegated** to it (`Delegate=yes` on its
 systemd unit, which the service `openvibe-link install` writes sets; running `install.sh` again rewrites an older
-install's service, or add it by hand: `sudo systemctl edit openvibe-node`, add `[Service]` and `Delegate=yes`,
-restart). The Node moves itself into an `openvibe-node` leaf of that cgroup and makes one `openvibe-job-*` cgroup per
-job beside it; a cgroup that holds any process other than the Node and its children (a login session's, say) is not
+install's service, or add it by hand: `sudo systemctl edit openvibe-link`, add `[Service]` and `Delegate=yes`,
+restart). The Link moves itself into an `openvibe-link` leaf of that cgroup and makes one `openvibe-job-*` cgroup per
+job beside it; a cgroup that holds any process other than the Link and its children (a login session's, say) is not
 rearranged, and the worker stays off. On Ubuntu 24.04 and later, unprivileged user namespaces are restricted by
-AppArmor; a Node running as root with `run_as` is not affected.
+AppArmor; a Link running as root with `run_as` is not affected.
 
 ## How a job runs
 
@@ -261,7 +261,7 @@ AppArmor; a Node running as root with `run_as` is not affected.
    it ended) and never starts a second process. A job carrying `inputs` is refused (`job inputs not supported`) unless
    `media` is enabled: it never runs one with the requested files and the digest check silently dropped. So is a job
    naming a `net` this host cannot enforce.
-2. **Inputs** (with `media` on, before anything of the job runs): each input is fetched by the Node from
+2. **Inputs** (with `media` on, before anything of the job runs): each input is fetched by the Link from
    `GET <endpoint>/api/v2/<app>/objects/<media_id>/download?redirect=1` into the job's directory under its `name`
    (the contract's file-name pattern, unique, checked before the `ack`, so it cannot leave that directory). Every
    redirect hop must stay https (at most 3; the token is dropped on a hop to another host), the body is cut off at
@@ -270,22 +270,22 @@ AppArmor; a Node running as root with `run_as` is not affected.
    are bounded by the job's `ttl_ms` from receipt and cancelled when it is killed. Any failure (Media unreachable, a
    status other than 2xx, a redirect off https, too many bytes, another digest, `token_env` unset) ends the job
    `failed`, with no `job_started`: no sandbox is made and nothing runs. Under `egress` `openvibe-only` an unreachable
-   Media therefore fails closed. The Node fetches, not the job: inputs give a job no network of its own.
-3. **Start**: the Node makes the job's cgroup and starts itself again (`/proc/self/exe`) as the **sandbox init**,
+   Media therefore fails closed. The Link fetches, not the job: inputs give a job no network of its own.
+3. **Start**: the Link makes the job's cgroup and starts itself again (`/proc/self/exe`) as the **sandbox init**,
    with its name as its only argument and its spec (the function's command and environment included) in a memfd, so
-   that no host user reads the environment in its `/proc/<pid>/cmdline` (the Node checks that it shows the name
+   that no host user reads the environment in its `/proc/<pid>/cmdline` (the Link checks that it shows the name
    alone), straight into that cgroup (`clone3` `CLONE_INTO_CGROUP`), in its own process group and in new user, mount,
    network, PID, IPC, UTS and cgroup namespaces, with `PR_SET_PDEATHSIG` SIGKILL. The init builds a private root (see
    below) and `pivot_root`s into it, detaching the host's; sets `RLIMIT_CPU` (at `cpu_ms`, rounded up to a second),
    `RLIMIT_CORE` 0, `RLIMIT_NOFILE` 1024, `RLIMIT_NPROC`, `RLIMIT_FSIZE` and `RLIMIT_AS`; drops every capability; sets
-   `no_new_privs` and the seccomp filter; reports that it is ready and waits for the Node's go; and only then
+   `no_new_privs` and the seccomp filter; reports that it is ready and waits for the Link's go; and only then
    executes the function, with only fds 0-3 open. The function
    works in a fresh directory `/tmp/openvibe-job-*` of its own `/tmp`, where the init copied its inputs (regular files
-   only, opened without following a symlink) before the private root covered the Node's copies: they count towards
+   only, opened without following a symlink) before the private root covered the Link's copies: they count towards
    `max_disk_bytes` and its memory, and are removed with the job's directory when it ends; its environment is built from scratch
    (`PATH=/usr/local/bin:/usr/bin:/bin`, `HOME` and `TMPDIR` that directory, `LANG=C.UTF-8`, `OPENVIBE_JOB_ID`, and
-   the function's `env`; nothing inherited from the Node); `args` come as one line of JSON on stdin; stderr is
-   discarded. While the init waits (so it is sure to be alive), the Node checks `NoNewPrivs`, the seccomp filter and
+   the function's `env`; nothing inherited from the Link); `args` come as one line of JSON on stdin; stderr is
+   discarded. While the init waits (so it is sure to be alive), the Link checks `NoNewPrivs`, the seccomp filter and
    that nothing but `/tmp`, `/proc` and the device nodes is mounted writable, and sets `RLIMIT_CPU` again from
    outside; only then does it let the init execute the function. `job_started` follows once that `execve`
    succeeded: otherwise the process is killed and the job ends `failed` with no `job_started`.
@@ -303,7 +303,7 @@ Every kill is SIGKILL to the whole process group and to the leader, which is PID
 death also kills every process the job left behind. The watchdog kills at `ttl_ms` (from receipt), `wall_ms` (from
 start), `cpu_ms`, `mem_bytes`, at `max_output_bytes` of stdout, on `job_cancel`, and the moment the e-stop or the local
 stop latches (`openvibe-link stop`); while the latch is set every job is refused, and `openvibe-link resume` admits
-them again. A Node shutting down kills its jobs (`stopped`); a job acked but not started yet never starts and gets its
+them again. A Link shutting down kills its jobs (`stopped`); a job acked but not started yet never starts and gets its
 `job_exit` (`stopped`) all the same.
 
 `openvibe-link status` lists the jobs not ended yet under `jobs` (`--json`: `id`, `function` as `name@version`,
@@ -317,12 +317,12 @@ In six lines:
 2. Each job is a separate unprivileged process (`run_as`), with no capability, `no_new_privs` and a seccomp
    allowlist, in its own process group and user, mount, network, PID, IPC, UTS and cgroup namespaces.
 3. Its filesystem is a private, read-only root holding only the system paths, a copy of the function's
-   `artifact_dir` made as it starts and a size-capped `/tmp` of its own: none of the Node's files, its credential or
+   `artifact_dir` made as it starts and a size-capped `/tmp` of its own: none of the Link's files, its credential or
    its control socket, nor the host's private keys.
-4. The network namespace has only a loopback that is down: no IP network, not even to the Node or `localhost`
+4. The network namespace has only a loopback that is down: no IP network, not even to the Link or `localhost`
    (`net` absent, `deny` or `none`, whatever `egress` says). Under `public` or `openvibe-only` it also holds one veth to
    the host, through which only what that policy allows leaves (see "Egress"); the loopback stays down.
-5. Nothing of the Node's environment reaches it.
+5. Nothing of the Link's environment reaches it.
 6. CPU, memory, processes and disk I/O are enforced by its cgroup v2 and rlimits; ttl, wall, CPU and output also by a
    per-job watchdog that SIGKILLs the whole group; `RLIMIT_CPU` backs the CPU cap per process.
 
@@ -340,8 +340,8 @@ job's user may not read, or one over 4 MiB is left out, and symlinks are kept as
 root holds); the copy of the
 function's `artifact_dir` (read-only); `/dev/null`, `zero`, `full`, `random`, `urandom` and the `fd`/`stdin`/`stdout`/`stderr` links; a fresh
 `/proc` of its own PID namespace; and `/tmp` (also `/dev/shm`), a tmpfs of `max_disk_bytes`, the only writable place.
-There is no `/home`, `/root`, `/var`, `/run`, `/srv`, `/mnt`, `/media`, `/sys`, rest of `/etc`, nor the Node's
-config or state directory (the Node passes both to the worker and the probe checks them).
+There is no `/home`, `/root`, `/var`, `/run`, `/srv`, `/mnt`, `/media`, `/sys`, rest of `/etc`, nor the Link's
+config or state directory (the Link passes both to the worker and the probe checks them).
 
 **The seccomp filter.** A system call of another architecture (or the x32 ABI) kills or fails; `clone` with a
 namespace flag fails, `clone3` fails `ENOSYS` (libc falls back to `clone`); `socket` is limited to Unix, IPv4, IPv6
@@ -353,8 +353,8 @@ API, `mbind`/`set_mempolicy` and the `pkey_*` calls.
 
 What it does **not** protect against:
 
-- **`allow_same_user`** (development only): the job keeps the Node user's supplementary groups. It still sees only
-  the private root, read-only, and none of the Node's directories.
+- **`allow_same_user`** (development only): the job keeps the Link user's supplementary groups. It still sees only
+  the private root, read-only, and none of the Link's directories.
 - **The kernel**: the seccomp allowlist still leaves the common surface (files, memory, sockets, `ioctl`,
   `prctl`) and what an unprivileged user namespace allows; keep the kernel patched.
 - **`mem_bytes` and CPU time are also sampled** for the usage report and the `limit` reason; the cgroup enforces
@@ -373,24 +373,24 @@ What it does **not** protect against:
 
 How `public` and `openvibe-only` are enforced (`internal/worker/egress_linux.go`):
 
-- **A veth per job.** Before the job starts, the Node makes a veth pair `ovw<n>`/`ovw<n>j` and gives the two ends a
+- **A veth per job.** Before the job starts, the Link makes a veth pair `ovw<n>`/`ovw<n>j` and gives the two ends a
   `/30` of `169.254.240.0/20` (link-local: an address no job may reach, so no job reaches another's). Once the
   sandbox stands, and before the function executes, it moves `ovw<n>j` into the job's network namespace, addresses it
   with a default route through `ovw<n>` and reads the namespace back: that interface alone up (the loopback stays
   down), that route and its `/30` alone. The job cannot change any of it: it holds no capability. Deleted when the
   job ends.
-- **NAT and filtering in the host's namespace**, in the Node's own nftables table `inet openvibe_worker`, written whole
+- **NAT and filtering in the host's namespace**, in the Link's own nftables table `inet openvibe_worker`, written whole
   in one transaction each time a job's veth is made (a firewall reload that dropped it is undone by the next job;
   other tables are left alone, and a firewall that drops forwarded traffic still does). What a job sends is
   masqueraded out of the host's default route. Refused, with a TCP reset (otherwise ICMP administratively prohibited),
   so a job sees "connection refused" at once: anything addressed to the host itself; IPv6; anything not leaving by an
   interface of the host's IPv4 default route; the refused ranges listed under `egress`; `egress_deny`; and, under
   `openvibe-only`, anything outside `egress_allow`. Nothing new reaches a job; only replies do.
-- **Needs**: the Node running as root (`run_as`), `ip` and `nsenter` (iproute2, util-linux) and `nft` (nftables) in
-  `/usr/sbin`, `/sbin`, `/usr/bin` or `/bin`, IPv4 forwarding on (`sysctl net.ipv4.ip_forward=1`: the Node does not
+- **Needs**: the Link running as root (`run_as`), `ip` and `nsenter` (iproute2, util-linux) and `nft` (nftables) in
+  `/usr/sbin`, `/sbin`, `/usr/bin` or `/bin`, IPv4 forwarding on (`sysctl net.ipv4.ip_forward=1`: the Link does not
   turn it on, which would make the host a router for every interface; the owner does) and an IPv4 default route.
   Without one of them the probe fails and so does every job.
-- **DNS.** The Node runs no resolver for jobs, and the host's (`127.0.0.53` on most systems) is out of a job's
+- **DNS.** The Link runs no resolver for jobs, and the host's (`127.0.0.53` on most systems) is out of a job's
   reach. `worker.dns` (up to three IPv4 addresses, empty by default) becomes the `/etc/resolv.conf` of a job that runs
   with a network: public addresses only, and under `openvibe-only` only inside `egress_allow`, so it names nothing a
   job could not reach anyway. Without it a job resolves nothing and connects by address. `install.sh --worker` sets
@@ -402,11 +402,11 @@ How `public` and `openvibe-only` are enforced (`internal/worker/egress_linux.go`
 
 A coding CLI signs in with a file in the owner's home: `~/.claude/.credentials.json`, `~/.codex/auth.json`,
 `~/.local/share/opencode/auth.json` and the like. A job that runs on the owner's machine wants the plan the owner
-signed in for, but a job is code from a task, so it may not read the owner's files, and the Node may not send a
+signed in for, but a job is code from a task, so it may not read the owner's files, and the Link may not send a
 credential anywhere.
 
 So the owner names the files (`worker.plan_logins`, **off by default**: a job sees no credential of any kind until they
-do), and the Node copies each one into that one job's private home, **read-only** (mode `0400`: the job may read it,
+do), and the Link copies each one into that one job's private home, **read-only** (mode `0400`: the job may read it,
 never change it), at the same path it has under the owner's home. The copy goes with the job: it is made in the job's
 own directory and disappears when the job ends. Its content is never logged, never uploaded and never part of a result.
 
@@ -417,7 +417,7 @@ command, and sets the service's `HOME` to your home. It only looks at whether ea
 never read, copied or printed. Sign a tool in with its own login, then run the installer again with `--plan-logins` to
 name the new file.
 
-- **What may be named.** An absolute path under the Node user's home, and a plain file. A path outside the home, a
+- **What may be named.** An absolute path under the Link user's home, and a plain file. A path outside the home, a
   directory or a symlink is refused when the config loads.
 - **Which home.** The service's `HOME`, which `install.sh --plan-logins` sets to the owner's home. A
   `sudo openvibe-link …` command uses the sudo user's home for the same check, so the CLI and the service see the same
@@ -426,7 +426,7 @@ name the new file.
   there but cannot be read, or is not a plain file, ends the job: a half-copied credential is worse than none.
 - **What the job sees.** `openvibe-codes logins` (the Codes job runner) reports each CLI as installed, signed in, and
   with the limit windows its login file carries, and nothing else: no key, no token, no account name.
-### Desks in the sandbox (`openvibe-link desk-sandbox`, Node v0.32.0)
+### Desks in the sandbox (`openvibe-link desk-sandbox`, Link v0.32.0)
 
 A desk host for other people (docs/computer.md, "Desk hosts for other people") runs each desk's browser in this same
 sandbox: `openvibe-link desk-sandbox [--memory-mb N] [--cpu-millis N] [--disk-mb N] [--pids N] [--egress public]
@@ -437,26 +437,26 @@ sandbox: `openvibe-link desk-sandbox [--memory-mb N] [--cpu-millis N] [--disk-mb
   CPU-time limit: `cpu.max`, `memory.max` (swap off), `pids.max` and the size of its private `/tmp` are. No `RLIMIT_AS`
   either: a browser maps far more address space than it uses.
 - **Its binds.** Besides the system paths, only read-only `--bind`s under `/opt`, `/usr/local` or `/etc/fonts` (its
-  install directory, the fonts' configuration), never one that shows a Node directory or a hidden host path.
-- **Its config.** It reads the worker config of the Node that started its plugin (`OPENVIBE_NODE_CONFIG`,
-  `OPENVIBE_NODE_STATE`): `run_as`, `egress` (`--egress public` needs `public` there) and `dns`. Its cgroup is made
-  beside the Node's leaf, which the Node sets up when its worker is on, so a desk host keeps `worker.enabled` (with no
+  install directory, the fonts' configuration), never one that shows a Link directory or a hidden host path.
+- **Its config.** It reads the worker config of the Link that started its plugin (`OPENVIBE_LINK_CONFIG`,
+  `OPENVIBE_LINK_STATE`): `run_as`, `egress` (`--egress public` needs `public` there) and `dns`. Its cgroup is made
+  beside the Link's leaf, which the Link sets up when its worker is on, so a desk host keeps `worker.enabled` (with no
   functions, no jobs are offered).
 - **Its end.** SIGTERM (the plugin's close) kills everything in its cgroup and removes the cgroup, its network and its
   root; it exits with the program's code, or 125 when the sandbox could not be set up (the program never ran).
 
 ## Refusals and exit reasons
 
-Refused with `nack` (keyed by the job id; the first matching row wins, after the checks every Node does, in
+Refused with `nack` (keyed by the job id; the first matching row wins, after the checks every Link does, in
 [protocol.md](protocol.md#jobs)):
 
 | `message`                             | `fault_code`               | when                                                    |
 |---------------------------------------|----------------------------|---------------------------------------------------------|
 | `class not available`                 | `unsupported`              | the worker is off (disabled, not Linux, probe failed), or no declared entry has the job's class (`function`, `code` or `linux`) |
-| `job inputs not supported`            | `unsupported`              | the job carries `inputs` and `media` is off: this Node never runs a job with them silently dropped |
+| `job inputs not supported`            | `unsupported`              | the job carries `inputs` and `media` is off: this Link never runs a job with them silently dropped |
 | `net policy not supported`            | `unsupported`              | the job names a `net` this host cannot enforce (`public` or `openvibe-only` while `egress` is `none`) |
 | `the e-stop or local stop is latched` | `estopped` or `local_stop` | the stop latch is set                                   |
-| `class not available`                 | `shutting_down`            | the Node is stopping                                    |
+| `class not available`                 | `shutting_down`            | the Link is stopping                                    |
 | `unknown artifact`                    | `unsupported`              | no declared entry of the job's class has that name and exact version |
 | `worker busy`                         | `not_ready`                | `max_jobs` jobs are running                             |
 
@@ -468,5 +468,5 @@ Accepted jobs end with `job_exit.reason`:
 | `cancelled` | `job_cancel`; a job cancelled before it started never starts                                               |
 | `ttl`       | `ttl_ms` (clamped) ran out, before or while it ran                                                         |
 | `limit`     | `wall_ms`, `cpu_ms` (sampled, or `RLIMIT_CPU`'s SIGXCPU) or `mem_bytes` (sampled, or the cgroup's OOM kill) exceeded, stdout past `max_output_bytes`, or a result over 256 KiB (over `media.max_bytes` with `media` on) |
-| `stopped`   | the e-stop or local stop latched, or the Node shut down                                                    |
+| `stopped`   | the e-stop or local stop latched, or the Link shut down                                                    |
 | `failed`    | the job could not run isolated: sandbox, cgroup or namespaces not set up, spawn error, working directory not made, CPU limit not set; never run with less isolation. Also: an input not fetched or not matching its digest (nothing ran), or a large result not uploaded |

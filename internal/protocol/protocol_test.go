@@ -76,7 +76,7 @@ func fixture(t *testing.T, name string) []byte {
 }
 
 // TestBotFixtures decodes every frame Bot's docs/protocol.md shows for the device socket, copied verbatim into
-// testdata/bot, and checks the fields the Node reads.
+// testdata/bot, and checks the fields the Link reads.
 func TestBotFixtures(t *testing.T) {
 	decode := func(name string) Frame {
 		t.Helper()
@@ -118,7 +118,7 @@ func TestBotFixtures(t *testing.T) {
 	if e := decode("error").Msg.(Error); e.Code != "bot.forbidden" || e.Detail == "" {
 		t.Errorf("error %+v", e)
 	}
-	// What the device sends decodes too, so the Node's types carry Bot's field names.
+	// What the device sends decodes too, so the Link's types carry Bot's field names.
 	if a := decode("ack").Msg.(Ack); a.ID != "cmd_01J8Z4F…" {
 		t.Errorf("ack %+v", a)
 	}
@@ -185,7 +185,7 @@ func TestDecodeRejects(t *testing.T) {
 }
 
 // TestJobFrameFixtures decodes every valid platform.job-frame@1 fixture from OpenVibe.Contracts (testdata/contracts),
-// checks the fields the Node reads, and encodes it back to the same JSON object.
+// checks the fields the Link reads, and encodes it back to the same JSON object.
 func TestJobFrameFixtures(t *testing.T) {
 	const id = "job_01JAB2C3D4E5F6G7H8J9K0MNPQ"
 	for _, name := range []string{"job", "job-cancel", "job-exit-ack", "job-started", "job-stdout", "job-usage", "job-exit", "job-exit-never-started"} {
@@ -374,7 +374,7 @@ func TestJobInputsDecode(t *testing.T) {
 }
 
 // TestJobUndecodableBody: a job body of the wrong shape still decodes as a job frame, with the id and Err, so the
-// Node nacks it instead of dropping it.
+// Link nacks it instead of dropping it.
 func TestJobUndecodableBody(t *testing.T) {
 	f, err := Decode([]byte(`{"v":1,"seq":1,"ts":1,"type":"job","job":{"id":"job_01JAB2C3D4E5F6G7H8J9K0MNPQ","class":"function","ttl_ms":"soon"}}`))
 	if err != nil {

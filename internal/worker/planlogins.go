@@ -12,11 +12,11 @@ import (
 //
 // A CLI signs in with a file in the owner's home (~/.claude/.credentials.json, ~/.codex/auth.json,
 // ~/.local/share/opencode/auth.json and the like). A job that runs on the owner's machine wants the plan the owner
-// signed in for, but a job is code from a task: it must not be able to read the owner's files, and the Node must not
-// send a credential anywhere. So the owner names the files (worker.plan_logins, off by default), the Node copies each
+// signed in for, but a job is code from a task: it must not be able to read the owner's files, and the Link must not
+// send a credential anywhere. So the owner names the files (worker.plan_logins, off by default), the Link copies each
 // one into that one job's home, read-only, and the copy goes with the job.
 //
-// Nothing about the content leaves the machine: the copy is made on the Node, it is never logged, never uploaded and
+// Nothing about the content leaves the machine: the copy is made on the Link, it is never logged, never uploaded and
 // never part of a result.
 
 // planLoginName is the path of a plan login under the job's home: the path it has under the owner's home.
@@ -41,7 +41,7 @@ func stagePlanLogins(logins []string, root string) ([]string, error) {
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return nil, fmt.Errorf("the Node user's home is unknown: %w", err)
+		return nil, fmt.Errorf("the Link user's home is unknown: %w", err)
 	}
 	names := make([]string, 0, len(logins))
 	for _, p := range logins {

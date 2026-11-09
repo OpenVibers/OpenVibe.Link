@@ -22,8 +22,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/mono"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/mono"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 const ipcPlugin = `
@@ -163,7 +163,7 @@ func TestPythonRuntimeReadsTheCoresClock(t *testing.T) {
 }
 
 // hello names the clock expires_at_mono_ns is on, on every start (a restarted plugin hears it again), and passes the
-// Node's strict timing to the runtime.
+// Link's strict timing to the runtime.
 func TestHelloNamesTheSharedClock(t *testing.T) {
 	fx := start(t, "")
 	fx.waitState(StateReady)

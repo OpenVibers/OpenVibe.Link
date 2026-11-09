@@ -1,6 +1,6 @@
-// Package mobile is the Link phone's Go core. It is the same pairing and connection code the Node runs
+// Package mobile is the Link phone's Go core. It is the same pairing and connection code the Link runs
 // (internal/link), bound with `gomobile bind` into an AAR the Android app links against, so the phone pairs and
-// stays connected exactly as `openvibe-node pair --network … --pairing … --code …` does.
+// stays connected exactly as `openvibe-link pair --network … --pairing … --code …` does.
 //
 // The core keeps no secret on disk: Pair returns the credentials as JSON for the app to encrypt with a key in the
 // Android Keystore, and every later call takes that JSON back. Nothing here logs a credential or a token: the link's
@@ -18,9 +18,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
-	"github.com/OpenVibers/OpenVibe.Node/internal/link"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
+	"github.com/OpenVibers/OpenVibe.Link/internal/link"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 // Version is what the phone tells the services it is.
@@ -32,10 +32,10 @@ const DeviceKind = "phone"
 const userAgent = "openvibe-link/" + Version
 
 // pairing is the credential bundle Pair and Bind return as JSON. The field names match the ones the CLI stores, so
-// a credential file from a phone could be read by the Node and the other way round.
+// a credential file from a phone could be read by the Link and the other way round.
 type pairing struct {
 	Principal      string              `json:"principal"`
-	NodeCredential string              `json:"node_credential"`
+	LinkCredential string              `json:"link_credential"`
 	Network        string              `json:"network"`
 	DeviceID       string              `json:"device_id,omitempty"`
 	RobotID        string              `json:"robot_id,omitempty"`
@@ -56,20 +56,20 @@ func NormalizeCode(code string) (string, error) {
 }
 
 // Pair redeems a pairing code on OpenVibe.Network and binds the phone as a device on OpenVibe.Bot. It returns the
-// credential bundle as JSON. A bind that fails is not fatal: Start binds again, exactly as the Node does.
+// credential bundle as JSON. A bind that fails is not fatal: Start binds again, exactly as the Link does.
 func Pair(networkURL, botURL, code, name, pairingID string) (string, error) {
 	code, err := link.NormalizeCode(code)
 	if err != nil {
 		return "", err
 	}
 	// The QR on openvibe.bot/link/phone carries the pair_… id, so a wrong code is counted against that pairing's code,
-	// exactly as `openvibe-node pair --network … --pairing … --code …` does. A typed code may omit it.
+	// exactly as `openvibe-link pair --network … --pairing … --code …` does. A typed code may omit it.
 	if pairingID != "" && !link.PairingIDRe.MatchString(pairingID) {
 		return "", errors.New("the pairing id is not valid; scan the QR again for a fresh code")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	c, err := link.PairNetwork(ctx, nil, networkURL, protocol.NodePairingRequest{Code: code, Pairing: pairingID, Name: name}, userAgent)
+	c, err := link.PairNetwork(ctx, nil, networkURL, protocol.LinkPairingRequest{Code: code, Pairing: pairingID, Name: name}, userAgent)
 	if err != nil {
 		return "", err
 	}
@@ -80,7 +80,7 @@ func Pair(networkURL, botURL, code, name, pairingID string) (string, error) {
 	p := pairingOf(c)
 	if bound, err := link.Bind(ctx, nil, c, link.NewTokenSource(c, nil, userAgent), userAgent); err == nil {
 		p = pairingOf(bound)
-	} else if errors.Is(err, link.ErrNodeRevoked) {
+	} else if errors.Is(err, link.ErrLinkRevoked) {
 		return "", err
 	}
 	return marshalPairing(p)
@@ -234,7 +234,7 @@ func emit(l Listener, state, detail string) {
 
 func pairingOf(c *credentials.Credentials) pairing {
 	return pairing{
-		Principal: c.Principal, NodeCredential: c.NodeCredential.Reveal(), Network: c.Network,
+		Principal: c.Principal, LinkCredential: c.LinkCredential.Reveal(), Network: c.Network,
 		DeviceID: c.DeviceID, RobotID: c.RobotID, Server: c.Server, PairedFor: c.PairedFor, PairedAt: c.PairedAt,
 	}
 }
@@ -257,11 +257,11 @@ func parsePairing(s string) (*credentials.Credentials, error) {
 	if err != nil {
 		return nil, err
 	}
-	if p.Principal == "" || p.NodeCredential == "" || p.Network == "" {
+	if p.Principal == "" || p.LinkCredential == "" || p.Network == "" {
 		return nil, errors.New("this phone is not paired")
 	}
 	c := &credentials.Credentials{
-		Principal: p.Principal, NodeCredential: credentials.NewSecret(p.NodeCredential), Network: trimSlash(p.Network),
+		Principal: p.Principal, LinkCredential: credentials.NewSecret(p.LinkCredential), Network: trimSlash(p.Network),
 		DeviceID: p.DeviceID, RobotID: p.RobotID, Server: trimSlash(p.Server), PairedFor: p.PairedFor, PairedAt: p.PairedAt,
 	}
 	if c.Server == "" {

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
+	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
 )
 
 func TestPublishTestPatternOverWHIP(t *testing.T) {

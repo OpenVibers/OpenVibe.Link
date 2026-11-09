@@ -25,6 +25,7 @@ jobs:
       # The end-to-end tests run the real Python dry-run plugin; PyAV (+ numpy) decodes the test pattern with libavcodec.
       - run: pip install av numpy
       - run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - run: sh scripts/test-link-brand.sh
       - run: go vet ./...
       # The job worker's tests skip where jobs cannot run sandboxed: unprivileged, the runner's cgroup is not delegated
       # (and Ubuntu's AppArmor restricts unprivileged user namespaces).
@@ -42,7 +43,7 @@ jobs:
       - name: tray notifications (private D-Bus)
         run: |
           command -v dbus-run-session >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq dbus; }
-          dbus-run-session -- go test -race -count=1 -v -run DesktopNotifier ./cmd/openvibe-node | tee /tmp/notify.log
+          dbus-run-session -- go test -race -count=1 -v -run DesktopNotifier ./cmd/openvibe-link | tee /tmp/notify.log
           grep -q -- '--- PASS: TestDesktopNotifierAsksAndHearsTheButtons' /tmp/notify.log
       # So they run again as root (jobs as nobody), in a systemd scope with its cgroup delegated, where
       # OPENVIBE_WORKER_TESTS=require makes them fail instead of skipping. Each test binary lies alone in a directory
@@ -50,7 +51,7 @@ jobs:
       - name: worker sandbox tests (root)
         run: |
           d=$(mktemp -d) && chmod 755 "$d"
-          for t in 'worker .' 'node ^(TestJobRunsOverTheLink|TestLocalStopEndsJobs)$'; do
+          for t in 'worker .' 'agent ^(TestJobRunsOverTheLink|TestLocalStopEndsJobs)$'; do
             set -- $t
             mkdir -m 755 "$d/$1"
             go test -race -c -o "$d/$1/$1.test" ./internal/$1
@@ -58,20 +59,20 @@ jobs:
               env OPENVIBE_WORKER_TESTS=require "$d/$1/$1.test" -test.count=1 -test.v -test.run "$2")
           done
       # A desk host for other people (computer plugin desk_isolation sandbox): the plugin, as root, drives a real
-      # browser desk through `openvibe-node desk-sandbox`. The shell stands in for the Node, which moves itself into its
-      # openvibe-node leaf and enables the controllers (its worker's probe) before any plugin starts.
+      # browser desk through `openvibe-link desk-sandbox`. The shell stands in for the Node, which moves itself into its
+      # openvibe-link leaf and enables the controllers (its worker's probe) before any plugin starts.
       - name: shared desk host (root)
         run: |
           d=$(mktemp -d) && chmod 755 "$d"
-          go build -o "$d/openvibe-node" ./cmd/openvibe-node
+          go build -o "$d/openvibe-link" ./cmd/openvibe-link
           mkdir -m 700 "$d/config" "$d/state"
           echo '{"worker":{"enabled":true,"run_as":{"uid":65534,"gid":65534}}}' > "$d/config/config.json"
           sudo systemd-run --scope --quiet -p Delegate=yes env OPENVIBE_DESK_SANDBOX_TESTS=require \
-            OPENVIBE_NODE_EXE="$d/openvibe-node" OPENVIBE_NODE_CONFIG="$d/config" OPENVIBE_NODE_STATE="$d/state" sh -c '
+            OPENVIBE_LINK_EXE="$d/openvibe-link" OPENVIBE_LINK_CONFIG="$d/config" OPENVIBE_LINK_STATE="$d/state" sh -c '
               cg=/sys/fs/cgroup$(sed -n "s/^0:://p" /proc/self/cgroup)
-              mkdir "$cg/openvibe-node" && echo $$ > "$cg/openvibe-node/cgroup.procs"
+              mkdir "$cg/openvibe-link" && echo $$ > "$cg/openvibe-link/cgroup.procs"
               echo "+memory +pids +cpu +io" > "$cg/cgroup.subtree_control"
-              : | "$OPENVIBE_NODE_EXE" desk-sandbox --memory-mb 256 -- /bin/sh -c "echo desk-sandbox runs >&4" 3<&0 4>&1 | cat
+              : | "$OPENVIBE_LINK_EXE" desk-sandbox --memory-mb 256 -- /bin/sh -c "echo desk-sandbox runs >&4" 3<&0 4>&1 | cat
               exec python3 plugins/computer/tests/test_shared_desks.py -v RealSharedDeskTest'
 
   build:
@@ -100,17 +101,15 @@ jobs:
             dist/openvibe-link_*_darwin_amd64.tar.gz dist/openvibe-link_*_darwin_arm64.tar.gz; do
             test -s "$f" || { echo "missing $f"; exit 1; }
           done
-      - name: the packages carry the program and the alias, not just a file
+      - name: the packages carry the program, not just a file
         run: |
           for f in dist/*.deb; do
             dpkg-deb -c "$f" > /tmp/pkg.txt
             grep -q 'usr/local/bin/openvibe-link$' /tmp/pkg.txt
-            grep -q 'usr/local/bin/openvibe-node -> openvibe-link$' /tmp/pkg.txt
           done
           for f in dist/*.rpm; do
             rpm -qpl "$f" > /tmp/pkg.txt
             grep -qx '/usr/local/bin/openvibe-link' /tmp/pkg.txt
-            grep -qx '/usr/local/bin/openvibe-node' /tmp/pkg.txt
           done
           for f in dist/openvibe-link_*.tar.gz; do
             tar -tzf "$f" > /tmp/pkg.txt
@@ -263,5 +262,5 @@ jobs:
       - name: Compile the example against this tree's library
         run: |
           mkdir -p build/ovlibs
-          cp -r esp32 build/ovlibs/OpenVibeNode
+          cp -r esp32 build/ovlibs/OpenVibeLink
           arduino-cli compile --fqbn esp32:esp32:esp32 --libraries build/ovlibs esp32/examples/Basic

@@ -17,8 +17,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/config"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 // clkTck is USER_HZ, the unit of /proc/<pid>/stat times: 100 on every architecture Go runs Linux on.
@@ -28,10 +28,10 @@ var pageSize = int64(os.Getpagesize())
 
 const capSysAdmin = 21
 
-// isolate turns cmd into the start of a sandboxed job (see sandbox_linux.go): the Node's own executable re-run as the
+// isolate turns cmd into the start of a sandboxed job (see sandbox_linux.go): the Link's own executable re-run as the
 // sandbox init, in its own process group, in new user, mount, network (a loopback that is down, and under egress public
 // or openvibe-only a veth, egress_linux.go), PID, IPC, UTS and cgroup namespaces, inside the job's cgroup v2 (made here), with PR_SET_PDEATHSIG SIGKILL. It runs as worker.run_as
-// (no supplementary groups; the Node must be root) or, with allow_same_user, as the Node's own non-root user. cmd's
+// (no supplementary groups; the Link must be root) or, with allow_same_user, as the Link's own non-root user. cmd's
 // path, args, env and dir become the function's, run once the sandbox stands; cmd.ExtraFiles holds at most fd 3. The
 // function's artifact directory is opened here and copied by the init (stageArtifact).
 func isolate(cmd *exec.Cmd, cfg config.WorkerConfig, p plan) (*sandbox, error) {
@@ -45,14 +45,14 @@ func isolate(cmd *exec.Cmd, cfg config.WorkerConfig, p plan) (*sandbox, error) {
 	if len(cmd.ExtraFiles) > 1 {
 		return nil, errors.New("isolate: a job has fd 3 only")
 	}
-	binds, links, err := rootPlan(cfg.NodeDirs)
+	binds, links, err := rootPlan(cfg.LinkDirs)
 	if err != nil {
 		return nil, err
 	}
 	caps := cfg.Caps.WithDefaults()
 	sb := &sandbox{}
 	fail := func(err error) (*sandbox, error) { sb.close(); return nil, err }
-	art, err := openArtifact(cfg.NodeDirs, binds, links, p.fn.Artifact())
+	art, err := openArtifact(cfg.LinkDirs, binds, links, p.fn.Artifact())
 	if err != nil {
 		return fail(err)
 	}
@@ -155,7 +155,7 @@ func jobAttr(cfg config.WorkerConfig) (*syscall.SysProcAttr, error) {
 	switch {
 	case cfg.RunAs != nil:
 		if uid != 0 {
-			return nil, errors.New("worker.run_as needs the Node to run as root")
+			return nil, errors.New("worker.run_as needs the Link to run as root")
 		}
 		r := cfg.RunAs
 		attr.UidMappings = []syscall.SysProcIDMap{{ContainerID: int(r.UID), HostID: int(r.UID), Size: 1}}
@@ -164,7 +164,7 @@ func jobAttr(cfg config.WorkerConfig) (*syscall.SysProcAttr, error) {
 		attr.Credential = &syscall.Credential{Uid: r.UID, Gid: r.GID} // no Groups: setgroups(0) drops root's groups
 	case cfg.AllowSameUser:
 		if uid == 0 {
-			return nil, errors.New("the Node runs as root: set worker.run_as instead of allow_same_user")
+			return nil, errors.New("the Link runs as root: set worker.run_as instead of allow_same_user")
 		}
 		attr.UidMappings = []syscall.SysProcIDMap{{ContainerID: uid, HostID: uid, Size: 1}}
 		attr.GidMappings = []syscall.SysProcIDMap{{ContainerID: gid, HostID: gid, Size: 1}}
@@ -174,7 +174,7 @@ func jobAttr(cfg config.WorkerConfig) (*syscall.SysProcAttr, error) {
 	return attr, nil
 }
 
-// sandbox is a job's sandbox as the Node holds it: the status pipe of its init, the pipe that lets it execute the
+// sandbox is a job's sandbox as the Link holds it: the status pipe of its init, the pipe that lets it execute the
 // function, the descriptors the child inherits (closed once it started), its cgroup and its veth (nil under none).
 type sandbox struct {
 	cg     *jobCgroup
@@ -184,7 +184,7 @@ type sandbox struct {
 	child  []*os.File
 }
 
-// started closes the Node's copies of what the child inherited.
+// started closes the Link's copies of what the child inherited.
 func (s *sandbox) started() {
 	for _, f := range s.child {
 		f.Close()
@@ -274,9 +274,9 @@ func (s *sandbox) close() {
 // the process has user, mount, network, PID, IPC, UTS and cgroup namespaces of its own, no_new_privs and the seccomp
 // filter; nothing but its /tmp, /proc and device nodes is mounted writable; it is in its job cgroup; its rlimits
 // (RLIMIT_AS included: max_vm_bytes must be set) are set; every block device has its io.max; its root holds none of
-// the Node's directories nor hiddenPaths (/var, the host's private keys); its CPU limit can be set and its usage read.
+// the Link's directories nor hiddenPaths (/var, the host's private keys); its CPU limit can be set and its usage read.
 // It does so for every policy a job may run under: none (a job whose net is absent, deny or none) and worker.egress, whose veth must
-// then stand as the only interface up with the default route through it, the Node's nftables table written. It also
+// then stand as the only interface up with the default route through it, the Link's nftables table written. It also
 // checks that no declared function's artifact directory is refused. Any failure keeps the class off: there is no
 // weaker mode, never none in place of public nor an open network.
 func probe(cfg config.WorkerConfig, isolate isolateFunc) error {
@@ -295,12 +295,12 @@ func probe(cfg config.WorkerConfig, isolate isolateFunc) error {
 			return fmt.Errorf("worker.egress %s: %w", egress, err)
 		}
 	}
-	binds, links, err := rootPlan(cfg.NodeDirs)
+	binds, links, err := rootPlan(cfg.LinkDirs)
 	if err != nil {
 		return err
 	}
 	for _, f := range cfg.Functions {
-		err := checkArtifact(cfg.NodeDirs, f.Artifact())
+		err := checkArtifact(cfg.LinkDirs, f.Artifact())
 		if err == nil && f.Artifact() != "" {
 			err = checkRoute(binds, links, f.Artifact(), trustedUIDs())
 		}
@@ -378,7 +378,7 @@ func probeSandbox(cfg config.WorkerConfig, isolate isolateFunc, egress string) e
 			return fmt.Errorf("the probe process's rlimit %d is %d/%d, not %d (%v)", res, got.Cur, got.Max, v, e)
 		}
 	}
-	for _, d := range append(append([]string(nil), hiddenPaths...), cfg.NodeDirs...) {
+	for _, d := range append(append([]string(nil), hiddenPaths...), cfg.LinkDirs...) {
 		if _, err := os.Lstat(proc + "/root" + filepath.Clean(d)); !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("the probe process can see %s (%v)", d, err)
 		}

@@ -1,7 +1,7 @@
 package link
 
 // The Network pairing (ADR-043 B3 v2): the machine redeems a one-time code on OpenVibe.Network for a node principal
-// (nod_…) and its node credential, buys short-lived node tokens with that credential, and presents a token (audience
+// (lnk_…) and its node credential, buys short-lived node tokens with that credential, and presents a token (audience
 // openvibe.bot) to Bot: once to POST /api/v1/devices/bind for its device and WHIP publish key, then on every /device
 // upgrade and in `reauth` frames. Neither the code, the credential nor a token is ever logged or put in an error.
 
@@ -19,20 +19,20 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 // PairingIDRe matches a Network pairing id (pair_ + a ULID), the --pairing of the installer command.
 var PairingIDRe = regexp.MustCompile(`^pair_[0-9A-HJKMNP-TV-Z]{26}$`)
 
-// principalRe matches a node principal (nod_ + a ULID).
-var principalRe = regexp.MustCompile(`^nod_[0-9A-HJKMNP-TV-Z]{26}$`)
+// principalRe matches a node principal (lnk_ + a ULID).
+var principalRe = regexp.MustCompile(`^lnk_[0-9A-HJKMNP-TV-Z]{26}$`)
 
-// ErrNodeRevoked is Network refusing the node credential at /oauth/token (401 invalid_client): the machine was
-// revoked or removed. Retrying cannot help, so the Node stops and says how to pair again.
-var ErrNodeRevoked = errors.New("OpenVibe.Network refused this machine's node credential (revoked or removed): " +
-	"get a new installer command on openvibe.bot and pair again with `sudo openvibe-node pair --force --network <URL> --pairing <pair_…> --code <CODE>`")
+// ErrLinkRevoked is Network refusing the node credential at /oauth/token (401 invalid_client): the machine was
+// revoked or removed. Retrying cannot help, so the Link stops and says how to pair again.
+var ErrLinkRevoked = errors.New("OpenVibe.Network refused this machine's node credential (revoked or removed): " +
+	"get a new installer command on openvibe.bot and pair again with `sudo openvibe-link pair --force --network <URL> --pairing <pair_…> --code <CODE>`")
 
 // TokenSkew is how long before its expiry a cached node token is replaced.
 const TokenSkew = 30 * time.Second
@@ -66,9 +66,9 @@ func defaultClient(c *http.Client) *http.Client {
 	return c
 }
 
-// PairNetwork redeems a Network pairing code with POST <network>/api/v1/node-pairing. The result holds the node
+// PairNetwork redeems a Network pairing code with POST <network>/api/v1/link-pairing. The result holds the node
 // principal and credential but no device yet: Bind fills that in.
-func PairNetwork(ctx context.Context, client *http.Client, network string, req protocol.NodePairingRequest, userAgent string) (*credentials.Credentials, error) {
+func PairNetwork(ctx context.Context, client *http.Client, network string, req protocol.LinkPairingRequest, userAgent string) (*credentials.Credentials, error) {
 	network = strings.TrimSuffix(network, "/")
 	if err := checkOrigin(network, "network"); err != nil {
 		return nil, err
@@ -77,7 +77,7 @@ func PairNetwork(ctx context.Context, client *http.Client, network string, req p
 	if err != nil {
 		return nil, err
 	}
-	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, network+protocol.NodePairingPath, bytes.NewReader(body))
+	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, network+protocol.LinkPairingPath, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -103,14 +103,14 @@ func PairNetwork(ctx context.Context, client *http.Client, network string, req p
 		}
 		return nil, fmt.Errorf("pairing refused: HTTP %d %s %s", resp.StatusCode, pe.Code, problemText(pe))
 	}
-	var pr protocol.NodePairingResponse
+	var pr protocol.LinkPairingResponse
 	if err := json.Unmarshal(raw, &pr); err != nil {
 		return nil, errors.New("pairing response is not valid JSON")
 	}
 	if !principalRe.MatchString(pr.Principal) || pr.Credential == "" {
 		return nil, errors.New("pairing response has no node principal or credential")
 	}
-	c := &credentials.Credentials{Principal: pr.Principal, NodeCredential: credentials.NewSecret(pr.Credential), Network: network,
+	c := &credentials.Credentials{Principal: pr.Principal, LinkCredential: credentials.NewSecret(pr.Credential), Network: network,
 		PairedFor: pr.PairedFor, PairedAt: time.Now().UTC()}
 	if pr.PairedFor != nil {
 		c.RobotID = pr.PairedFor.Ref
@@ -160,7 +160,7 @@ const ConnectAudience = "openvibe.link"
 
 // NewTokenSourceFor returns a token source for another audience the machine may speak to (ConnectAudience).
 func NewTokenSourceFor(c *credentials.Credentials, client *http.Client, userAgent, audience string) *TokenSource {
-	return &TokenSource{network: strings.TrimSuffix(c.Network, "/"), principal: c.Principal, credential: c.NodeCredential,
+	return &TokenSource{network: strings.TrimSuffix(c.Network, "/"), principal: c.Principal, credential: c.LinkCredential,
 		audience: audience, client: defaultClient(client), userAgent: userAgent, now: time.Now}
 }
 
@@ -171,7 +171,7 @@ func (s *TokenSource) Invalidate() {
 	s.mu.Unlock()
 }
 
-// Token returns a node token, cached or fresh. A refused credential is ErrNodeRevoked.
+// Token returns a node token, cached or fresh. A refused credential is ErrLinkRevoked.
 func (s *TokenSource) Token(ctx context.Context) (credentials.Secret, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -201,7 +201,7 @@ func (s *TokenSource) Token(ctx context.Context) (credentials.Secret, error) {
 	}
 	switch {
 	case resp.StatusCode == http.StatusUnauthorized:
-		return credentials.Secret{}, ErrNodeRevoked
+		return credentials.Secret{}, ErrLinkRevoked
 	case resp.StatusCode/100 != 2:
 		var oe protocol.OAuthError
 		_ = json.Unmarshal(raw, &oe)
@@ -221,11 +221,11 @@ func (s *TokenSource) Token(ctx context.Context) (credentials.Secret, error) {
 
 // bindMessages turns Bot's refusals of POST /api/v1/devices/bind into what to do next.
 var bindMessages = map[string]string{
-	"bot.node_token_required": "Bot did not take the node token (audience openvibe.bot)",
-	"bot.node_not_bound":      "Bot will not bind this machine (revoked there, paired for another service or for someone else's robot): pair it again with a new code from openvibe.bot",
+	"bot.link_token_required": "Bot did not take the Link token (audience openvibe.bot)",
+	"bot.link_not_bound":      "Bot will not bind this machine (revoked there, paired for another service or for someone else's robot): pair it again with a new code from openvibe.bot",
 }
 
-// Bind calls POST <bot>/api/v1/devices/bind with a node token and returns c with the answer's device fields (device
+// Bind calls POST <bot>/api/v1/devices/bind with a Link token and returns c with the answer's device fields (device
 // id, robot, WHIP publish key and URL, profile), exactly as Pair returns them. A 401 refetches the token once.
 // Every call issues a new publish key (the old one stops working), so bind only when the device record is missing.
 func Bind(ctx context.Context, client *http.Client, c *credentials.Credentials, tokens *TokenSource, userAgent string) (*credentials.Credentials, error) {

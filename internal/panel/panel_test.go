@@ -336,8 +336,8 @@ func TestFirstRunWithoutAWayToRecordItSaysSo(t *testing.T) {
 func TestFilesSendEncryptedEnvelope(t *testing.T) {
 	var gotTarget, gotEnvelope string
 	srv := testServer(t, Options{SendFile: func(target, envelope string) error { gotTarget, gotEnvelope = target, envelope; return nil }})
-	w := do(t, srv, http.MethodPost, "/panel/api/files", testToken, "", `{"target_node":"nod_example","envelope":"Y2lwaGVydGV4dA=="}`)
-	if w.Code != http.StatusCreated || gotTarget != "nod_example" || gotEnvelope != "Y2lwaGVydGV4dA==" {
+	w := do(t, srv, http.MethodPost, "/panel/api/files", testToken, "", `{"target_node":"lnk_example","envelope":"Y2lwaGVydGV4dA=="}`)
+	if w.Code != http.StatusCreated || gotTarget != "lnk_example" || gotEnvelope != "Y2lwaGVydGV4dA==" {
 		t.Fatalf("send: status %d target %q envelope %q body %s", w.Code, gotTarget, gotEnvelope, w.Body)
 	}
 }

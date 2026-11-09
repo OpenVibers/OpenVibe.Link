@@ -6,7 +6,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
 )
 
 // DeskSpec is one desk's program as RunDesk runs it; off Linux a desk never runs sandboxed (desk_linux.go).

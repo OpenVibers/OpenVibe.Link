@@ -2,13 +2,13 @@
 
 Many people already run models at home (Ollama, llama.cpp's server, LM Studio). This plugin lets OpenVibe use them for
 their owner, for Vibe's answers or an agent's thinking, without the prompt leaving the machine's network and with no
-open port: OpenVibe.AI asks OpenVibe.Bot, Bot sends the Node one ``ai`` command over the connection the Node already
+open port: OpenVibe.AI asks OpenVibe.Bot, Bot sends the Link one ``ai`` command over the connection the Link already
 keeps, and this plugin relays it to the local model server and answers with the reply.
 
 It reaches one place only, the server in its config, and it reads and changes nothing else on the machine. A request
 runs at once up to the owner's ``offer.concurrency`` (1 by default: a model is heavy); another is refused as busy,
 never queued. The owner turns it on twice: by adding the plugin here, and by "Let my AI use this computer's models" on
-openvibe.bot/machines.
+openvibe.link/machines.
 
 Offer to the network (the /sell settings, plugin 0.3.0): ``offer.enabled`` lets other people's requests that opt in to
 community capacity run here; the plugin advertises the offer in ``describe`` (status.capabilities.ai.ai.offer), Bot
@@ -43,7 +43,7 @@ them and sends the next command with the assistant's message (its ``tool_calls``
 
 Machine pools (plugin 0.4.0, Linux; the pooled machines design, 2026-11-06): with ``pool_directory`` set, this machine
 serves one model together with other machines of the same owner on the same local network, through llama.cpp RPC
-(``rpc-server`` on the members, ``llama-server --rpc`` on the head). The pool is proposed on openvibe.network/machines
+(``rpc-server`` on the members, ``llama-server --rpc`` on the head). The pool is proposed on openvibe.link/machines
 and approved on each machine with ``python -m openvibe_ai.pool_cli approve``; until then the plugin announces the
 machine every minute (``pool_credential_file``, ``pool_address``, ``pool_port``). ``pool_engine`` names the engine:
 ``{rpc_binary, llama_binary, model_path, model: {model, parameters_b, memory_mb}, context?}``. The RPC engine is
@@ -165,7 +165,7 @@ def _offer_config(cfg, served):
     ``offer.models`` defaults to the models this machine serves; ``hours`` is one local-time window (start == end
     means all day and an overnight window is allowed); ``concurrency`` caps how many community replies run at once;
     ``price`` is credits per million input and output tokens (0 is volunteering); ``audience`` is everyone, followers
-    or one group. The Node enforces enabled, hours, models and concurrency; the router enforces the audience, since
+    or one group. The Link enforces enabled, hours, models and concurrency; the router enforces the audience, since
     only it can resolve a requester's followers and groups.
     """
     raw = cfg.get("offer")
@@ -619,7 +619,7 @@ class Ai(Plugin):
 
     def on_stop(self, info):
         """The kill switch on this machine (an emergency stop) stops the whole pool now and holds it until the latch is
-        cleared; the Node stopping closes it and keeps the key. A turn's halt, a lost link or a command's timeout is not
+        cleared; the Link stopping closes it and keeps the key. A turn's halt, a lost link or a command's timeout is not
         about the pool. Without a pool, every stop is as before (nothing moves here)."""
         if not self.cfg.get("pool_directory"):
             return Plugin.on_stop(self, info)

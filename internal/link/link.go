@@ -1,4 +1,4 @@
-// Package link keeps the Node's one outbound control connection to OpenVibe.Bot: a WebSocket to wss://<origin>/device
+// Package link keeps the Link's one outbound control connection to OpenVibe.Bot: a WebSocket to wss://<origin>/device
 // authenticated with the device credential in the Authorization header of the upgrade (never in the URL). It sends a
 // heartbeat every interval from the server's hello on, declares the link lost when nothing has arrived for the deadman
 // interval (two heartbeats by default; HelloAllowance before hello), and reconnects with exponential backoff and full
@@ -12,9 +12,9 @@
 //
 // A Network-paired machine (Options.Tokens) presents a node token instead of the credential: a fresh one on every
 // upgrade after a refusal, and a `reauth` frame with a fresh one every ReauthInterval (Bot closes 4002 when none
-// arrives within 330 s). Network refusing the node credential (ErrNodeRevoked) is the one error that ends Run.
+// arrives within 330 s). Network refusing the node credential (ErrLinkRevoked) is the one error that ends Run.
 //
-// Every server frame's ts also feeds an estimate of the server's clock (ServerNow), which the Node uses to read the
+// Every server frame's ts also feeds an estimate of the server's clock (ServerNow), which the Link uses to read the
 // absolute deadline_ms of a command.
 package link
 
@@ -33,9 +33,9 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
-	"github.com/OpenVibers/OpenVibe.Node/internal/mono"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
+	"github.com/OpenVibers/OpenVibe.Link/internal/mono"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 // ErrOffline is returned by Send while there is no connection.
@@ -44,7 +44,7 @@ var ErrOffline = errors.New("link offline")
 // Handler receives link events. Calls are made from the link's goroutines, one at a time per connection.
 type Handler interface {
 	// Connected runs when the server's hello arrives, before the hello itself reaches Frame. Bot sends config right
-	// after hello; the Node holds its first status and estop_state (and every motion command) until that config.
+	// after hello; the Link holds its first status and estop_state (and every motion command) until that config.
 	Connected()
 	// Frame is every decoded server frame except heartbeat_ack and error.
 	Frame(f protocol.Frame)
@@ -273,8 +273,8 @@ func (l *Link) Send(m protocol.Message) error {
 }
 
 // Run connects and reconnects until ctx ends (it then returns nil). A refused or revoked credential does not end it:
-// the owner may pair the device again, and the Node retries every CredentialRetryMin or more, saying so in the log.
-// Only ErrNodeRevoked ends it early, returned: the node credential itself is dead and the machine must pair again.
+// the owner may pair the device again, and the Link retries every CredentialRetryMin or more, saying so in the log.
+// Only ErrLinkRevoked ends it early, returned: the node credential itself is dead and the machine must pair again.
 func (l *Link) Run(ctx context.Context) error {
 	attempt := 0
 	for ctx.Err() == nil {
@@ -285,7 +285,7 @@ func (l *Link) Run(ctx context.Context) error {
 		}
 		msg := errMsg(err)
 		l.lastErr.Store(msg)
-		if errors.Is(err, ErrNodeRevoked) {
+		if errors.Is(err, ErrLinkRevoked) {
 			l.log.Error("link stopped: pair this machine again", "err", msg)
 			return err
 		}
@@ -331,8 +331,8 @@ func (l *Link) backoff(err error, attempt int) time.Duration {
 }
 
 var (
-	errUnauthorized = errors.New("the server refused the device credential (wrong, rotated or revoked): pair again with `openvibe-node pair <CODE>`, or, if the owner rotated it, pipe the rotate response into `openvibe-node credential import`")
-	errRevoked      = errors.New("the owner revoked this device or rotated its credential: pair again with `openvibe-node pair <CODE>`, or, if the owner rotated it, pipe the rotate response into `openvibe-node credential import`")
+	errUnauthorized = errors.New("the server refused the device credential (wrong, rotated or revoked): pair again with `openvibe-link pair <CODE>`, or, if the owner rotated it, pipe the rotate response into `openvibe-link credential import`")
+	errRevoked      = errors.New("the owner revoked this device or rotated its credential: pair again with `openvibe-link pair <CODE>`, or, if the owner rotated it, pipe the rotate response into `openvibe-link credential import`")
 	errReplaced     = errors.New("another connection with this device's credential replaced this one (is a second agent running with the same credential?)")
 )
 
@@ -420,7 +420,7 @@ func (l *Link) session(ctx context.Context) error {
 		l.handler.Disconnected(endErr)
 	}()
 
-	// Ending the session (or the Node) closes the socket, which ends the read loop below.
+	// Ending the session (or the Link) closes the socket, which ends the read loop below.
 	go func() {
 		<-sessCtx.Done()
 		end(ctx.Err())
@@ -598,7 +598,7 @@ func (l *Link) reauth(ctx context.Context, up *atomic.Bool, end func(error)) {
 			l.opt.Tokens.Invalidate()
 			tok, err := l.opt.Tokens.Token(ctx)
 			switch {
-			case errors.Is(err, ErrNodeRevoked):
+			case errors.Is(err, ErrLinkRevoked):
 				end(err)
 				return
 			case err != nil:

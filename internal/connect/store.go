@@ -11,7 +11,7 @@ import (
 	"sync"
 )
 
-// The shares the Node keeps up live in <config>/connect-shares.json, readable only by the Node's own account (0600):
+// The shares the Link keeps up live in <config>/connect-shares.json, readable only by the Link's own account (0600):
 // a connect key lets a computer serve that share, so it is kept like a credential and never logged or printed whole.
 
 // File is the saved shares' file name inside the config directory.
@@ -126,7 +126,7 @@ func RunAll(ctx context.Context, dir string, o Options) {
 			defer wg.Done()
 			err := Run(ctx, s, so)
 			if errors.Is(err, ErrStopped) && o.Log != nil {
-				o.Log.Warn("connect: share stopped; remove it with `openvibe-node share remove`", "port", s.Port, "share", s.Label())
+				o.Log.Warn("connect: share stopped; remove it with `openvibe-link share remove`", "port", s.Port, "share", s.Label())
 			}
 		}()
 	}

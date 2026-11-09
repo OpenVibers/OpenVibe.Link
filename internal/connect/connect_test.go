@@ -23,7 +23,7 @@ import (
 )
 
 // fakeServer plays OpenVibe Connect's side of ovconnect-ws/1 for one test: it reads the hello, answers ready (or
-// refuses), then lets the test send requests and read what the Node answers.
+// refuses), then lets the test send requests and read what the Link answers.
 type fakeServer struct {
 	t      *testing.T
 	srv    *httptest.Server

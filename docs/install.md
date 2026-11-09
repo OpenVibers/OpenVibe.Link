@@ -1,6 +1,6 @@
 # Installing OpenVibe Link
 
-OpenVibe Link is one program, `openvibe-link` (`openvibe-node` is kept as an alias), plus Python plugins for robots. It connects **out** to OpenVibe (no open
+OpenVibe Link is one program, `openvibe-link`, plus Python plugins for robots. It connects **out** to OpenVibe (no open
 ports, works behind any home router), and a local kill switch stops everything it drives.
 
 
@@ -24,10 +24,9 @@ Links for every file are on [openvibe.link](https://openvibe.link/#install); the
    ```
 
    The code comes from [openvibe.link/pair](https://openvibe.link/pair), which signs you in and opens the machines hub
-   (**Pair a machine**); [openvibe.bot/machines](https://openvibe.bot/machines) shows the same code.
+   (**Pair a machine**); [openvibe.link/machines](https://openvibe.link/machines) shows the same code.
 4. `openvibe-link status` shows the link; the machine appears in your account's machines.
 
-`openvibe-node.exe` is the same program under its old name, so an existing shortcut or script keeps working.
 
 ### macOS (Apple silicon and Intel)
 
@@ -63,7 +62,7 @@ sudo apt install ./openvibe-link_<version>_amd64.deb     # Debian, Ubuntu (x64; 
 sudo dnf install ./openvibe-link-<version>-1.x86_64.rpm  # Fedora, RHEL (aarch64 on ARM64)
 ```
 
-The packages put `openvibe-link` in `/usr/local/bin` and make `openvibe-node` a symlink to it; they do not start or
+The packages put `openvibe-link` in `/usr/local/bin`; they do not start or
 pair anything by themselves. Then:
 
 ```sh
@@ -99,7 +98,7 @@ On the robot's computer, with nothing set up on openvibe.bot first:
 curl -fsSL https://openvibe.link/install | sh
 ```
 
-The same installer is also at <https://openvibe.bot/install>, which keeps working; `node.openvibe.network/install` keeps working and sends you to openvibe.link.
+The installer is available at <https://openvibe.link/install>.
 
 On a Raspberry Pi it turns on I2C and SPI (now and after a reboot, through `raspi-config`), installs what is missing of
 `i2c-tools`, the camera tools (`rpicam-apps`), `python3-venv`, `python3-lgpio` and `qrencode`, and looks at the I2C bus:
@@ -121,7 +120,7 @@ you chose if it differs, and checks the link, the driver and the camera:
   link     connected
   driver   adeept_adr036: running
   camera   live from rpicam
-openvibe-node: drive it: https://openvibe.bot/panel/rob_…
+openvibe-link: drive it: https://openvibe.bot/panel/rob_…
 ```
 
 The code lasts 15 minutes; a denied or expired one adds nothing, and running the command again gives a new one. An
@@ -163,7 +162,7 @@ paste it. Nothing about pairing lives only on openvibe.bot any more; the old pag
    The shape is `--robot rob_… --code CODE [--driver adeept|adeept-mecanum|cozmo|looi|ros2|ros2-holonomic|none]`. `--robot` is the robot's
    `rob_…` id and `--code` the pairing code (both from openvibe.bot; the code may also be the first argument).
    `--driver` names the plugin: `adeept` (Adeept 4WD Smart Car, ordinary wheels), `adeept-mecanum`, `cozmo`, `ros2` (a
-   ROS 2 robot through rosbridge, [plugins/ros2/README.md](../plugins/ros2/README.md)), `ros2-holonomic`, or `none` (the default: the dry-run plugin with a test-pattern camera, for trying the Node on a laptop). `--name NAME`
+   ROS 2 robot through rosbridge, [plugins/ros2/README.md](../plugins/ros2/README.md)), `ros2-holonomic`, or `none` (the default: the dry-run plugin with a test-pattern camera, for trying the Link on a laptop). `--name NAME`
    names the device on openvibe.bot (default: the hostname).
 3. Confirm the new device on openvibe.bot.
 
@@ -171,11 +170,11 @@ paste it. Nothing about pairing lives only on openvibe.bot any more; the old pag
 llama.cpp's server on the machine, and the installer says which one answers. `--ai-endpoint URL` names another port.
 [ai.md](ai.md) has the rest.
 
-**A machine that runs your jobs, not a robot:** openvibe.bot/machines prints the Network form with `--worker` (and no
+**A machine that runs your jobs, not a robot:** openvibe.link/machines prints the Network form with `--worker` (and no
 `--driver`). It turns the job worker on with a dedicated `openvibe-job` user and the OpenVibe.Codes job runner, so a
 coding task you start on openvibe.codes/run runs on this machine. Add `--plan-logins` (Linux) to use the plans you
 already signed in for: the installer names the coding tools' own login files that are ready (Claude Code, Codex,
-OpenCode and Command Code) as the worker's plan logins, sets the Node service's HOME to your home, and prints the login
+OpenCode and Command Code) as the worker's plan logins, sets the Link service's HOME to your home, and prints the login
 command for each tool whose login is missing or not signed in (a login whose CLI is not on the runner's PATH is named
 with a line to install it system-wide). It never reads, copies or prints a login file's content.
 [worker.md](worker.md#a-machine-that-runs-your-coding-tasks---worker)
@@ -183,7 +182,7 @@ has the details.
 
 **Two pairing paths.** Which one the command uses is up to openvibe.bot; the installer takes both.
 
-- **Bot pairing** (the form above): `--robot rob_… --code CODE`. The Node redeems the code at
+- **Bot pairing** (the form above): `--robot rob_… --code CODE`. The Link redeems the code at
   `POST <bot>/api/v1/pair` and stores the Bot device credential it answers with.
 - **Network pairing**: `--network <URL> --pairing pair_… --code CODE`, e.g.
 
@@ -191,22 +190,22 @@ has the details.
   curl -fsSL https://openvibe.link/install | sh -s -- --network https://openvibe.network --pairing pair_01J8Z4M2Q0R7T9YV3K6N8P1W2Y --code ABCD-1234 --driver adeept
   ```
 
-  The Node redeems the code on OpenVibe.Network (`POST <network>/api/v1/node-pairing`) and stores the machine's node
-  principal (`nod_…`) and node credential. With it the Node buys short-lived node tokens (`POST <network>/oauth/token`,
+  The Link redeems the code on OpenVibe.Network (`POST <network>/api/v1/link-pairing`) and stores the machine's node
+  principal (`lnk_…`) and node credential. With it the Link buys short-lived node tokens (`POST <network>/oauth/token`,
   audience `openvibe.bot`) and binds itself on Bot (`POST <bot>/api/v1/devices/bind`), which answers the device id, the
-  robot and the WHIP publish key. A bind that fails at pairing is retried when the Node starts. `--pairing CODE` with
+  robot and the WHIP publish key. A bind that fails at pairing is retried when the Link starts. `--pairing CODE` with
   no `--code` also works (the code is then the value of `--pairing`).
 
 The installer detects the OS and CPU (linux amd64/arm64/armv7, macOS amd64/arm64), downloads the binary and the plugin
 bundle and checks them against `SHA256SUMS`, creates a Python virtual environment for the plugins, writes
-`config.json`, disables the Adeept kit's stock server if it finds it, creates the `openvibe-node` service account
+`config.json`, disables the Adeept kit's stock server if it finds it, creates the `openvibe-link` service account
 (Linux; with the `gpio`, `i2c`, `spi`, `video`, `audio` groups), installs and starts the service, and pairs. Running it
 again upgrades and keeps the credential. Options: `--no-service`, `--version vX.Y.Z`, `--local DIR` (install from a
-directory holding the release files). `OPENVIBE_NODE_BASE` overrides the download location, `OPENVIBE_SERVER` the
+directory holding the release files). `OPENVIBE_LINK_BASE` overrides the download location, `OPENVIBE_SERVER` the
 server.
 
 The installer downloads the binary, the plugin bundle and `SHA256SUMS` from `releases/latest/download`, which GitHub
-resolves only to the latest full release, so a host whose release is still a pre-release needs `OPENVIBE_NODE_BASE` or
+resolves only to the latest full release, so a host whose release is still a pre-release needs `OPENVIBE_LINK_BASE` or
 `--version TAG`.
 
 Requirements: `python3` with `venv` (`sudo apt install python3 python3-venv`), `curl` or `wget`. For the Adeept camera,
@@ -215,19 +214,19 @@ from plugins that send JPEG frames).
 
 ## First run (guided and measured)
 
-After the installer, run the Node with no command:
+After the installer, run the Link with no command:
 
 ```sh
-sudo openvibe-node
+sudo openvibe-link
 ```
 
-It walks through the first run once: it asks for the code from openvibe.bot/machines if the machine is not paired yet
+It walks through the first run once: it asks for the code from openvibe.link/machines if the machine is not paired yet
 (pasting the whole install command there works too, for a Network pairing), checks that the machine reaches
 OpenVibe.Bot and OpenVibe.Network, runs one harmless first job that reads the machine's OS, CPUs, memory and free
 disk, and prints what to do next. The job opens nothing and runs as the service account; it only reads those counts.
 
-The Node reports one telemetry event per step (`installed`, `paired`, `self_check` with ok or a reason, `first_job`)
-over the same device link it already uses. An event carries the Node version, the OS and architecture, and for the
+The Link reports one telemetry event per step (`installed`, `paired`, `self_check` with ok or a reason, `first_job`)
+over the same device link it already uses. An event carries the Link version, the OS and architecture, and for the
 first job those counts: never a path, a username, an IP or a secret. Bot stores the step times, so an admin can see how
 many installs reach each step and how long they take (`/admin/first-run`), and the machine's page shows what the first
 job found.
@@ -239,30 +238,30 @@ job found.
 
 ```sh
 sudo install -m 755 openvibe-link-linux-arm64 /usr/local/bin/openvibe-link
-sudo ln -s openvibe-link /usr/local/bin/openvibe-node
-sudo openvibe-link pair ABCD-1234 --robot rob_…   # stores /etc/openvibe-node/credential.json (mode 600)
+sudo ln -s openvibe-link /usr/local/bin/openvibe-link
+sudo openvibe-link pair ABCD-1234 --robot rob_…   # stores /etc/openvibe-link/credential.json (mode 600)
 # or, for a Network pairing:
 sudo openvibe-link pair --network https://openvibe.network --pairing pair_… --code ABCD-1234
 sudo openvibe-link install               # systemd / launchd / Windows service, starts it
 openvibe-link status
 ```
 
-Without root, everything goes to your user config directory (`~/.config/openvibe-node`), or to any directory with
-`--home DIR` / `OPENVIBE_NODE_HOME`:
+Without root, everything goes to your user config directory (`~/.config/openvibe-link`), or to any directory with
+`--home DIR` / `OPENVIBE_LINK_HOME`:
 
 ```sh
 openvibe-link --home ~/node pair ABCD-1234
 openvibe-link --home ~/node run --dry-run      # foreground; Ctrl-C stops it
 ```
 
-**Windows**: download `openvibe-link-windows-amd64.exe` (or `openvibe-node-windows-amd64.exe`, the same program under its old name), then in an Administrator prompt `openvibe-link pair <CODE>`
-and `openvibe-link install` (the service runs as LocalSystem; files go to `%ProgramData%\OpenVibe Node`). Robot plugins
+**Windows**: download `openvibe-link-windows-amd64.exe`, then in an Administrator prompt `openvibe-link pair <CODE>`
+and `openvibe-link install` (the service runs as LocalSystem; files go to `%ProgramData%\OpenVibe Link`). Robot plugins
 need Python; set `"python"` in `config.json`.
 
 A driver that needs your signed-in session (Bluetooth through the Windows runtime, as a LOOI bridge does) runs the
-Node there instead, with no administrator: `openvibe-link pair <CODE> --home "%LOCALAPPDATA%\OpenVibe Node"`, then
-`openvibe-link install --user-session --home "%LOCALAPPDATA%\OpenVibe Node"`. It starts when you sign in, in a
-console window that shows its log; closing the window stops the Node and every actuator. `openvibe-link uninstall
+Link there instead, with no administrator: `openvibe-link pair <CODE> --home "%LOCALAPPDATA%\OpenVibe Link"`, then
+`openvibe-link install --user-session --home "%LOCALAPPDATA%\OpenVibe Link"`. It starts when you sign in, in a
+console window that shows its log; closing the window stops the Link and every actuator. `openvibe-link uninstall
 --user-session` removes it. See [hardware-looi.md](hardware-looi.md).
 
 ## Commands
@@ -278,35 +277,35 @@ console window that shows its log; closing the window stops the Node and every a
 | `openvibe-link status [--json]`           | link, stop latch, limits, plugins, video, battery, running jobs            |
 | `openvibe-link stop`                      | **kill switch**: stop every actuator now and hold it stopped              |
 | `openvibe-link resume`                    | release the local stop (and a server e-stop)                               |
-| `openvibe-link quit`                      | end the running Node cleanly: every actuator stops, **nothing is latched**, and it waits until the Node has exited |
+| `openvibe-link quit`                      | end the running Link cleanly: every actuator stops, **nothing is latched**, and it waits until the Link has exited |
 | `openvibe-link plugins [--json]`          | plugins and their capabilities                                             |
 
-`stop` works even when the Node does not answer: it latches `latch.json` in the state directory, which a running Node
-obeys within a quarter second and a starting Node obeys before anything moves. The latch survives restarts.
+`stop` works even when the Link does not answer: it latches `latch.json` in the state directory, which a running Link
+obeys within a quarter second and a starting Link obeys before anything moves. The latch survives restarts.
 
 ### Starting and ending it with the rest of your setup
 
-`stop` is a kill switch, not an exit: it holds every actuator stopped, across restarts, until `resume`. To end the Node
-from a script (a stream launcher that starts and stops it with OBS, say), use `quit`. Every actuator stops, the Node
+`stop` is a kill switch, not an exit: it holds every actuator stopped, across restarts, until `resume`. To end the Link
+from a script (a stream launcher that starts and stops it with OBS, say), use `quit`. Every actuator stops, the Link
 exits, and nothing is latched, so the next `openvibe-link run` drives as before. `quit` waits until the process has
-gone and succeeds when no Node is running, so a launcher can call it without checking first.
+gone and succeeds when no Link is running, so a launcher can call it without checking first.
 
-`quit` ends a Node started from a terminal, by a launcher, or at sign-in (`install --user-session`). A Node installed as
+`quit` ends a Link started from a terminal, by a launcher, or at sign-in (`install --user-session`). A Link installed as
 a system service refuses it, because systemd, launchd or Windows would start it again. Stop the service there instead
-(`sudo systemctl stop openvibe-node`, or Services on Windows), or remove it with `openvibe-link uninstall`. A launcher
-that owns the Node's life should run `openvibe-link run --home DIR` itself, with no service and no sign-in start.
+(`sudo systemctl stop openvibe-link`, or Services on Windows), or remove it with `openvibe-link uninstall`. A launcher
+that owns the Link's life should run `openvibe-link run --home DIR` itself, with no service and no sign-in start.
 
 ## Files
 
 | Linux                                 | macOS / Windows                                       | contents                          |
 |---------------------------------------|-------------------------------------------------------|-----------------------------------|
-| `/etc/openvibe-node/config.json`      | `…/OpenVibe Link/config.json`                         | configuration                     |
-| `/etc/openvibe-node/credential.json`  | `…/OpenVibe Link/credential.json`                     | device or node credential (mode 600) |
-| `/var/lib/openvibe-node/latch.json`   | `…/OpenVibe Link/latch.json`                          | e-stop / kill switch latch        |
-| `/var/lib/openvibe-node/node.sock`    | `…/OpenVibe Link/node.sock`                           | local control socket (mode 600)   |
-| `/var/lib/openvibe-node/venv`         | `…/OpenVibe Link/venv`                                | plugin Python environment         |
+| `/etc/openvibe-link/config.json`      | `…/OpenVibe Link/config.json`                         | configuration                     |
+| `/etc/openvibe-link/credential.json`  | `…/OpenVibe Link/credential.json`                     | device or node credential (mode 600) |
+| `/var/lib/openvibe-link/latch.json`   | `…/OpenVibe Link/latch.json`                          | e-stop / kill switch latch        |
+| `/var/lib/openvibe-link/node.sock`    | `…/OpenVibe Link/node.sock`                           | local control socket (mode 600)   |
+| `/var/lib/openvibe-link/venv`         | `…/OpenVibe Link/venv`                                | plugin Python environment         |
 
-macOS: `/Library/Application Support/OpenVibe Node`. Windows: `%ProgramData%\OpenVibe Node`.
+macOS: `/Library/Application Support/OpenVibe Link`. Windows: `%ProgramData%\OpenVibe Link`.
 
 ## Configuration
 
@@ -347,11 +346,11 @@ The kit's own software (`Adeept_Robot.service`, `WebServer.py` on `0.0.0.0:8888`
 `admin:123456`, MJPEG on `:5000`) must not run: anyone on the network could drive the car. The installer
 (`install/install.sh`) now does this automatically: it stops and disables `Adeept_Robot.service` and comments out the
 kit's autostart lines in the invoking user's crontab, root's crontab and `/etc/rc.local`, prefixing each with the
-marker `#openvibe-node-disabled:` and keeping the original text, so undoing it is removing the marker and a second
+marker `#openvibe-link-disabled:` and keeping the original text, so undoing it is removing the marker and a second
 run changes nothing. From a root shell, it checks `pi`'s crontab when that account exists. Verify with
-`systemctl status Adeept_Robot.service`, `crontab -l | grep openvibe-node-disabled` (and
-`sudo crontab -l -u pi | grep openvibe-node-disabled` for a root-shell install) and
-`grep openvibe-node-disabled /etc/rc.local`. The Node replaces it.
+`systemctl status Adeept_Robot.service`, `crontab -l | grep openvibe-link-disabled` (and
+`sudo crontab -l -u pi | grep openvibe-link-disabled` for a root-shell install) and
+`grep openvibe-link-disabled /etc/rc.local`. The Link replaces it.
 
 If a direction is wrong on your car, fix it in `config.json` → `plugins[0].config`: `motors.<wheel>.direction`,
 `pan.invert`, `tilt.invert`, `line.invert`. See [the plugin README](../plugins/adeept_adr036/README.md).
@@ -370,7 +369,7 @@ internet (Ethernet, or a second Wi-Fi adapter). Install with `--driver cozmo`; t
 - A Network-paired machine whose node credential OpenVibe.Network refuses (revoked or removed) stops with "OpenVibe.Network
   refused this machine's node credential" and exit status 78, which the systemd unit does not restart. Get a new
   installer command on openvibe.bot and pair again with `--force`.
-- Logs: `journalctl -u openvibe-link -f` (Linux), `/usr/local/var/log/openvibe-node.err.log` (macOS). On Windows the
+- Logs: `journalctl -u openvibe-link -f` (Linux), `/usr/local/var/log/openvibe-link.err.log` (macOS). On Windows the
   service's log is not kept yet; stop the service and run `openvibe-link run` in a terminal to watch it.
 - A plugin in `faulted` state says why in `status` (missing library, not a Raspberry Pi, robot not reachable, firmware).
 - `openvibe-link plugins` works without the service running: it asks each plugin to describe itself without touching
@@ -380,8 +379,8 @@ internet (Ethernet, or a second Wi-Fi adapter). Install with `--driver cozmo`; t
 
 ```sh
 sudo openvibe-link uninstall
-sudo rm -rf /usr/local/bin/openvibe-link /etc/openvibe-node /var/lib/openvibe-node
-sudo userdel openvibe-node
+sudo rm -rf /usr/local/bin/openvibe-link /etc/openvibe-link /var/lib/openvibe-link
+sudo userdel openvibe-link
 ```
 
 Then remove the device on openvibe.bot, which revokes its credential.

@@ -1,13 +1,13 @@
-# OpenVibe Connect from the Node
+# OpenVibe Connect from the Link
 
 [OpenVibe Connect](https://connect.openvibe.website) puts one port on your computer on the web at its own address,
 `https://<name>--<you>.openvibe.website`, and only the people you pick can open it, after they sign in with OpenVibe.
-The Node speaks Connect's protocol itself (`internal/connect`, `ovconnect-ws/1`), so a share can stay up as part of
-the Node service, across reboots, without the one-file client.
+The Link speaks Connect's protocol itself (`internal/connect`, `ovconnect-ws/1`), so a share can stay up as part of
+the Link service, across reboots, without the one-file client.
 
 ## A share this computer serves, with no key
 
-A computer added on [openvibe.bot/machines](https://openvibe.bot/machines) has its own OpenVibe sign-in (its node
+A computer added on [openvibe.link/machines](https://openvibe.link/machines) has its own OpenVibe sign-in (its node
 principal). On a share's page on connect.openvibe.website, pick it under "Or serve it from one of your computers",
 then on the computer:
 
@@ -16,17 +16,17 @@ openvibe-link share 8790                          # serve the share this compute
 openvibe-link share mine                          # the shares this computer was picked for
 openvibe-link share --share shr_…                 # serve one now, until Ctrl-C
 openvibe-link share --share shr_… --port 8790     # the same, with the port named
-sudo openvibe-link share add --share shr_…        # or keep it up with the Node service
+sudo openvibe-link share add --share shr_…        # or keep it up with the Link service
 sudo openvibe-link share add 8790                 # the same, found by its local port
 ```
 
-There is no key to copy or leak. Before every connection the Node buys its node token for OpenVibe Connect (audience
+There is no key to copy or leak. Before every connection the Link buys its node token for OpenVibe Connect (audience
 `openvibe.website`, 5 minutes) and asks Connect for a tunnel token for that one share (60 seconds, one use), and says
 hello with both (ADR-057 decision 4, CON-4). While connected it sends a fresh node token every 45 seconds. A computer
-removed on OpenVibe stops serving within about five minutes, and the Node stops that share instead of retrying.
+removed on OpenVibe stops serving within about five minutes, and the Link stops that share instead of retrying.
 
-Without `--port`, the Node serves the port the share's page names when you run or add it, and keeps that port: if the
-page names another one later, the Node keeps serving the port it was given and says so in the log. Connect can never
+Without `--port`, the Link serves the port the share's page names when you run or add it, and keeps that port: if the
+page names another one later, the Link keeps serving the port it was given and says so in the log. Connect can never
 point it at a different local service. Pass `--port N` to choose the port yourself.
 
 ## Make a share
@@ -47,7 +47,7 @@ keeps it off the command line and out of your shell history:
 OV_CONNECT_KEY=ovc_… openvibe-link share --port 8790
 ```
 
-## Keep it up with the Node service
+## Keep it up with the Link service
 
 ```sh
 openvibe-link share add --key ovc_… --port 8790
@@ -58,12 +58,12 @@ openvibe-link share remove 8790        # or the key, or the address
 `openvibe-link status` lists every share the service keeps up: its local port, its address on Connect, whether the
 tunnel is connected (and why not), and how many requests the app has answered. A share with no address yet says so.
 
-The saved shares are in the Node's config directory, `connect-shares.json`, readable only by the Node's account
-(0600). The service starts every saved share when it starts, and stops every one when the Node stops; restart it after
+The saved shares are in the Link's config directory, `connect-shares.json`, readable only by the Link's account
+(0600). The service starts every saved share when it starts, and stops every one when the Link stops; restart it after
 `add` or `remove`. A share the server ends for good (its key was replaced, it was closed, or another computer took it
 over) stays stopped and says so in the log; `share list` shows each share's address once it has connected.
 
-## What the Node does and does not do
+## What the Link does and does not do
 
 - It opens one outgoing WebSocket per share to `wss://connect.openvibe.website/tunnel` (port 443, through Cloudflare),
   so it works behind any router, firewall or phone hotspot, with no open ports.

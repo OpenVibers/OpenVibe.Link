@@ -603,7 +603,7 @@ class ComputerTest(unittest.TestCase):
         open(os.path.join(state, "node.sock"), "w").close()
         self.cfg, self.state = cfg, state
         self.out = Out()
-        self.plugin = Computer(env={"OPENVIBE_NODE_CONFIG": cfg, "OPENVIBE_NODE_STATE": state}, platform="linux")
+        self.plugin = Computer(env={"OPENVIBE_LINK_CONFIG": cfg, "OPENVIBE_LINK_STATE": state}, platform="linux")
         self.rt = Runtime(self.plugin, infile=io.StringIO(""), outfile=self.out)
         self.rt.dispatch({"op": "hello", "config": {"level": "full", "roots": [self.dir]}})
         self.n = 0
@@ -652,7 +652,7 @@ class ComputerTest(unittest.TestCase):
         with open(os.path.join(work, "notes.txt"), "w") as f:
             f.write("hello\n")
         self.out = Out()
-        self.plugin = Computer(env={"OPENVIBE_NODE_CONFIG": self.dir, "OPENVIBE_NODE_STATE": self.dir},
+        self.plugin = Computer(env={"OPENVIBE_LINK_CONFIG": self.dir, "OPENVIBE_LINK_STATE": self.dir},
                                platform="linux")
         self.rt = Runtime(self.plugin, infile=io.StringIO(""), outfile=self.out)
         self.rt.dispatch({"op": "hello", "config": {"level": "full", "roots": [work]}})

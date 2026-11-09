@@ -1,6 +1,6 @@
 package plugins
 
-import "github.com/OpenVibers/OpenVibe.Node/internal/mono"
+import "github.com/OpenVibers/OpenVibe.Link/internal/mono"
 
 // The clock a plugin shares with the core (internal/mono: CLOCK_MONOTONIC on Unix, the raw QueryPerformanceCounter on
 // Windows, named in hello as shared_clock): a command's expires_at_mono_ns is an instant on it, so the runtime can take

@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/mono"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/mono"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 // The test binary doubles as a fake plugin: with OPENVIBE_FAKE_PLUGIN set it speaks the plugin protocol and appends
@@ -367,7 +367,7 @@ func TestCrashRestartsWithEstop(t *testing.T) {
 	}
 }
 
-// A latch set before the manager starts (the Node booting with its stop latched on disk) is the first thing each
+// A latch set before the manager starts (the Link booting with its stop latched on disk) is the first thing each
 // process hears after hello: the e-stop replayed, naming what set it, before the plugin can be routed any command.
 func TestLatchSetBeforeStartIsReplayedFirst(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "plugin.log")

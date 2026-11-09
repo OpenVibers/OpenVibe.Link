@@ -1,7 +1,7 @@
 """A desk host for other people (desk_isolation: sandbox, Node v0.32, Desks plan D5): browser desks only, each one's
-browser under `openvibe-node desk-sandbox`, its profile and downloads inside the sandbox, and nothing of the machine
+browser under `openvibe-link desk-sandbox`, its profile and downloads inside the sandbox, and nothing of the machine
 itself offered. The last test runs a real desk through the sandbox; it needs root, a delegated cgroup and the Node
-(OPENVIBE_DESK_SANDBOX_TESTS=require with OPENVIBE_NODE_EXE, as CI's root step runs it) and is skipped otherwise."""
+(OPENVIBE_DESK_SANDBOX_TESTS=require with OPENVIBE_LINK_EXE, as CI's root step runs it) and is skipped otherwise."""
 import io
 import os
 import shutil
@@ -21,7 +21,7 @@ from openvibe_plugin import Fault, Runtime  # noqa: E402
 from test_computer import Out, reply  # noqa: E402
 from test_desk import FakePageBrowser  # noqa: E402
 
-NODE = "/usr/local/bin/openvibe-node"
+NODE = "/usr/local/bin/openvibe-link"
 
 
 class SharedDeskHostTest(unittest.TestCase):
@@ -35,7 +35,7 @@ class SharedDeskHostTest(unittest.TestCase):
             b = FakePageBrowser(binary, profile, headless, env)
             self.made.append(b)
             return b
-        self.plugin = Computer(env={"OPENVIBE_NODE_EXE": NODE} if env is None else env, platform="linux",
+        self.plugin = Computer(env={"OPENVIBE_LINK_EXE": NODE} if env is None else env, platform="linux",
                                which=lambda n: "/usr/bin/" + n, browser_factory=factory)
         self.rt = Runtime(self.plugin, infile=io.StringIO(""), outfile=self.out)
         self.rt.dispatch({"op": "hello", "config": {"level": level, "notify": False, "desk_dir": self.desk_dir,
@@ -128,7 +128,7 @@ class SharedDeskHostTest(unittest.TestCase):
         self.boot(desk_egress="none")
         self.assertNotIn("--egress", self.plugin._sandbox_argv("/usr/bin/chromium"))
         self.boot(env={})
-        self.assertEqual(self.plugin._sandbox_argv("/usr/bin/chromium")[0], "/usr/bin/openvibe-node", "on the PATH")
+        self.assertEqual(self.plugin._sandbox_argv("/usr/bin/chromium")[0], "/usr/bin/openvibe-link", "on the PATH")
         self.plugin.which = lambda n: None
         with self.assertRaises(Fault):
             self.plugin._sandbox_argv("/usr/bin/chromium")
@@ -176,7 +176,7 @@ class RealSharedDeskTest(unittest.TestCase):
         from openvibe_computer.browser import find_binary
         # Google Chrome's .deb, as a desk host installs it (a runner's chromium-browser may be a snap's launcher).
         binary = "/opt/google/chrome/chrome" if os.path.exists("/opt/google/chrome/chrome") else find_binary()
-        self.assertTrue(binary and os.environ.get("OPENVIBE_NODE_EXE"), "CI's root step has Chrome and builds the Node")
+        self.assertTrue(binary and os.environ.get("OPENVIBE_LINK_EXE"), "CI's root step has Chrome and builds the Node")
         out = Out()
         plugin = Computer(platform="linux")
         rt = Runtime(plugin, infile=io.StringIO(""), outfile=out)

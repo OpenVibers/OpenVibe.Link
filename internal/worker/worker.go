@@ -4,7 +4,7 @@
 // holding only the system paths and the function's artifact, its own cgroup v2 (cpu, memory, pids, io), rlimits,
 // no_new_privs and a seccomp allowlist, with a scrubbed environment and a fresh /tmp. It kills a job at its ttl, at its
 // limits, on job_cancel and while the stop latch is set. It never runs a job with less isolation: a job whose sandbox
-// cannot be set up fails without running, and a Node whose boot-time Probe fails does not advertise the class.
+// cannot be set up fails without running, and a Link whose boot-time Probe fails does not advertise the class.
 // docs/worker.md has the model and its limits.
 package worker
 
@@ -26,8 +26,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/config"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 const (
@@ -76,8 +76,8 @@ type plan struct {
 
 // egressFor is the network policy a job runs under: the stricter of the net the job names and the host's worker.egress,
 // which must be the host's own, the only ruleset its veth is written with. A net of deny (or none, the same policy as
-// the Node spells it), which is also what an absent net means in platform.job@1, runs under no network whatever the
-// host allows: the contract's default is deny and the Node never widens it. A named public runs under a public or
+// the Link spells it), which is also what an absent net means in platform.job@1, runs under no network whatever the
+// host allows: the contract's default is deny and the Link never widens it. A named public runs under a public or
 // openvibe-only host's policy; a named openvibe-only needs an openvibe-only host (a public one has no egress_allow to
 // restrict it to). Anything else, a host under none (or no worker.egress, the same) included, refuses the job at
 // Admit rather than running it with less, or more, than was asked.
@@ -275,7 +275,7 @@ func (w *Worker) SetStopped(fault string) {
 	}
 }
 
-// JobInfo is a job that has not ended, as `openvibe-node status` lists it.
+// JobInfo is a job that has not ended, as `openvibe-link status` lists it.
 type JobInfo struct {
 	ID        string `json:"id"`
 	Function  string `json:"function"` // name@version
@@ -760,7 +760,7 @@ func (w *Worker) storeResult(jb *job, r []byte) (json.RawMessage, error) {
 	return json.Marshal(map[string]string{"media_id": id})
 }
 
-// jobEnv is the whole environment of a job: nothing is inherited from the Node (no credential, no secrets), only a
+// jobEnv is the whole environment of a job: nothing is inherited from the Link (no credential, no secrets), only a
 // fixed PATH, the working directory as HOME and TMPDIR, the job id, and the function's own env from the config.
 func jobEnv(fn config.FunctionConfig, dir, id string) []string {
 	env := map[string]string{"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": dir, "TMPDIR": dir, "LANG": "C.UTF-8",

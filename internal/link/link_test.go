@@ -13,10 +13,10 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
-	"github.com/OpenVibers/OpenVibe.Node/internal/fakebot"
-	"github.com/OpenVibers/OpenVibe.Node/internal/mono"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
+	"github.com/OpenVibers/OpenVibe.Link/internal/fakebot"
+	"github.com/OpenVibers/OpenVibe.Link/internal/mono"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 type recorder struct {
@@ -209,7 +209,7 @@ func TestHeartbeatCarriesTheFleet(t *testing.T) {
 	beat(func(f []protocol.FleetAgent) bool { return f == nil })
 }
 
-// Bot's heartbeat_ack echoes the device's send time (echo/t) over its own envelope seq, so the Node measures the
+// Bot's heartbeat_ack echoes the device's send time (echo/t) over its own envelope seq, so the Link measures the
 // round trip from that; a fresh connection starts with no measurement.
 func TestHeartbeatRTTReportedAfterAck(t *testing.T) {
 	srv, l, rec, _, _ := setup(t, 60*time.Millisecond)

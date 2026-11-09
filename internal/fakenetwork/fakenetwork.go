@@ -1,5 +1,5 @@
 // Package fakenetwork is an in-process stand-in for OpenVibe.Network's node-principal pairing, for tests: POST
-// /api/v1/node-pairing redeems a one-time code for a node principal and its credential, and POST /oauth/token
+// /api/v1/link-pairing redeems a one-time code for a node principal and its credential, and POST /oauth/token
 // (client_credentials) sells node tokens for that credential (server/registry/node-principals.js,
 // server/auth/oauth-routes.js). Each token it mints is registered on the fake Bot as a credential of DeviceID, so the
 // Bot fake accepts it on /device and POST /api/v1/devices/bind as Bot accepts a node token.
@@ -14,13 +14,13 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/fakebot"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/fakebot"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 // Principal and PairingID are what a redeemed code answers with; DeviceID is the device the fake Bot binds it to.
 const (
-	Principal = "nod_01J8Z4M2Q0R7T9YV3K6N8P1W2X"
+	Principal = "lnk_01J8Z4M2Q0R7T9YV3K6N8P1W2X"
 	PairingID = "pair_01J8Z4M2Q0R7T9YV3K6N8P1W2Y"
 	DeviceID  = "dev_net01"
 )
@@ -39,7 +39,7 @@ type Server struct {
 	credential string          // the node credential, once paired
 	revoked    bool
 	tokens     []string
-	pairings   []protocol.NodePairingRequest
+	pairings   []protocol.LinkPairingRequest
 	tokenForms []map[string]string
 }
 
@@ -47,7 +47,7 @@ type Server struct {
 func New(bot *fakebot.Server) *Server {
 	s := &Server{TTL: 300, bot: bot, codes: map[string]bool{}, health: http.StatusOK}
 	mux := http.NewServeMux()
-	mux.HandleFunc(protocol.NodePairingPath, s.pair)
+	mux.HandleFunc(protocol.LinkPairingPath, s.pair)
 	mux.HandleFunc(protocol.TokenPath, s.token)
 	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
@@ -100,10 +100,10 @@ func (s *Server) Tokens() []string {
 }
 
 // Pairings are the node-pairing request bodies received.
-func (s *Server) Pairings() []protocol.NodePairingRequest {
+func (s *Server) Pairings() []protocol.LinkPairingRequest {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([]protocol.NodePairingRequest(nil), s.pairings...)
+	return append([]protocol.LinkPairingRequest(nil), s.pairings...)
 }
 
 // TokenForms are the /oauth/token form bodies received (client_secret included).
@@ -126,7 +126,7 @@ func problem(w http.ResponseWriter, status int, code string) {
 }
 
 func (s *Server) pair(w http.ResponseWriter, r *http.Request) {
-	var req protocol.NodePairingRequest
+	var req protocol.LinkPairingRequest
 	if r.Method != http.MethodPost || json.NewDecoder(r.Body).Decode(&req) != nil {
 		problem(w, http.StatusBadRequest, "registry.invalid_pairing_request")
 		return
@@ -148,7 +148,7 @@ func (s *Server) pair(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(protocol.NodePairingResponse{Principal: Principal, NodeID: "n-01j8z4m2q0r7t9yv3k6n8p1w2x",
+	_ = json.NewEncoder(w).Encode(protocol.LinkPairingResponse{Principal: Principal, LinkID: "n-01j8z4m2q0r7t9yv3k6n8p1w2x",
 		HomeCell: "eu-1", Credential: cred, TokenEndpoint: s.HTTP.URL + protocol.TokenPath,
 		PairedFor: &protocol.PairedFor{Service: "bot", Ref: fakebot.RobotID}})
 }

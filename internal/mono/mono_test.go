@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// The same vectors as plugins/sdk/tests/test_strict_timing.py QPC_VECTORS: Node and the Python runtime turn a raw
+// The same vectors as plugins/sdk/tests/test_strict_timing.py QPC_VECTORS: Link and the Python runtime turn a raw
 // QueryPerformanceCounter reading into the same nanoseconds (rounded down, no overflow at a hundred years of uptime).
 func TestQPCNSMatchesThePythonRuntime(t *testing.T) {
 	for _, v := range [][3]int64{

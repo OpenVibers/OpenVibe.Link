@@ -1,13 +1,13 @@
 # Adeept ADR036 4WD Smart Car — hardware bring-up (O30)
 
-The device side is the OpenVibe Link (`openvibe-node`) with the `adeept_adr036` plugin. Bot serves the one-paste
-installer; the panel is `openvibe.bot/panel/<rob_…>`. Nothing here runs the kit's stock control server — the Node
+The device side is the OpenVibe Link (`openvibe-link`) with the `adeept_adr036` plugin. Bot serves the one-paste
+installer; the panel is `openvibe.bot/panel/<rob_…>`. Nothing here runs the kit's stock control server — the Link
 replaces it, and the installer disables the kit's own autostart (`docs/install.md`).
 
 ## 0. The one command
 
 ```sh
-curl -fsSL https://node.openvibe.network/install | sh
+curl -fsSL https://openvibe.link/install | sh
 ```
 
 On the Pi, with the kit's board on it: it turns on I2C and SPI, installs the camera tools and the plugin's packages,
@@ -22,27 +22,27 @@ there (pick **Adeept ADR036 mecanum** on that page for the mecanum chassis). Sec
   `disabled` (or the unit absent), and ports 8888/5000 must be free. `install/install.sh` stops and disables
   `Adeept_Robot.service`, kills a running `WebServer.py`/`APPServer.py` process, and comments out the kit's autostart
   lines in the invoking user's crontab, root's crontab and `/etc/rc.local` (prefixing them with
-  `#openvibe-node-disabled:`). If it is still on, stop and disable it before pairing.
-- Python 3 + venv: the installer creates a plugin virtual environment in the Node's state dir
-  (`/var/lib/openvibe-node/venv` on Linux, `--system-site-packages`) and `pip install`s the plugin bundle there. No
+  `#openvibe-link-disabled:`). If it is still on, stop and disable it before pairing.
+- Python 3 + venv: the installer creates a plugin virtual environment in the Link's state dir
+  (`/var/lib/openvibe-link/venv` on Linux, `--system-site-packages`) and `pip install`s the plugin bundle there. No
   manual `pip install` is needed.
 
 ## 2. Pair (one pasted command from openvibe.bot)
 
 ```sh
-curl -fsSL https://node.openvibe.network/install | sh -s -- --robot rob_… --code XXXX-XXXX --driver adeept
+curl -fsSL https://openvibe.link/install | sh -s -- --robot rob_… --code XXXX-XXXX --driver adeept
 ```
 
 Network pairing, if openvibe.bot offers the Network form:
 
 ```sh
-curl -fsSL https://node.openvibe.network/install | sh -s -- --network https://openvibe.network --pairing pair_… --code XXXX-XXXX --driver adeept
+curl -fsSL https://openvibe.link/install | sh -s -- --network https://openvibe.network --pairing pair_… --code XXXX-XXXX --driver adeept
 ```
 
-Then check the written config (`cat /etc/openvibe-node/config.json`): `plugins` names `adeept_adr036` with backend
+Then check the written config (`cat /etc/openvibe-link/config.json`): `plugins` names `adeept_adr036` with backend
 `real` and `wheels: "ordinary"`, and `video.source` is `auto`. The config has no `video.whip_url`: the ingest URL +
 publish key the pairing returned (O30: `https://ingest.openre.stream/whip/<key>`) is stored in
-`/etc/openvibe-node/credential.json`, and video publishes there unless a `video.whip_url` in the config overrides it.
+`/etc/openvibe-link/credential.json`, and video publishes there unless a `video.whip_url` in the config overrides it.
 `openvibe-link status --json` should show `link.connected: true` and
 `video.state` at `connecting` or `live`.
 
@@ -69,8 +69,8 @@ widget and a `display` command is nacked.
 ## 4. If the camera will not start
 
 If `rpicam-vid` is missing, `video.source` `auto` has nothing to fall back to: the Adeept plugin offers only the
-H.264 camera command (no JPEG frames, no test pattern), so the core publishes **no video** — `journalctl -u openvibe-node` shows
+H.264 camera command (no JPEG frames, no test pattern), so the core publishes **no video** — `journalctl -u openvibe-link` shows
 `camera program not found` and then `no camera to publish`, and `openvibe-link status --json` has no `video.source`.
-Install `rpicam-apps` (noted in `docs/install.md`) and `sudo systemctl restart openvibe-node`. To check the WHIP path without the camera,
-set `"video": {"source": "test"}` in `/etc/openvibe-node/config.json` and restart: the panel then shows the test
+Install `rpicam-apps` (noted in `docs/install.md`) and `sudo systemctl restart openvibe-link`. To check the WHIP path without the camera,
+set `"video": {"source": "test"}` in `/etc/openvibe-link/config.json` and restart: the panel then shows the test
 pattern. Report `video.state`, `video.last_error` and the journal lines above.

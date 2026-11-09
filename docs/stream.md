@@ -1,15 +1,15 @@
-# The desk stream (Agent Streams S1, Node's part)
+# The desk stream (Agent Streams S1, Link's part)
 
-An agent's desk can stream on OpenVibe.Live. The Node captures the desk, encodes it with the screen recipe, publishes
+An agent's desk can stream on OpenVibe.Live. The Link captures the desk, encodes it with the screen recipe, publishes
 it over WHIP with a publish ticket, sends a snapshot while nobody watches, blanks the picture behind the privacy
 curtain, and measures the glass-to-glass latency with a QR probe. The design is
-`plan-state-2026-10-22/AGENT-STREAMS-S1-DESIGN-2026-11-06.md`; this document is the Node side of it.
+`plan-state-2026-10-22/AGENT-STREAMS-S1-DESIGN-2026-11-06.md`; this document is the Link side of it.
 
 ## What runs where
 
 | Piece | Where |
 |---|---|
-| The stream, its ticket, the state poll, snapshots, renewal | the core (`internal/stream`, `internal/node/stream.go`) |
+| The stream, its ticket, the state poll, snapshots, renewal | the core (`internal/stream`, `internal/agent/stream.go`) |
 | Capture selection, the browser desk's page capture, the curtain detectors, the hotkey | the computer plugin (`desk.stream`, `plugins/computer/openvibe_computer/stream.py` and `curtain.py`) |
 | Encoding | ffmpeg (`libx264`), started by the core |
 | Publishing | WHIP with pion (`internal/video`), video + a silent Opus track |
@@ -34,7 +34,7 @@ neither does a log line, an error, `openvibe-link status` or the command's ack. 
 
 `start` answers `{streaming, id, page_url, visibility, expires_at, capture}`. `desk` may be `main` (the machine's own
 screen), `private`, or `desk-<name>`; a browser desk is captured from its own page. `visibility` defaults to
-`private`. `stream.live_url` in the Node config moves the API off production.
+`private`. `stream.live_url` in the Link config moves the API off production.
 
 ## The encoder recipe
 
@@ -127,6 +127,6 @@ JPEG frames reaching the FIFO, and the plugin's start/status/stop/refuse path.
   The target ffmpeg here is 6.1, so `x11grab` is the default.
 * A browser desk streams its page at 5 fps (an ffmpeg-friendly floor); a real DevTools screencast at up to 30 fps is the
   next step.
-* The AT-SPI detector sees the accessibility stack of the Node's session; on a private Xvfb desk the desk's own
+* The AT-SPI detector sees the accessibility stack of the Link's session; on a private Xvfb desk the desk's own
   `at-spi2-registryd` must be running for it to see the desk's apps.
 * Simulcast (S2) and the owner's page (Live's part) are the next pieces.

@@ -1,3 +1,3 @@
 # Tech context
 
-- Node 22 and TypeScript 5
+- Link 22 and TypeScript 5

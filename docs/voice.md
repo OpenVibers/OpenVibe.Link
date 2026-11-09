@@ -13,7 +13,7 @@ daily Vibe allowance like any other.
 
 ## Turning it on
 
-1. Add the plugin to the Node's config (`config.json`, `plugins`):
+1. Add the plugin to the Link's config (`config.json`, `plugins`):
 
    ```json
    { "name": "voice", "config": { "model": "/home/you/vosk-model-small-en-us-0.15", "lang": "en-US" } }
@@ -22,8 +22,8 @@ daily Vibe allowance like any other.
 2. Install what it uses: `pip install vosk`, a model from https://alphacephei.com/vosk/models (the small one for your
    language is enough), `arecord` (alsa-utils) or `parec` (PulseAudio or PipeWire) for the microphone, and something to
    speak with (`espeak-ng`, or Piper with `piper_model` set).
-3. On https://openvibe.bot/machines, press **Let Vibe answer my voice here** on the machine and choose its call word.
-   The Node hears about it in Bot's config at once. **Stop Vibe answering my voice here** turns listening off again.
+3. On https://openvibe.link/machines, press **Let Vibe answer my voice here** on the machine and choose its call word.
+   The Link hears about it in Bot's config at once. **Stop Vibe answering my voice here** turns listening off again.
 
 ## Plugin settings
 

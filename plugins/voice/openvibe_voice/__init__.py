@@ -1,6 +1,6 @@
 """OpenVibe Link voice plugin: Vibe by voice on the person's own machine (contracts 0.214.0; consumer plan §8).
 
-The owner lets Vibe answer their voice on this machine and chooses a call word on openvibe.bot/machines; Bot's config
+The owner lets Vibe answer their voice on this machine and chooses a call word on openvibe.link/machines; Bot's config
 says so (the core passes it on as the ``voice`` op). While it is on, this plugin listens on the machine itself, and
 only what the person says *after* the call word leaves it: as a ``voice_ask`` event the core sends to Bot, which asks
 Vibe as the owner and sends ``voice_answer`` frames back. The answer is spoken here and shown as a desktop notification,

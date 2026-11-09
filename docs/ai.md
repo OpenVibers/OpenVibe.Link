@@ -9,9 +9,9 @@ request comes back over that connection.
 
 1. OpenVibe.AI, on your behalf, asks OpenVibe.Bot to run one chat completion on your machine (`bot.command@1` kind
    `ai`, contracts 0.219.0).
-2. Bot sends it to your Node, but only for your own machine, and only when you turned on **Let my AI use this
-   computer's models** on openvibe.bot/machines. One person's request never goes to another person's machine.
-3. The Node's `ai` plugin relays it to your model server, and the reply goes back the same way.
+2. Bot sends it to your Link, but only for your own machine, and only when you turned on **Let my AI use this
+   computer's models** on openvibe.link/machines. One person's request never goes to another person's machine.
+3. The Link's `ai` plugin relays it to your model server, and the reply goes back the same way.
 
 The plugin reaches one place only: the model server in its config. It reads nothing else on the machine and changes
 nothing there. It runs one request at a time, because a model is heavy; another request is refused as busy, not
@@ -19,17 +19,17 @@ queued. The audit on Bot keeps the model and the token counts, never the text.
 
 ## Set it up
 
-The installer does it with `--ai` (Node v0.28.0), added to the command openvibe.bot/machines gives you or to an
+The installer does it with `--ai` (Link v0.28.0), added to the command openvibe.link/machines gives you or to an
 install you already have. It says which model server answers, or how to get one:
 
 ```sh
-curl -fsSL https://node.openvibe.network/install | sh -s -- --network … --pairing pair_… --code … --ai
+curl -fsSL https://openvibe.link/install | sh -s -- --network … --pairing pair_… --code … --ai
 ```
 
 `--ai-endpoint http://127.0.0.1:8090` names a server on another port (it implies `--ai`). `--ai` works with `--worker`,
 `--computer` and `--desk-host` too, and a driver chosen later keeps it.
 
-By hand, add the plugin to the Node's config (`config.json`):
+By hand, add the plugin to the Link's config (`config.json`):
 
 ```json
 { "plugins": [{ "name": "ai" }] }
@@ -43,8 +43,8 @@ With nothing else set, it uses the first of these that answers:
 | LM Studio | `http://127.0.0.1:1234` |
 | llama.cpp's server | `http://127.0.0.1:8080` |
 
-It offers every model the server lists. Restart the Node (`openvibe-link restart`), then turn on **Let my AI use this
-computer's models** for the machine on openvibe.bot/machines.
+It offers every model the server lists. Restart the Link (`openvibe-link restart`), then turn on **Let my AI use this
+computer's models** for the machine on openvibe.link/machines.
 
 | key | default | meaning |
 |---|---|---|
@@ -91,7 +91,7 @@ machine sees the prompt. Every such answer is labelled as coming from a communit
 | `busy_gpu_percent` | `20` | GPU utilization at or over this is "in use" |
 | `busy_processes` | OBS, Steam, Lutris, Heroic, overlays | process names that pause the offer |
 
-The Node enforces `enabled`, `hours`, `models`, `concurrency` and idle-only on the machine. The router (OpenVibe.AI)
+The Link enforces `enabled`, `hours`, `models`, `concurrency` and idle-only on the machine. The router (OpenVibe.AI)
 enforces `audience`, because only it can resolve a requester's followers or group. Before any traffic, the router runs
 canary prompts with known answers and checks the model name the local server reports against the one you declared;
 about 1% of answers are re-run on another trusted machine with the same model and compared. A new machine serves the
@@ -104,8 +104,8 @@ idle (`xprintidle` on X11, `HIDIdleTime` on macOS, `GetLastInputInfo` on Windows
 never treated as busy.
 
 **Privacy, said plainly.** A community machine sees the prompt. Only requests that allow community capacity are sent
-here, and every answer is labelled Community. The Node advertises that sentence (`ai.offer.privacy`) and
-openvibe.bot/machines shows it when the offer is on.
+here, and every answer is labelled Community. The Link advertises that sentence (`ai.offer.privacy`) and
+openvibe.link/machines shows it when the offer is on.
 
 `status.capabilities.ai` advertises the offer as `ai.offer` (`enabled`, `models`, `hours`, `concurrency`, `price`,
 `audience`, `idle_only`, `quiet_minutes`, `open_now`, `paused`, `privacy`, `ready`) and per-model speed as `ai.speed`
@@ -116,7 +116,7 @@ buy queue priority and a bigger free limit, never cash. Cash payouts are a separ
 
 ## Where your models answer
 
-Once "Let my AI use this computer's models" is on for the machine, on openvibe.bot/machines:
+Once "Let my AI use this computer's models" is on for the machine, on openvibe.link/machines:
 
 - **OpenVibe.Chat.** Under "Your AI key" in your settings, choose "A model on my own computer". The machine card's
   "Use these models in OpenVibe.Chat" fills it in. Your Vibe (tick "Vibe thinks with it too") and the AI members you
@@ -138,9 +138,9 @@ When the machine is off or its model server is down, the request fails and says 
 - At most 200 messages of 64 KB each. A model the machine does not offer is refused (`bad_value`), and so is a request
   while another runs (`not_ready`).
 - When no model server answers, the command is `not_ready` and `describe` says `ai.ready: false`.
-- Its telemetry (Node v0.29.0) says whether a model is answering now (`ai_busy`). Once one has answered, it also gives
+- Its telemetry (Link v0.29.0) says whether a model is answering now (`ai_busy`). Once one has answered, it also gives
   how fast the last model answered here (`ai_model`, `ai_tokens_per_s`): the reply's tokens over the whole answer's
-  time, averaged with the earlier answers, the latest counting most. openvibe.bot/machines shows it beside the models.
+  time, averaged with the earlier answers, the latest counting most. openvibe.link/machines shows it beside the models.
 - It never acts on the machine, so it also runs while the machine's stop is latched.
 
 ## Machine pools (Linux)
@@ -187,8 +187,8 @@ engine. Install bubblewrap (sudo apt install bubblewrap) and try again."
 
    ```json
    {
-     "pool_directory": "/home/me/.local/share/openvibe-node/pool",
-     "pool_credential_file": "/home/me/.config/openvibe-node/credential.json",
+     "pool_directory": "/home/me/.local/share/openvibe-link/pool",
+     "pool_credential_file": "/home/me/.config/openvibe-link/credential.json",
      "pool_address": "192.168.1.2/24",
      "pool_engine": {
        "rpc_binary": "/opt/llama.cpp/bin/ggml-rpc-server",
@@ -204,14 +204,14 @@ engine. Install bubblewrap (sudo apt install bubblewrap) and try again."
    `pool_address` defaults to the address of the default route; `pool_port` defaults to 50053. `memory_mb` is what the
    model needs, weights and context. Every machine announces itself to Network every minute until it is in a pool
    (or once by hand: `python -m openvibe_ai.pool_cli announce --credential-file … --directory …`).
-2. On openvibe.network/machines, "Pool these machines" lists your machines that checked in from the same local network
+2. On openvibe.link/machines, "Pool these machines" lists your machines that checked in from the same local network
    (one public address, one private subnet). Choose two to eight; the head defaults to the one with the most free
    VRAM.
 3. On **each** machine, approve it:
 
    ```sh
-   python -m openvibe_ai.pool_cli approve --credential-file /home/me/.config/openvibe-node/credential.json \
-       --directory /home/me/.local/share/openvibe-node/pool --pool pool_…
+   python -m openvibe_ai.pool_cli approve --credential-file /home/me/.config/openvibe-link/credential.json \
+       --directory /home/me/.local/share/openvibe-link/pool --pool pool_…
    ```
 
    It shows the owner, the head and the members, says what the head sees, and needs the word `approve`. The key stays

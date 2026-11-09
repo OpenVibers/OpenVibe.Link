@@ -5,7 +5,7 @@ first; they are binding. Work on a branch `node-core`, commit in small steps wit
 request when the core and both robot plugins pass their tests. Do not deploy anything; you have no access to OpenVibe's
 servers and do not need it.
 
-## What the Node is
+## What the Link is
 
 One service people install on any computer, server, Raspberry Pi or phone. It pairs with OpenVibe once, connects
 **out** (no open ports), and lets OpenVibe products use the device: first **OpenVibe.Bot** (robots: drive, cameras,
@@ -17,13 +17,13 @@ and a **Cozmo**.
 ## Architecture (decided)
 
 - **Core: Go**, one static binary per platform (linux amd64/arm64/armv7, darwin amd64/arm64, windows amd64). Module path
-  `github.com/OpenVibers/OpenVibe.Node`. Libraries: `github.com/pion/webrtc/v4` (WHIP publishing), `nhooyr.io/websocket`
+  `github.com/OpenVibers/OpenVibe.Link`. Libraries: `github.com/pion/webrtc/v4` (WHIP publishing), `nhooyr.io/websocket`
   or `gorilla/websocket`, `github.com/kardianos/service` (systemd / launchd / Windows service). Keep dependencies few.
 - **Drivers are plugins**: separate executables the core starts, speaking **JSON lines over stdin/stdout** (one object per
   line). Robot plugins are **Python 3** (the kit libraries and PyCozmo are Python). A plugin must stop every actuator
   itself when its stdin closes, when a command's deadline passes, or when it has not heard a heartbeat from the core for
   1 s — the core dying must never leave motors running.
-- **Layout**: `cmd/openvibe-node/` (CLI), `internal/{config,credentials,link,protocol,safety,plugins,video,service}/`,
+- **Layout**: `cmd/openvibe-link/` (CLI), `internal/{config,credentials,link,protocol,safety,plugins,video,service}/`,
   `plugins/{dryrun,adeept_adr036,cozmo}/` (Python packages with their own tests), `install/install.sh`,
   `.github/workflows/ci.yml`, `docs/{protocol.md,plugins.md,install.md}`.
 
@@ -31,8 +31,8 @@ and a **Cozmo**.
 
 `openvibe-link pair <CODE>` (redeems a one-time pairing code, stores the credential), `openvibe-link run` (foreground),
 `openvibe-link install` / `uninstall` (as a service), `openvibe-link status`, `openvibe-link stop` (**the local kill
-switch**: stops every plugin's actuators immediately and holds them stopped until `openvibe-link resume`), `openvibe-node
-plugins` (list, with capabilities). Config in `/etc/openvibe-node/` (or the platform's equivalent); the credential file is
+switch**: stops every plugin's actuators immediately and holds them stopped until `openvibe-link resume`), `openvibe-link
+plugins` (list, with capabilities). Config in `/etc/openvibe-link/` (or the platform's equivalent); the credential file is
 mode 0600 and its contents never appear in logs, errors or `status`.
 
 ## Talking to OpenVibe.Bot (ADR-043 decisions 1, 2, 4, 5, 6)
@@ -61,7 +61,7 @@ mode 0600 and its contents never appear in logs, errors or `status`.
   `latched:false` or the local `resume` clears it. The **local** stop (`openvibe-link stop`, or a driver's `local_stop`):
   only the local `resume` clears it, never the owner. Owner limits (`max_speed`, `max_turn`) clamp every value in the core before it reaches a plugin.
 - Never run or expose a kit's stock control server (the Adeept kit ships one on 0.0.0.0:8888 with the fixed login
-  `admin:123456` and an MJPEG stream on :5000 — the Node replaces it; `install.sh` disables it if it finds it enabled).
+  `admin:123456` and an MJPEG stream on :5000 — the Link replaces it; `install.sh` disables it if it finds it enabled).
 
 ## Plugin protocol (write `docs/plugins.md`)
 
@@ -92,7 +92,7 @@ Raspberry Pi OS Bookworm, Python 3, `adafruit-circuitpython-pca9685`, `adafruit-
 
 ## Plugin 2: `cozmo` (a bridge plugin)
 
-Cozmo runs closed firmware and makes its own Wi-Fi access point with no internet. The Node runs on a computer next to it
+Cozmo runs closed firmware and makes its own Wi-Fi access point with no internet. The Link runs on a computer next to it
 (a Pi or a laptop) joined to Cozmo's Wi-Fi on one interface and to the internet on another. Use **PyCozmo** (MIT,
 `pip install pycozmo`, github.com/zayfod/pycozmo): `pycozmo.connect()` / `Client`, `drive_wheels(l, r, duration)`,
 `set_head_angle`, `set_lift_height`, `play_audio` (for say: synthesize with `espeak-ng` or `pico2wave` to 22 kHz mono
@@ -106,7 +106,7 @@ on-robot bridge pass — the two interfaces, pairing, firmware and the panel che
 ## Plugin 0: `dryrun`
 
 Accepts every command, logs it, answers telemetry and a test-pattern video source — used by CI, by people trying the
-Node on a laptop, and by the service's end-to-end tests.
+Link on a laptop, and by the service's end-to-end tests.
 
 ## Video (WHIP)
 
@@ -116,7 +116,7 @@ pattern (dry-run), an H.264 byte stream from a child process (`rpicam-vid`, `ffm
 
 ## install.sh and CI
 
-`install/install.sh` (`curl -fsSL https://node.openvibe.network/install | sh -s -- --robot rob_… --code CODE [--driver adeept|adeept-mecanum|cozmo|none]`, e.g. `--code ABCD-1234 --driver adeept`):
+`install/install.sh` (`curl -fsSL https://openvibe.link/install | sh -s -- --robot rob_… --code CODE [--driver adeept|adeept-mecanum|cozmo|none]`, e.g. `--code ABCD-1234 --driver adeept`):
 detect OS/arch, download the release binary and the plugin bundle, create a Python virtual environment for plugins,
 install the service, pair with the code.
 CI: `go vet`, `go test ./...` (race detector), cross-compile every target, Python plugin tests, and a release workflow on
@@ -132,5 +132,5 @@ core. Say in `docs/` where it will attach.
 
 `go test ./...` and the Python plugin tests green in CI on the PR; `openvibe-link run` with `dryrun` pairs against the fake
 server, publishes a test pattern, obeys commands and stops on every safety path; the Adeept and Cozmo plugins pass their
-tests with fake hardware; `docs/protocol.md`, `docs/plugins.md` and `docs/install.md` written; README says what the Node
+tests with fake hardware; `docs/protocol.md`, `docs/plugins.md` and `docs/install.md` written; README says what the Link
 is and how to install it.

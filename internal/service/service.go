@@ -1,5 +1,5 @@
-// Package service installs and runs the Node as a system service (systemd, launchd or the Windows service manager)
-// through kardianos/service. The same code path runs `openvibe-node run` in a terminal: Ctrl-C stops it cleanly.
+// Package service installs and runs the Link as a system service (systemd, launchd or the Windows service manager)
+// through kardianos/service. The same code path runs `openvibe-link run` in a terminal: Ctrl-C stops it cleanly.
 package service
 
 import (
@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	Name        = "openvibe-node"
+	Name        = "openvibe-link"
 	DisplayName = "OpenVibe Link"
 	Description = "OpenVibe Link connects this machine to OpenVibe (your agents, robots, cameras, computer control) over one outbound link."
 )
@@ -22,8 +22,8 @@ const (
 // Program is the body of the service: run until ctx ends.
 type Program func(ctx context.Context) error
 
-// ErrQuit is what a Program returns when its owner ended it (`openvibe-node quit`): it has stopped everything, and
-// the process exits 0. Only a Node run from a terminal or a sign-in start takes quit (a service manager would start it
+// ErrQuit is what a Program returns when its owner ended it (`openvibe-link quit`): it has stopped everything, and
+// the process exits 0. Only a Link run from a terminal or a sign-in start takes quit (a service manager would start it
 // again), and there the wait for a signal is not ours to end (kardianos/service on Windows waits for an interrupt),
 // so the process exits here.
 var ErrQuit = errors.New("quit")
@@ -56,14 +56,14 @@ func (p *program) Start(s ks.Service) error {
 		p.mu.Unlock()
 		close(p.done)
 		if err != nil && ctx.Err() == nil {
-			// The Node ended on its own (for example a second instance): let the service manager restart it.
+			// The Link ended on its own (for example a second instance): let the service manager restart it.
 			_ = s.Stop()
 		}
 	}()
 	return nil
 }
 
-// Stop cancels the Node and waits for it to stop every actuator (at most 15 s).
+// Stop cancels the Link and waits for it to stop every actuator (at most 15 s).
 func (p *program) Stop(ks.Service) error {
 	p.mu.Lock()
 	cancel, done := p.cancel, p.done
@@ -80,7 +80,7 @@ func (p *program) Stop(ks.Service) error {
 	return nil
 }
 
-// ExitPairAgain is the exit status of a Node whose node credential OpenVibe.Network refused (EX_CONFIG): the
+// ExitPairAgain is the exit status of a Link whose node credential OpenVibe.Network refused (EX_CONFIG): the
 // systemd unit does not restart it (RestartPreventExitStatus), since only pairing again can help.
 const ExitPairAgain = 78
 
@@ -107,14 +107,14 @@ func config(opt Options) *ks.Config {
 		},
 	}
 	if runtime.GOOS == "darwin" {
-		// launchd has no journal: write /usr/local/var/log/openvibe-node.{out,err}.log. systemd keeps journald.
+		// launchd has no journal: write /usr/local/var/log/openvibe-link.{out,err}.log. systemd keeps journald.
 		c.Option["LogOutput"] = true
 	}
 	return c
 }
 
 // systemdScript is kardianos/service's systemd unit with Delegate=yes: the worker makes a cgroup per job inside the
-// Node's own (internal/worker), which systemd allows only in a delegated cgroup.
+// Link's own (internal/worker), which systemd allows only in a delegated cgroup.
 const systemdScript = `[Unit]
 Description={{Description}}
 ConditionFileIsExecutable={{Path | cmdEscape}}

@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
-	"github.com/OpenVibers/OpenVibe.Node/internal/video"
-	"github.com/OpenVibers/OpenVibe.Node/internal/voice"
+	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
+	"github.com/OpenVibers/OpenVibe.Link/internal/video"
+	"github.com/OpenVibers/OpenVibe.Link/internal/voice"
 )
 
 // liveAPI is the part of Client the agent uses; tests substitute it.
@@ -176,7 +176,7 @@ func (a *Agent) Run(parent context.Context) error {
 		}
 	}
 	pub := a.opt.NewPublisher(video.Options{WHIPURL: a.opt.Publish.WHIPURL, PublishKey: a.ticket,
-		Audio: true, UserAgent: "openvibe-node/stream", Log: a.opt.Log})
+		Audio: true, UserAgent: "openvibe-link/stream", Log: a.opt.Log})
 	a.mu.Lock()
 	a.pub = pub
 	curtainUp := a.curtain
@@ -553,7 +553,7 @@ func (a *Agent) postSnapshot(ctx context.Context) {
 	}
 }
 
-// Status is what `openvibe-node status` shows for one stream.
+// Status is what `openvibe-link status` shows for one stream.
 type Status struct {
 	ID        string `json:"id"`
 	State     string `json:"state"`

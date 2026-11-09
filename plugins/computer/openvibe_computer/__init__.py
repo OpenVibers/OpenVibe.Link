@@ -6,12 +6,12 @@ command can never raise it:
 * ``observe`` (the default): capture the screen; list, stat and read files inside the roots.
 * ``ask``: also run programs, write files inside the roots and use the mouse and keyboard, each only after the owner
   approves it on the machine
-  (the tray, a notification's buttons, or ``openvibe-node approvals``, ``approve <id>``, ``deny <id>``); unanswered
+  (the tray, a notification's buttons, or ``openvibe-link approvals``, ``approve <id>``, ``deny <id>``); unanswered
   requests expire.
 * ``trusted``: run programs, write files inside the roots and use the mouse and keyboard without asking.
 * ``full``: as trusted, anywhere the account running the Node can reach.
 
-The local kill switch (``openvibe-node stop``) and a remote e-stop drop the plugin to observe, kill what is running
+The local kill switch (``openvibe-link stop``) and a remote e-stop drop the plugin to observe, kill what is running
 and deny what waits; the core refuses acting commands while either is latched too. The plugin runs as the Node's own
 account and never as root, except on a shared desk host for other people, where it runs as root and every desk sits in
 its own sandbox.
@@ -78,7 +78,7 @@ Command kinds and their answers (the ack's ``data``):
   a detector that fails or is unsure puts the curtain up and never down. Config ``allow_desk_stream: false`` turns it
   off. The core publishes over WHIP and snapshots while nobody watches.
 * **A desk host for other people** (``desk_isolation: "sandbox"``, Node v0.32, Desks plan D5): every desk is a browser
-  desk whose browser runs under ``openvibe-node desk-sandbox`` (the jobs' sandbox: its own namespaces and cgroup as
+  desk whose browser runs under ``openvibe-link desk-sandbox`` (the jobs' sandbox: its own namespaces and cgroup as
   ``worker.run_as``, ``desk_memory_mb``, ``desk_cpu_millis``, ``desk_disk_mb`` and ``desk_pids`` each, only the public
   internet with ``desk_egress: public``), its profile and downloads inside the sandbox and gone with the desk. Nothing
   of the machine itself is offered: ``exec``, ``fs``, ``probe``, the main screen and browser, whole desks and kept
@@ -140,7 +140,7 @@ MAX_WAITING = 8
 # mouse or keyboard, nor this many seconds after: an approved click must not land on another request's Approve button.
 INPUT_GUARD_S = 2.0
 # A desktop surface that cannot show the whole request offers no Approve button on cut text (notify-send's body, a
-# macOS dialog); the owner answers it in full with `openvibe-node approvals`.
+# macOS dialog); the owner answers it in full with `openvibe-link approvals`.
 NOTIFY_SUMMARY_MAX = 300
 DIALOG_SUMMARY_MAX = 400
 FULL_VIEW_HINT = "openvibe-link approvals"
@@ -192,7 +192,7 @@ CLICLICK_KEYS = {"return": "return", "enter": "enter", "escape": "esc", "esc": "
                  "right": "arrow-right", "home": "home", "end": "end", "page_up": "page-up", "prior": "page-up",
                  "page_down": "page-down", "next": "page-down"}
 # A desk host serving other people (desk_isolation sandbox, Desks plan D5): each desk's browser runs under
-# `openvibe-node desk-sandbox`, which replaces Chrome's own sandbox (it cannot nest inside ours) and has no /dev/shm;
+# `openvibe-link desk-sandbox`, which replaces Chrome's own sandbox (it cannot nest inside ours) and has no /dev/shm;
 # its profile and downloads live in the sandbox's /tmp, gone with the desk; its environment is only this.
 SANDBOX_CHROME_ARGS = ("--no-sandbox", "--no-zygote", "--disable-dev-shm-usage", "--disable-gpu")
 SANDBOX_PROFILE = "/tmp/desk/profile"
@@ -312,14 +312,14 @@ def _int(v, name, lo, hi, default):
 
 
 def node_data_dir():
-    """Where the plugin keeps what it keeps (the agent's browser profile, the desks' folders). ~/.local/share/openvibe-node
-    on Linux and macOS; on Windows %LOCALAPPDATA%\\openvibe-node, where a Windows program keeps its data (it was the
+    """Where the plugin keeps what it keeps (the agent's browser profile, the desks' folders). ~/.local/share/openvibe-link
+    on Linux and macOS; on Windows %LOCALAPPDATA%\\openvibe-link, where a Windows program keeps its data (it was the
     Linux path with mixed separators before 0.31, found by running the tests on Windows). A Windows machine that already
     has the old folder keeps using it, so a kept sign-in is not lost."""
-    old = os.path.normpath(os.path.expanduser("~/.local/share/openvibe-node"))
+    old = os.path.normpath(os.path.expanduser("~/.local/share/openvibe-link"))
     if os.name != "nt":
         return old
-    new = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser(os.path.join("~", "AppData", "Local")), "openvibe-node")
+    new = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser(os.path.join("~", "AppData", "Local")), "openvibe-link")
     return old if os.path.isdir(old) and not os.path.isdir(new) else new
 
 class Computer(Plugin):
@@ -363,7 +363,7 @@ class Computer(Plugin):
         self._gate = threading.local()   # the generation of the closure this thread is running
         # Every exec'd program carries this in its environment, so a stop can find its descendants even after they
         # leave the process group (and never touches a process this plugin did not start).
-        self.exec_env_name = "OPENVIBE_NODE_EXEC_TREE"
+        self.exec_env_name = "OPENVIBE_LINK_EXEC_TREE"
         self.exec_env_value = "%d-%s" % (os.getpid(), os.urandom(8).hex())
         self.running = 0
         self.mu = threading.Lock()
@@ -848,7 +848,7 @@ class Computer(Plugin):
     def _node_control_dirs(self):
         """The Node's own config and state directories, as it passes them to the plugin in its environment."""
         dirs = []
-        for key in ("OPENVIBE_NODE_CONFIG", "OPENVIBE_NODE_STATE"):
+        for key in ("OPENVIBE_LINK_CONFIG", "OPENVIBE_LINK_STATE"):
             value = self.env.get(key)
             if isinstance(value, str) and value.strip():
                 real = os.path.realpath(os.path.expanduser(value.strip()))
@@ -1039,12 +1039,12 @@ class Computer(Plugin):
         raise Fault("not_allowed", "this machine is a desk host for other people: only its browser desks take commands")
 
     def _sandbox_argv(self, binary):
-        """The `openvibe-node desk-sandbox … --` a desk's browser runs under on a desk host for other people, else None."""
+        """The `openvibe-link desk-sandbox … --` a desk's browser runs under on a desk host for other people, else None."""
         if not self._shared():
             return None
-        node = self.env.get("OPENVIBE_NODE_EXE") or self.which("openvibe-node")
+        node = self.env.get("OPENVIBE_LINK_EXE") or self.which("openvibe-link")
         if not node:
-            raise Fault("unsupported", "openvibe-node was not found to sandbox the desk (the Node sets OPENVIBE_NODE_EXE)")
+            raise Fault("unsupported", "openvibe-link was not found to sandbox the desk (the Node sets OPENVIBE_LINK_EXE)")
         real = os.path.realpath(binary)
         binds = []
         if binary.startswith("/snap/") or os.path.basename(real) == "snap":
@@ -1382,7 +1382,7 @@ class Computer(Plugin):
 
     def _notify(self, cid, summary):
         """Tell the desktop that a request waits (config `notify`, on by default) when the Node runs in a graphical
-        session and the Node's tray does not show it already (`openvibe-node tray`). On Linux the notification has
+        session and the Node's tray does not show it already (`openvibe-link tray`). On Linux the notification has
         Approve and Deny buttons when notify-send can show them (libnotify 0.7.10+); on macOS a dialog asks, with Deny
         as its default button. Best effort: it never blocks or fails a command."""
         if not self.notify or self.clock() < self.tray_until:
@@ -1857,7 +1857,7 @@ class Computer(Plugin):
                 raw = ssl.create_default_context().wrap_socket(raw, server_hostname=t["host"])
             conn = http.client.HTTPConnection(t["host"], t["port"], timeout=timeout)
             conn.sock = raw
-            conn.request("GET", t["path"], headers={"User-Agent": "OpenVibe-Node-probe/1", "Accept": "*/*", "Connection": "close"})
+            conn.request("GET", t["path"], headers={"User-Agent": "OpenVibe-Link-probe/1", "Accept": "*/*", "Connection": "close"})
             res = conn.getresponse()
             cap = min(self.max_output, 64 * 1024)
             body = res.read(cap + 1)

@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
 )
 
 // deskConfig is a worker config a desk can run under here, or the test skips (fails under OPENVIBE_WORKER_TESTS=require,
@@ -58,7 +58,7 @@ func TestDeskBindsOnlyInstallDirsAndFonts(t *testing.T) {
 	}
 	dir := t.TempDir()
 	if _, err := CheckDeskBinds([]string{"/opt"}, []string{"/opt"}); err == nil {
-		t.Error("a bind holding a Node directory was allowed")
+		t.Error("a bind holding a Link directory was allowed")
 	}
 	if _, err := os.Stat("/etc/fonts"); err == nil {
 		if got, err := CheckDeskBinds([]string{dir}, []string{"/etc/fonts/"}); err != nil || len(got) != 1 || got[0] != "/etc/fonts" {

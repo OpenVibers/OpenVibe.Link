@@ -3,7 +3,7 @@
 Chromium is started on the first command with ``--remote-debugging-pipe``: it reads Chrome DevTools Protocol commands
 from file descriptor 3 and writes answers and events to 4, each message JSON ended by a NUL byte. No port is opened,
 so nothing else on the machine can drive it. The profile is a folder of its own (``browser_profile``, by default
-``~/.local/share/openvibe-node/browser``): the agent never sees the owner's own browser sessions unless the owner points
+``~/.local/share/openvibe-link/browser``): the agent never sees the owner's own browser sessions unless the owner points
 that setting at one.
 
     Browser(binary, profile, headless).open(url) / read() / click(selector|text) / fill(selector, text) / press(key)
@@ -202,7 +202,7 @@ class Browser:
                  sandbox=None):
         self.binary = binary
         self.env = env   # the private desk's display and bus, or None for this process's own
-        # On a desk host serving other people (desk_isolation sandbox): the `openvibe-node desk-sandbox … --` command the
+        # On a desk host serving other people (desk_isolation sandbox): the `openvibe-link desk-sandbox … --` command the
         # browser runs under, its profile inside the sandbox (profile is then a path in there, never made here).
         self.sandbox = list(sandbox) if sandbox else None
         self.extra_args = list(extra_args)

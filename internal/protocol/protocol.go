@@ -1,4 +1,4 @@
-// Package protocol holds every wire detail of the link between the Node and OpenVibe.Bot: the pairing request, the
+// Package protocol holds every wire detail of the link between the Link and OpenVibe.Bot: the pairing request, the
 // device WebSocket's frame envelope, each message type, fault codes and the endpoint paths. Nothing outside this
 // package knows a JSON field name, so aligning with the service's docs/protocol.md is a change to this package only.
 //
@@ -27,7 +27,7 @@ const (
 
 // OpenVibe.Network paths, relative to the Network origin (server/registry/node-principals.js).
 const (
-	NodePairingPath = "/api/v1/node-pairing" // redeems a Network pairing code for a node principal and its credential
+	LinkPairingPath = "/api/v1/link-pairing" // redeems a Network pairing code for a node principal and its credential
 	TokenPath       = "/oauth/token"         // client_credentials: the node credential buys a node token
 )
 
@@ -50,7 +50,7 @@ const (
 	CloseRevoked  = 4003 // the owner revoked the device (or rotated its credential) while it was connected
 )
 
-// Error codes in error.code that the Node tells apart.
+// Error codes in error.code that the Link tells apart.
 const (
 	ErrNotPaired = "bot.not_paired" // a frame arrived on a socket that has no credential
 	ErrNotReady  = "bot.not_ready"  // more than 64 frames arrived while the server was still authenticating
@@ -95,20 +95,20 @@ const (
 var RuntimeClasses = []string{ClassFunction, ClassCode, ClassBrowser, ClassLinux, ClassDesktop, ClassGPU}
 
 // Job network policies (platform.job@1 net). A job that names none runs under NetDeny: the contract's declared
-// default, which is never widened by the Node's own worker.egress.
+// default, which is never widened by the Link's own worker.egress.
 const (
 	NetDeny         = "deny"          // no network at all; also what an absent net means
-	NetNone         = "none"          // NetDeny under the name the Node's worker.egress uses
+	NetNone         = "none"          // NetDeny under the name the Link's worker.egress uses
 	NetPublic       = "public"        // public IPv4, filtered by the host
 	NetOpenVibeOnly = "openvibe-only" // public, restricted to the host's egress_allow
 )
 
 // CapWorker is the status.capabilities key a worker advertises its runtime classes under (WorkerCapabilities). It is
-// present only when the Node runs at least one class.
+// present only when the Link runs at least one class.
 const CapWorker = "worker"
 
 // WorkerCapPrefix is the namespace of the reserved Fabric capability names (platform.resource-offer@1.capabilities)
-// a Node's runtime classes map to, one name per class: "worker:function", "worker:code", …. A name matches the
+// a Link's runtime classes map to, one name per class: "worker:function", "worker:code", …. A name matches the
 // offer's capabilities pattern ^[a-z][a-z0-9-]*:[a-z0-9.-]+$ with no schema change needed.
 const WorkerCapPrefix = "worker:"
 
@@ -134,7 +134,7 @@ const (
 	JobNotAvailable   = "class not available"
 
 	// Refused by a running worker (platform.job@1: a missing artifact, the local kill switch, limits it cannot honor).
-	JobUnknownArtifact = "unknown artifact"                    // not a function declared in the Node's local config
+	JobUnknownArtifact = "unknown artifact"                    // not a function declared in the Link's local config
 	JobStopped         = "the e-stop or local stop is latched" // fault estopped or local_stop
 	JobBusy            = "worker busy"                         // worker.caps.max_jobs are running; fault not_ready
 )
@@ -200,7 +200,7 @@ const (
 	KindDeskStream = "desk.stream"
 )
 
-// Kinds lists every command kind the Node understands.
+// Kinds lists every command kind the Link understands.
 var Kinds = []string{KindDrive, KindActuator, KindPTZ, KindSay, KindDisplay, KindHalt, KindButton, KindPoint, KindExec, KindFS, KindScreen, KindProbe, KindInput, KindBrowser, KindScreenStream, KindDesk, KindDeskStream, KindAI}
 
 // ComputerKinds move nothing: they carry long deadlines (DefaultComputerMS, at most MaxComputerMS) and no clamping.
@@ -261,7 +261,7 @@ const (
 	FaultUnsupported   = "unsupported"    // no driver on this device handles the kind or the actuator
 	FaultNotAllowed    = "not_allowed"    // the kind is not in config.allowed
 	FaultEstopped      = "estopped"       // the remote e-stop is latched
-	FaultLocalStop     = "local_stop"     // the local kill switch (`openvibe-node stop`) is latched
+	FaultLocalStop     = "local_stop"     // the local kill switch (`openvibe-link stop`) is latched
 	FaultNoHeartbeat   = "no_heartbeat"   // a plugin lost the core's heartbeat
 	FaultNotReady      = "not_ready"      // the driver is starting or restarting, or the server's config has not arrived
 	FaultExpired       = "expired"        // the command's deadline_ms had passed when it arrived
@@ -283,7 +283,7 @@ const DefaultDeadlineMS = 300
 // DefaultMaxCommandMS caps deadlines when the profile sets no max_command_ms.
 const DefaultMaxCommandMS = 1000
 
-// MaxClockUncertaintyMS is the most clock uncertainty (the connection's fastest round trip) Node times motion with: past
+// MaxClockUncertaintyMS is the most clock uncertainty (the connection's fastest round trip) Link times motion with: past
 // it, a motion command with a deadline is refused as not_ready rather than run on a clock it cannot bound.
 const MaxClockUncertaintyMS = 1000
 
@@ -336,7 +336,7 @@ type Config struct {
 	Voice    bool   `json:"voice,omitempty"`
 	CallWord string `json:"call_word,omitempty"`
 	// Roles are what the machine does for the network, as the owner set them on the hub (plan L34; the catalogue is
-	// Contracts 0.257.0's network.machine-roles@1): codes.worker, desks.host, ai.host, bot.robot. The Node reads them
+	// Contracts 0.257.0's network.machine-roles@1): codes.worker, desks.host, ai.host, bot.robot. The Link reads them
 	// at its check-in and applies the ones this machine has; a role it does not know, or a feature it was not
 	// installed for, is left alone. The local configuration always wins (ADR-045).
 	Roles []string `json:"roles,omitempty"`
@@ -378,7 +378,7 @@ type Command struct {
 	// Zero when Bot sends none (older Bots, robots without a queue).
 	TurnEpoch int64  `json:"turn_epoch,omitempty"`
 	RobotID   string `json:"robot_id,omitempty"`
-	Target    string `json:"target,omitempty"` // Node only: a driver name; default: the first driver with the capability
+	Target    string `json:"target,omitempty"` // Link only: a driver name; default: the first driver with the capability
 }
 
 // Estop is sent when the e-stop latches (Latched true) or the owner clears it (Latched false).
@@ -440,7 +440,7 @@ type Job struct {
 }
 
 // JobRequest is the `job` frame: run Job. A body that does not decode still yields the frame, with Err set and the
-// id when it is a string, so the Node can nack it rather than drop it (the server resends a job until it is answered).
+// id when it is a string, so the Link can nack it rather than drop it (the server resends a job until it is answered).
 type JobRequest struct {
 	Job Job   `json:"job"`
 	Err error `json:"-"`
@@ -594,7 +594,7 @@ type JobExit struct {
 	Usage  JobExitUsage    `json:"usage"`
 }
 
-// WorkerCapabilities is status.capabilities[CapWorker]: the runtime classes this Node runs and its local job caps.
+// WorkerCapabilities is status.capabilities[CapWorker]: the runtime classes this Link runs and its local job caps.
 type WorkerCapabilities struct {
 	Capabilities   []string `json:"capabilities"` // the reserved Fabric names these classes advertise: worker:function, …
 	RuntimeClasses []string `json:"runtime_classes"`
@@ -669,7 +669,7 @@ type Nack struct {
 }
 
 // Heartbeat is sent every config.heartbeat_ms. Seq mirrors the envelope seq for older servers that echo it; T is the
-// device's send time (unix ms), which Bot echoes back as heartbeat_ack.t/echo and the Node measures RTT from. RTTMS is
+// device's send time (unix ms), which Bot echoes back as heartbeat_ack.t/echo and the Link measures RTT from. RTTMS is
 // the last measured round trip, absent until one has been measured (a measured 0 ms is still sent, hence the pointer).
 //
 // Fleet is what this machine's coding agents report (Codes C9c): installed, signed in, and their plan windows. It is
@@ -928,9 +928,9 @@ type PairResponse struct {
 	Profile    json.RawMessage `json:"profile,omitempty"`
 }
 
-// NodePairingRequest is the body of POST <network>/api/v1/node-pairing: the code is the credential. Pairing is the
+// LinkPairingRequest is the body of POST <network>/api/v1/link-pairing: the code is the credential. Pairing is the
 // pair_… id from the installer command; with it a wrong try counts against that pairing's code.
-type NodePairingRequest struct {
+type LinkPairingRequest struct {
 	Code    string `json:"code"`
 	Pairing string `json:"pairing,omitempty"`
 	Name    string `json:"name,omitempty"`
@@ -942,10 +942,10 @@ type PairedFor struct {
 	Ref     string `json:"ref,omitempty"`
 }
 
-// NodePairingResponse is the 201 answer of POST /api/v1/node-pairing. The credential appears only here.
-type NodePairingResponse struct {
-	Principal     string     `json:"principal"` // nod_…
-	NodeID        string     `json:"node_id"`
+// LinkPairingResponse is the 201 answer of POST /api/v1/link-pairing. The credential appears only here.
+type LinkPairingResponse struct {
+	Principal     string     `json:"principal"` // lnk_…
+	LinkID        string     `json:"link_id"`
 	HomeCell      string     `json:"home_cell"`
 	Credential    string     `json:"credential"`
 	TokenEndpoint string     `json:"token_endpoint,omitempty"`

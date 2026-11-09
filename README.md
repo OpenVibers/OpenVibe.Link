@@ -1,8 +1,6 @@
 # OpenVibe Link
 
-OpenVibe Link is the new name of OpenVibe Node: the product, the installer and the app's text say Link; the repo is
-still `OpenVibe.Node`, and `openvibe-node` is kept as an alias for existing installs and scripts for a year. The
-service's internal unit name and folders stay `openvibe-node` so upgrades keep the same pairing and settings.
+OpenVibe Link connects your computers, phones and robots to OpenVibe.
 
 One service for your computers, servers, Raspberry Pis, phones and robots: pair it once with OpenVibe and products
 like **OpenVibe.Bot** (robots: drive, cameras, sensors, with safety) and **OpenVibe.Actor** (computer control for AI
@@ -19,8 +17,6 @@ On a robot's Raspberry Pi (or other Linux computer), the one command:
 curl -fsSL https://openvibe.link/install | sh
 ```
 
-The same installer is also at <https://openvibe.bot/install>, which keeps working; `node.openvibe.network/install`
-and the old `node.openvibe.network` pages keep working and send you to openvibe.link.
 
 It turns on I2C and SPI, installs the camera tools, finds the kit (an Adeept ADR036 4WD, a ROS 2 robot), shows a code
 to approve at openvibe.bot/link, and pairs: the robot is made, drivable on its panel and, if you chose it, live on your
@@ -79,7 +75,7 @@ openvibe-link exchange serve --model qwen3:32b --public-url https://gpu.example.
   (`cmd_vel`, battery, scan/range, odometry and camera, as a node with rclpy or through rosbridge). LOOI's driver is the community's
   ([docs/hardware-looi.md](docs/hardware-looi.md) is its contract). Each plugin stops its own actuators when stdin closes,
   at a command's deadline and after 1 s without a heartbeat, so the core dying never leaves motors running.
-- **ESP32 library** ([`esp32/`](esp32/README.md), `OpenVibeNode`): the device side of the protocol for ESP32 boards —
+- **ESP32 library** ([`esp32/`](esp32/README.md), `OpenVibeLink`): the device side of the protocol for ESP32 boards —
   pairing, the control link, drive/actuator commands, telemetry, heartbeat, deadman and e-stop — but no jobs or video.
 
 **Community robots:** a profile people submit on openvibe.bot (`community.<name>`) is reviewed by an OpenVibe admin
@@ -96,16 +92,16 @@ minutes, and `openvibe-link stop` ends it at once ([the live screen](docs/comput
 
 **Your own models for your OpenVibe work:** the `ai` plugin lets OpenVibe use a model you already run at home (Ollama,
 LM Studio or llama.cpp's server) for your own work, at no cost and with no open port, once you turn on "Let my AI use
-this computer's models" on openvibe.bot/machines ([docs/ai.md](docs/ai.md)). The installer sets it up with `--ai`.
+this computer's models" on openvibe.link/machines ([docs/ai.md](docs/ai.md)). The installer sets it up with `--ai`.
 
-**A machine that runs your jobs:** add it on openvibe.bot/machines, which prints the same installer with `--worker`: the
+**A machine that runs your jobs:** add it on openvibe.link/machines, which prints the same installer with `--worker`: the
 job worker runs each job as an unprivileged user in a sandbox, and the OpenVibe.Codes job runner lets you start a coding
 task on openvibe.codes/run from any browser and have this machine do it ([docs/worker.md](docs/worker.md)). Add
 `--plan-logins` to use the coding plans you already signed in for here: it names those login files for your jobs, sets
 the service's HOME to your home, and says how to sign in a tool that is not ready, without ever reading or printing a
 login's content.
 
-**What the machine does for the network:** the owner sets the machine's roles on openvibe.network/machines
+**What the machine does for the network:** the owner sets the machine's roles on openvibe.link/machines
 (`codes.worker`, `desks.host`, `ai.host`, `bot.robot`). Link reads them at its check-in, keeps them, and applies
 the ones this machine was installed for: the job worker starts if the local configuration has it, and the machine says
 plainly which role it could not honour. The local configuration always wins: a role never installs anything and never

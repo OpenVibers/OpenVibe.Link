@@ -178,7 +178,7 @@ class BrowserKindTest(unittest.TestCase):
         b = self.made[0]
         self.assertEqual(len(self.made), 1, "one browser for the session")
         self.assertEqual(b.calls, [("open", "https://example.org/a"), ("click", "a.next", None), ("press", "Enter"), ("back",), ("screenshot", 640)])
-        self.assertTrue(b.profile.endswith(os.path.join("openvibe-node", "browser")), b.profile)
+        self.assertTrue(b.profile.endswith(os.path.join("openvibe-link", "browser")), b.profile)
 
     def test_addresses_and_values_it_refuses(self):
         self.boot("trusted")

@@ -80,7 +80,7 @@ func TestPluginStrictTiming(t *testing.T) {
 	if len(c.Plugins) != 2 || !c.Plugins[0].StrictTiming || c.Plugins[1].StrictTiming {
 		t.Fatalf("%+v", c.Plugins)
 	}
-	// looi needs no command: the Node runs the driver installed into its Python (install.sh --driver looi).
+	// looi needs no command: the Link runs the driver installed into its Python (install.sh --driver looi).
 	if got := c.PluginCommand(c.Plugins[0], HomePaths(t.TempDir())); len(got) != 3 || got[2] != "openvibe_looi" {
 		t.Fatalf("%v", got)
 	}

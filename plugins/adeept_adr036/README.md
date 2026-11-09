@@ -1,6 +1,6 @@
 # openvibe-adeept-adr036
 
-OpenVibe Node plugin for the **Adeept 4WD Smart Car Kit for Raspberry Pi (ADR036)**, ordinary or mecanum wheels,
+OpenVibe Link plugin for the **Adeept 4WD Smart Car Kit for Raspberry Pi (ADR036)**, ordinary or mecanum wheels,
 on Raspberry Pi OS Bookworm. Built on `openvibe_plugin` (deadlines, heartbeat loss, stdin EOF, e-stop and halt all stop
 the wheels). The mapping was checked against Adeept's `Server/Server_*Wheels/Move.py` and `Voltage.py`; none of the
 kit's code is imported.
@@ -10,11 +10,11 @@ kit's code is imported.
 The kit's own server listens on `0.0.0.0:8888` with the fixed login `admin` / `123456` and streams MJPEG on `:5000`.
 Anyone on the network could drive the car with it. The installer (`install/install.sh`) now does this automatically:
 it stops and disables `Adeept_Robot.service` and comments out the kit's autostart lines in the invoking user's
-crontab, root's crontab and `/etc/rc.local`, prefixing each with the marker `#openvibe-node-disabled:` and keeping the
+crontab, root's crontab and `/etc/rc.local`, prefixing each with the marker `#openvibe-link-disabled:` and keeping the
 original text, so undoing it is removing the marker and a second run changes nothing. From a root shell, it checks
 `pi`'s crontab when that account exists. Verify with `systemctl status Adeept_Robot.service`,
-`crontab -l | grep openvibe-node-disabled` (and `sudo crontab -l -u pi | grep openvibe-node-disabled` for a root-shell
-install) and `grep openvibe-node-disabled /etc/rc.local`. Do not run it next to the Node. This plugin never starts it.
+`crontab -l | grep openvibe-link-disabled` (and `sudo crontab -l -u pi | grep openvibe-link-disabled` for a root-shell
+install) and `grep openvibe-link-disabled /etc/rc.local`. Do not run it next to the Link. This plugin never starts it.
 
 ## Wiring (kit defaults)
 

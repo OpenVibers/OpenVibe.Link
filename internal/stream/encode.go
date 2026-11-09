@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/video"
+	"github.com/OpenVibers/OpenVibe.Link/internal/video"
 )
 
 // Capture kinds, one per platform the design names plus the browser desk's own surface and a synthetic source for the

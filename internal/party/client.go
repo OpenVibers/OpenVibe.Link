@@ -145,7 +145,7 @@ func (c Client) CreateShare(ctx context.Context, grant string) (Share, error) {
 	var out struct {
 		Share Share `json:"share"`
 	}
-	err := c.call(ctx, false, http.MethodPost, "/api/v1/node/party-shares", map[string]string{"grant": grant}, &out)
+	err := c.call(ctx, false, http.MethodPost, "/api/v1/link/party-shares", map[string]string{"grant": grant}, &out)
 	return out.Share, err
 }
 
@@ -164,9 +164,9 @@ func (c Client) SyncMembers(ctx context.Context, share Share, access Access) err
 			members = append(members, m.Username)
 		}
 	}
-	return c.call(ctx, false, http.MethodPut, "/api/v1/node/shares/"+url.PathEscape(share.ID)+"/party-members", map[string]any{"members": members}, nil)
+	return c.call(ctx, false, http.MethodPut, "/api/v1/link/shares/"+url.PathEscape(share.ID)+"/party-members", map[string]any{"members": members}, nil)
 }
 
 func (c Client) CloseShare(ctx context.Context, share Share) error {
-	return c.call(ctx, false, http.MethodDelete, "/api/v1/node/shares/"+url.PathEscape(share.ID)+"/party", nil, nil)
+	return c.call(ctx, false, http.MethodDelete, "/api/v1/link/shares/"+url.PathEscape(share.ID)+"/party", nil, nil)
 }

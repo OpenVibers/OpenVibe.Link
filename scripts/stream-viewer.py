@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Headless viewer for the Agent Streams S1 latency probe.
 
-It joins a WebRTC stream over WHEP (the design's ``openvibe-node stream --probe`` publishes a QR of the millisecond
+It joins a WebRTC stream over WHEP (the design's ``openvibe-link stream --probe`` publishes a QR of the millisecond
 clock it drew each frame), decodes that QR from every video frame, and reports the glass-to-glass latency:
 ``now_ms - clock_in_the_QR``. The pass line is p95 under 1 s over 60 s.
 

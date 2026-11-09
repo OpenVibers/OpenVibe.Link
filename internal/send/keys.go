@@ -13,7 +13,7 @@ import (
 	"runtime"
 )
 
-// JWK is the P-256 receive key shape used by openvibe-sdk/locker. The private fields stay in the Node's 0600 config
+// JWK is the P-256 receive key shape used by openvibe-sdk/locker. The private fields stay in the Link's 0600 config
 // file and are returned only to its token-protected loopback panel so the user can open an accepted envelope.
 type JWK struct {
 	Kty string `json:"kty"`

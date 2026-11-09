@@ -16,14 +16,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/config"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 const (
 	cgroupFS    = "/sys/fs/cgroup"
 	cgroup2     = 0x63677270 // CGROUP2_SUPER_MAGIC
-	nodeLeaf    = "openvibe-node"
+	nodeLeaf    = "openvibe-link"
 	cpuPeriodUS = 100000
 )
 
@@ -37,16 +37,16 @@ var (
 	cgroupSeq  atomic.Uint64
 )
 
-// jobCgroupBase is the cgroup v2 directory the job cgroups are made in: the Node's own cgroup, set up once. It needs
-// that cgroup delegated to the Node (systemd Delegate=yes, or a Node running as root).
+// jobCgroupBase is the cgroup v2 directory the job cgroups are made in: the Link's own cgroup, set up once. It needs
+// that cgroup delegated to the Link (systemd Delegate=yes, or a Link running as root).
 func jobCgroupBase() (string, error) {
 	cgroupOnce.Do(func() { cgroupBase, cgroupErr = setupCgroupBase() })
 	return cgroupBase, cgroupErr
 }
 
-// setupCgroupBase enables the controllers for the children of the Node's own cgroup. cgroup v2 lets a cgroup other
-// than the root do that only while it holds no process, so the Node's processes move to a leaf, openvibe-node, first
-// (a Node already in that leaf uses its parent). Nothing moves unless every controller is available.
+// setupCgroupBase enables the controllers for the children of the Link's own cgroup. cgroup v2 lets a cgroup other
+// than the root do that only while it holds no process, so the Link's processes move to a leaf, openvibe-link, first
+// (a Link already in that leaf uses its parent). Nothing moves unless every controller is available.
 func setupCgroupBase() (string, error) {
 	var st syscall.Statfs_t
 	if err := syscall.Statfs(cgroupFS, &st); err != nil || st.Type != cgroup2 {
@@ -63,7 +63,7 @@ func setupCgroupBase() (string, error) {
 		}
 	}
 	if rel == "" {
-		return "", errors.New("the Node is not in a cgroup v2 hierarchy")
+		return "", errors.New("the Link is not in a cgroup v2 hierarchy")
 	}
 	base := filepath.Join(cgroupFS, rel)
 	if filepath.Base(base) == nodeLeaf {
@@ -80,7 +80,7 @@ func setupCgroupBase() (string, error) {
 	var missing []string
 	for _, c := range cgroupControllers {
 		if !hasWord(string(avail), c) {
-			return "", fmt.Errorf("the cgroup v2 controller %s is not available in %s (delegate the Node's cgroup to it: systemd Delegate=yes)", c, base)
+			return "", fmt.Errorf("the cgroup v2 controller %s is not available in %s (delegate the Link's cgroup to it: systemd Delegate=yes)", c, base)
 		}
 		if !hasWord(string(enabled), c) {
 			missing = append(missing, c)
@@ -110,9 +110,9 @@ func setupCgroupBase() (string, error) {
 	}
 }
 
-// moveProcs moves every process of base into its openvibe-node leaf (none from the root cgroup). They must all be the
-// Node and its descendants: a cgroup holding other processes (a login session's scope, the parent of a Node that
-// was moved into a leaf it does not own) is not the Node's to rearrange, and nothing moves.
+// moveProcs moves every process of base into its openvibe-link leaf (none from the root cgroup). They must all be the
+// Link and its descendants: a cgroup holding other processes (a login session's scope, the parent of a Link that
+// was moved into a leaf it does not own) is not the Link's to rearrange, and nothing moves.
 func moveProcs(base string) error {
 	if base == cgroupFS {
 		return nil
@@ -124,7 +124,7 @@ func moveProcs(base string) error {
 	pids := strings.Fields(string(b))
 	for _, pid := range pids {
 		if n, _ := strconv.Atoi(pid); !ownProcess(n) {
-			return fmt.Errorf("%s holds process %s, which is not the Node's: run the Node as its own systemd service "+
+			return fmt.Errorf("%s holds process %s, which is not the Link's: run the Link as its own systemd service "+
 				"with Delegate=yes", base, pid)
 		}
 	}
@@ -137,8 +137,8 @@ func moveProcs(base string) error {
 	return nil
 }
 
-// ownProcess reports whether pid is the Node or one of its descendants. A process that has exited counts as the
-// Node's: moving it fails ESRCH, which moveProcs ignores.
+// ownProcess reports whether pid is the Link or one of its descendants. A process that has exited counts as the
+// Link's: moving it fails ESRCH, which moveProcs ignores.
 func ownProcess(pid int) bool {
 	self := os.Getpid()
 	for hops := 0; pid > 1 && hops < 4096; hops++ {

@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/mono"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/mono"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 // Timing. Variables so tests can shorten them.
@@ -84,8 +84,8 @@ const (
 	OutVideo     = "video"
 	OutFault     = "fault"
 	OutState     = "state"
-	// OutLocalStop: the driver latched the Node's local stop (its own stop button, a sensor it trusts). Only
-	// `openvibe-node resume` on the machine releases it.
+	// OutLocalStop: the driver latched the Link's local stop (its own stop button, a sensor it trusts). Only
+	// `openvibe-link resume` on the machine releases it.
 	OutLocalStop = "local_stop"
 )
 
@@ -293,12 +293,12 @@ func (p *Plugin) enqueue(l line) error {
 const (
 	StopHalt     = "halt"      // Bot's halt: the controlling turn ended (release, handoff, timeout, unbind)
 	StopLinkLost = "link_lost" // the link to Bot was lost
-	StopShutdown = "shutdown"  // the Node is stopping (service stop, `openvibe-node quit`)
+	StopShutdown = "shutdown"  // the Link is stopping (service stop, `openvibe-link quit`)
 	StopTimeout  = "timeout"   // a command got no answer from the driver within its window
 	EstopRemote  = "remote"    // an e-stop from the platform (a robot owner or staff)
-	EstopLocal   = "local"     // `openvibe-node stop` on the device
+	EstopLocal   = "local"     // `openvibe-link stop` on the device
 	EstopDriver  = "driver"    // a driver's own local stop (a plugin reported one)
-	EstopLatched = "latched"   // the stop was already latched when the Node or this process started
+	EstopLatched = "latched"   // the stop was already latched when the Link or this process started
 )
 
 // Stop tells the plugin to stop every actuator, saying why.
@@ -348,7 +348,7 @@ type ApprovalRequest struct {
 	answered bool
 }
 
-// approval captures the pending request at event receipt, before Node's event queue.
+// approval captures the pending request at event receipt, before Link's event queue.
 func (p *Plugin) approval(id string, seconds float64) *ApprovalRequest {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -414,7 +414,7 @@ func (p *Plugin) HasCapability(name string) bool {
 	return ok
 }
 
-// Tray tells the plugin whether the Node's tray shows its approvals, for the next ttlS seconds unless told again.
+// Tray tells the plugin whether the Link's tray shows its approvals, for the next ttlS seconds unless told again.
 func (p *Plugin) Tray(on bool, ttlS int) error {
 	return p.send(map[string]any{"op": "tray", "attached": on, "ttl_s": ttlS})
 }
@@ -453,13 +453,13 @@ type Provenance struct {
 	Seq         uint64 `json:"seq,omitempty"`
 	IssuedAtMS  int64  `json:"issued_at_ms,omitempty"`
 	ExpiresAtMS int64  `json:"expires_at_ms,omitempty"`
-	// How far Node's estimate of the server's clock may trail it (the connection's fastest round trip): the deadline
+	// How far Link's estimate of the server's clock may trail it (the connection's fastest round trip): the deadline
 	// was already checked against estimate + this, and a driver may apply a stricter cap of its own. Absent when the
-	// Node has no link clock (local commands).
+	// Link has no link clock (local commands).
 	ClockUncertaintyMS *int64 `json:"clock_uncertainty_ms,omitempty"`
 }
 
-// BeginWith is BeginTurn for a command that expires at an instant on this machine (the Node's receipt of it plus the
+// BeginWith is BeginTurn for a command that expires at an instant on this machine (the Link's receipt of it plus the
 // time its deadline left), with its provenance (nil: none). The plugin gets what is left when the line is written to
 // it, never more, and a command whose time runs out before then is answered expired without reaching the plugin.
 func (p *Plugin) BeginWith(ctx context.Context, id, kind string, value json.RawMessage, expires mono.Instant, op *protocol.Operator, turnEpoch int64, prov *Provenance) func() Reply {

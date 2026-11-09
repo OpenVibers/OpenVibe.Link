@@ -17,8 +17,8 @@ import (
 // LatchState is the persisted e-stop state. Two independent latches:
 //
 //   - Remote: set by a server `estop`; cleared by a server `estop` with latched:false (the owner) or a local `resume`.
-//   - Local: set on the machine itself — `openvibe-node stop`, or a driver's own stop (`local_stop`); cleared only by
-//     `openvibe-node resume`. A remote clear never touches it.
+//   - Local: set on the machine itself — `openvibe-link stop`, or a driver's own stop (`local_stop`); cleared only by
+//     `openvibe-link resume`. A remote clear never touches it.
 //
 // Anything that moves is refused while either is set.
 type LatchState struct {
@@ -36,7 +36,7 @@ type LatchState struct {
 // so a remote clear can still release robot plugins.
 func (s LatchState) Stopped() bool { return s.Remote || s.Local }
 
-// Latch is the persisted latch. It survives restarts: a Node that was e-stopped comes back e-stopped.
+// Latch is the persisted latch. It survives restarts: a Link that was e-stopped comes back e-stopped.
 type Latch struct {
 	mu       sync.Mutex
 	path     string
@@ -70,7 +70,7 @@ func readLatch(path string) (LatchState, []byte, error) {
 		return st, nil, err
 	}
 	if err := json.Unmarshal(raw, &st); err != nil {
-		return st, raw, errors.New("latch file is corrupt; holding the local stop until `openvibe-node resume`")
+		return st, raw, errors.New("latch file is corrupt; holding the local stop until `openvibe-link resume`")
 	}
 	return st, raw, nil
 }
@@ -186,12 +186,12 @@ func CleanReason(reason string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// Resume clears both latches (`openvibe-node resume`).
+// Resume clears both latches (`openvibe-link resume`).
 func (l *Latch) Resume() (LatchState, error) {
 	return l.update(func(s *LatchState) { *s = LatchState{} })
 }
 
-// Reload adopts the file's state if another process (the CLI, when the Node's socket was unreachable) changed it.
+// Reload adopts the file's state if another process (the CLI, when the Link's socket was unreachable) changed it.
 // It reports whether anything changed.
 func (l *Latch) Reload() (bool, error) {
 	// Read under the lock: an update between our read and our adoption would otherwise be overwritten by stale bytes.
@@ -218,7 +218,7 @@ func (l *Latch) Reload() (bool, error) {
 }
 
 // WriteLocalFile latches the local stop (or clears everything, for resume) directly in the file. The CLI uses it
-// when no Node is running or its socket does not answer; a running Node picks the change up within its poll interval.
+// when no Link is running or its socket does not answer; a running Link picks the change up within its poll interval.
 func WriteLocalFile(path string, stop bool) error {
 	l, _ := OpenLatch(path)
 	var err error

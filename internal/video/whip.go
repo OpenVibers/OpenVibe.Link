@@ -23,8 +23,8 @@ import (
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 // Options configure the publisher.
@@ -40,7 +40,7 @@ type Options struct {
 	// Audio adds a silent Opus track (Agent Streams S1): S4's voice then needs no renegotiation. The packets are the
 	// 20 ms silence frame from pion's own e2e test, sent whether or not video is flowing.
 	Audio bool
-	// UserAgent names the Node on the WHIP request.
+	// UserAgent names the Link on the WHIP request.
 	UserAgent string
 }
 
@@ -269,7 +269,7 @@ func (p *Publisher) session(ctx context.Context) error {
 	}
 	defer pc.Close()
 	track, err := webrtc.NewTrackLocalStaticSample(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264, ClockRate: 90000,
-		SDPFmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f"}, "video", "openvibe-node")
+		SDPFmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f"}, "video", "openvibe-link")
 	if err != nil {
 		return err
 	}
@@ -281,7 +281,7 @@ func (p *Publisher) session(ctx context.Context) error {
 	var silenceOnce sync.Once
 	if p.opt.Audio {
 		audio, err = webrtc.NewTrackLocalStaticSample(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus,
-			ClockRate: 48000, Channels: 2, SDPFmtpLine: "minptime=10;useinbandfec=1"}, "audio", "openvibe-node")
+			ClockRate: 48000, Channels: 2, SDPFmtpLine: "minptime=10;useinbandfec=1"}, "audio", "openvibe-link")
 		if err != nil {
 			return err
 		}

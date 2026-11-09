@@ -8,7 +8,7 @@ import (
 
 // The plan logins: the copy, the read-only mode, the cleanup and the opt-in.
 
-// setHome points the Node user's home at dir: os.UserHomeDir reads HOME on Linux and macOS, USERPROFILE on Windows.
+// setHome points the Link user's home at dir: os.UserHomeDir reads HOME on Linux and macOS, USERPROFILE on Windows.
 func setHome(t *testing.T, dir string) {
 	t.Setenv("HOME", dir)
 	t.Setenv("USERPROFILE", dir)

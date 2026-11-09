@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Skill is one record the Node receives from the hub. Only Body, Summary,
+// Skill is one record the Link receives from the hub. Only Body, Summary,
 // Slug and Title are written; the rest tells the person what was chosen.
 type Skill struct {
 	ID        string   `json:"id"`
@@ -22,7 +22,7 @@ type Skill struct {
 }
 
 // AppliesTo says whether a record is written for this tool: an empty tools
-// list means every tool the Node knows.
+// list means every tool the Link knows.
 func (s Skill) AppliesTo(tool string) bool { return s.AppliesToAny([]string{tool}) }
 
 // AppliesToAny is AppliesTo for a file several tools share (a project's
@@ -43,7 +43,7 @@ func (s Skill) AppliesToAny(tools []string) bool {
 }
 
 // Frontmatter is the header a SKILL.md needs for the tool to find the skill.
-// It is written only when the Node creates the file; an existing file keeps
+// It is written only when the Link creates the file; an existing file keeps
 // its own frontmatter untouched.
 func Frontmatter(s Skill) string {
 	description := strings.TrimSpace(s.Summary)

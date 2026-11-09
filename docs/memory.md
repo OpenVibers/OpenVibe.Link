@@ -1,6 +1,6 @@
-# Memory: the Node reads what your tools remember
+# Memory: the Link reads what your tools remember
 
-The Node reads the memory files of the coding tools on your machine and tells
+The Link reads the memory files of the coding tools on your machine and tells
 you what it found. The scan is **read-only, local and redacted**:
 
 - it opens the files it knows about and nothing else;
@@ -47,7 +47,7 @@ openvibe-link memory import --file FILE [--dry-run] [--yes]
 | `--tools a,b` | sync: turn these tools on |
 | `--disable a,b` | sync: turn these tools off and remove their blocks |
 | `--undo` | sync: remove every block this command wrote and turn the tools off |
-| `--state FILE` | sync: the opt-in file (default: the Node's state directory) |
+| `--state FILE` | sync: the opt-in file (default: the Link's state directory) |
 
 Without `--project` only the user-level files are read: the files that hold
 your own preferences across every project. With `--project` the project files
@@ -404,13 +404,13 @@ Every write is inside one block, and the text outside it is not touched:
 - A file with two blocks, or half a block, is refused and left alone.
 - The memory text is scrubbed of the markers before it is written, so an item
   cannot open or close a block.
-- `--undo` removes the block and the separator the Node added before it; a file
-  that the Node created (the Cursor rule) is removed again. The state file
+- `--undo` removes the block and the separator the Link added before it; a file
+  that the Link created (the Cursor rule) is removed again. The state file
   records the separator so the hand-written part is byte-identical afterwards.
 
 ### The diff gate
 
-The first time the Node writes a file it shows a diff and asks. Anything but
+The first time the Link writes a file it shows a diff and asks. Anything but
 `y` or `yes` leaves the file as it was. `--yes` answers for you, for scripted
 setups; `--dry-run` shows every diff and writes nothing. A later sync of a file
 that was already confirmed shows the diff and writes it without asking again.
@@ -422,7 +422,7 @@ not what you want.
 ### Where the content comes from
 
 The sync uses the same person token as the upload (`OPENVIBE_TOKEN`, or
-`--token-env`), never a copy held by the Node. It reads:
+`--token-env`), never a copy held by the Link. It reads:
 
 - `GET /api/v1/memory/profile?scope=user`: the cached profile of you;
 - `GET /api/v1/memory/profile?scope=project:<slug>` and
@@ -433,7 +433,7 @@ The project slug is the same slug the upload uses: the folder's name,
 lowercased and slugged, never an absolute path. Nothing is written when the
 store cannot be read; the command fails before it touches a file.
 
-The opt-in state lives in the Node's state directory
+The opt-in state lives in the Link's state directory
 (`memory-sync.json`, mode 0600). It holds the tools that are on, the paths that
 were written and whether the first diff was confirmed: paths and choices, never
 the memory text.

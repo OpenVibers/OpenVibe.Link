@@ -1,0 +1,163 @@
+package main
+
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"io"
+	"sort"
+	"strings"
+
+	"github.com/OpenVibers/OpenVibe.Link/internal/memory"
+)
+
+// memoryUsage is what "openvibe-link memory" prints.
+const memoryUsage = "openvibe-link memory scan [--tools a,b] [--project DIR] [--json]\n" +
+	"openvibe-link memory upload [--tools a,b] [--project DIR …] [--dry-run] [--yes]\n" +
+	"openvibe-link memory status [--show]\n" +
+	"openvibe-link memory sync [--tools a,b] [--project DIR …] [--dry-run] [--yes] | --disable a,b | --undo\n" +
+	"openvibe-link memory export [--out FILE] [--scope SCOPE] [--force]\n" +
+	"openvibe-link memory import --file FILE [--dry-run] [--yes]\n" +
+	"\n" +
+	"  scan    reads the memory files of the coding tools on this machine and\n" +
+	"          prints what it found. It is read-only and local: nothing is written\n" +
+	"          and nothing is sent anywhere. Secrets are removed before anything is\n" +
+	"          printed.\n" +
+	"  upload  sends the items to your own memory store (OpenVibe.AI). It shows\n" +
+	"          what would leave the machine and asks before it sends anything.\n" +
+	"  status  shows what your own memory store holds.\n" +
+	"  sync    writes your profile and project rules into AGENTS.md, a thin\n" +
+	"          CLAUDE.md, GEMINI.md, Cursor rules and Copilot instructions,\n" +
+	"          inside one marked block per file, after showing the diff. Each\n" +
+	"          tool is off until you turn it on with --tools.\n" +
+	"  export  writes your one portable memory file (JSON) from the store.\n" +
+	"  import  reads that same file back into your store, merging repeats.\n" +
+	"\n" +
+	"  --tools a,b      only these adapters (claude-code, agents, gemini, cursor,\n" +
+	"                   copilot, windsurf, cline, roo, kiro, continue, aider,\n" +
+	"                   command-code, opencode)\n" +
+	"  --project DIR    read this project as well; may be given more than once\n" +
+	"  --json           print the items as JSON (scan)\n" +
+	"  --dry-run        print the summary and send nothing (upload, import)\n" +
+	"  --yes            do not ask before sending (upload, import)\n" +
+	"  --show           print the items themselves (status)\n" +
+	"  --out FILE       where to write the portable file (export; - for stdout)\n" +
+	"  --scope SCOPE    only one scope (export)\n" +
+	"  --file FILE      the portable file to import (- for stdin)\n" +
+	"  --user-home DIR  read this directory as the person's home (default: yours)\n"
+
+// stringList is a flag that may be given more than once.
+type stringList []string
+
+func (s *stringList) String() string { return strings.Join(*s, ",") }
+
+func (s *stringList) Set(v string) error {
+	for _, part := range strings.Split(v, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			*s = append(*s, part)
+		}
+	}
+	return nil
+}
+
+// cmdMemory runs the memory commands.
+func cmdMemory(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprint(stderr, memoryUsage)
+		return 2
+	}
+	switch args[0] {
+	case "upload":
+		return cmdMemoryUpload(args[1:], stdin, stdout, stderr)
+	case "status":
+		return cmdMemoryStatus(args[1:], stdout, stderr)
+	case "sync":
+		return cmdMemorySync(args[1:], stdin, stdout, stderr)
+	case "export":
+		return cmdMemoryExport(args[1:], stdout, stderr)
+	case "import":
+		return cmdMemoryImport(args[1:], stdin, stdout, stderr)
+	case "scan":
+	default:
+		fmt.Fprint(stderr, memoryUsage)
+		return 2
+	}
+	fs := flag.NewFlagSet("memory scan", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.Usage = func() { fmt.Fprint(stderr, memoryUsage) }
+	var tools stringList
+	var projects stringList
+	fs.Var(&tools, "tools", "only these adapters")
+	fs.Var(&projects, "project", "read this project as well")
+	asJSON := fs.Bool("json", false, "print the items as JSON")
+	userHome := fs.String("user-home", "", "read this directory as the person's home")
+	if err := fs.Parse(args[1:]); err != nil {
+		return 2
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unknown argument %q\n\n", fs.Arg(0))
+		fmt.Fprint(stderr, memoryUsage)
+		return 2
+	}
+	home, code := memoryHome(*userHome, stderr)
+	if code != 0 {
+		return code
+	}
+	res := memory.Scan(memory.Options{
+		Home:     home,
+		Projects: projects,
+		Tools:    tools,
+	})
+	if *asJSON {
+		enc := json.NewEncoder(stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(res); err != nil {
+			fmt.Fprintln(stderr, "error:", err)
+			return 1
+		}
+		return 0
+	}
+	printScan(res, stdout)
+	return 0
+}
+
+// printScan prints what the scan found: every adapter, every path it looked
+// at and the items per file.
+func printScan(res memory.Result, stdout io.Writer) {
+	fmt.Fprintf(stdout, "Memory scan of %s\n", res.Home)
+	if len(res.Projects) == 0 {
+		fmt.Fprintln(stdout, "No project given: only the user-level files were read.")
+	} else {
+		fmt.Fprintf(stdout, "Projects: %s\n", strings.Join(res.Projects, ", "))
+	}
+	for _, ad := range res.Adapters {
+		fmt.Fprintf(stdout, "\n%s (%s) — %d items\n", ad.Name, ad.ID, ad.Items)
+		fmt.Fprintf(stdout, "  docs: %s\n", ad.Docs)
+		if len(ad.Files) == 0 {
+			fmt.Fprintln(stdout, "  no path to look at")
+			continue
+		}
+		for _, f := range ad.Files {
+			switch {
+			case f.Note != "":
+				fmt.Fprintf(stdout, "  - %s: %s\n", f.Path, f.Note)
+			case f.Found:
+				fmt.Fprintf(stdout, "  - %s: %d items\n", f.Path, f.Items)
+			default:
+				fmt.Fprintf(stdout, "  - %s: not there\n", f.Path)
+			}
+		}
+	}
+	fmt.Fprintf(stdout, "\n%d items in total. Nothing was written and nothing was sent.\n", len(res.Items))
+}
+
+// memoryToolIDs lists the adapter ids, for the usage text and the tests.
+func memoryToolIDs() []string {
+	var out []string
+	for _, ad := range memory.Adapters() {
+		out = append(out, ad.ID)
+	}
+	sort.Strings(out)
+	return out
+}

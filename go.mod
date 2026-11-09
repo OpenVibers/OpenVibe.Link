@@ -1,4 +1,4 @@
-module github.com/OpenVibers/OpenVibe.Node
+module github.com/OpenVibers/OpenVibe.Link
 
 go 1.24.7
 

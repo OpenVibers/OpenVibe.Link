@@ -1,4 +1,4 @@
-# Node ↔ OpenVibe.Bot protocol (bot.device-message@1, device side)
+# Link ↔ OpenVibe.Bot protocol (bot.device-message@1, device side)
 
 OpenVibe.Bot's own `docs/protocol.md` (section 1, the `/device` socket) and its `POST /api/v1/pair` handler are the
 source of truth. Every field name below lives in one Go package, `internal/protocol/`, and the exact frames from Bot's
@@ -6,12 +6,12 @@ doc are pinned verbatim in [`internal/protocol/testdata/bot`](../internal/protoc
 Bot commit). `go test ./internal/protocol ./internal/link` decodes every one of them and drives the fake server
 (`internal/fakebot`) through pair → connect → command → ack → reconnect with those exact bytes.
 
-An ESP32 library ([`esp32/`](../esp32/README.md), `OpenVibeNode`) implements this device side minus jobs and video: pairing, the control link, drive/actuator/halt, telemetry, heartbeat, deadman and the e-stop.
+An ESP32 library ([`esp32/`](../esp32/README.md), `OpenVibeLink`) implements this device side minus jobs and video: pairing, the control link, drive/actuator/halt, telemetry, heartbeat, deadman and the e-stop.
 
 ## 1. Pairing
 
 The owner adds a robot on openvibe.bot and gets an 8-character code (shown `XXXX-XXXX`, 10 minutes, single use, 5 wrong
-tries end it) and an installer command with the robot's id: `… | sh -s -- --robot rob_… --code XXXX-XXXX`. The Node
+tries end it) and an installer command with the robot's id: `… | sh -s -- --robot rob_… --code XXXX-XXXX`. The Link
 normalises the code (upper case; dash and spaces removed; `I`/`L` → `1`, `O` → `0`, as Bot does) and redeems it over
 HTTPS, which Bot offers for agents that pair without a socket:
 
@@ -27,7 +27,7 @@ Content-Type: application/json
 
 The body has exactly the fields of Bot's `pair` frame without the envelope. `robot` (from `--robot`) attributes a wrong
 try to that robot's code; `name` (from `--name`, default the hostname, at most 80 characters) is what the owner sees.
-`device_kind` is `onboard` (the Node runs on the robot) or `bridge` (it drives the robot over the robot's own link, as
+`device_kind` is `onboard` (the Link runs on the robot) or `bridge` (it drives the robot over the robot's own link, as
 with Cozmo). `capabilities` is keyed by plugin name and holds each plugin's `describe` capabilities
 ([plugins.md](plugins.md)).
 
@@ -39,7 +39,7 @@ Answer `201`:
 ```
 
 This is Bot's `paired` frame with `robot_ids[0]` as `robot_id` (and no `profile_id`; it is `profile.id`). Errors are
-RFC 9457 problems; the Node turns their `code` into a sentence: `bot.pairing_code_invalid` (wrong code),
+RFC 9457 problems; the Link turns their `code` into a sentence: `bot.pairing_code_invalid` (wrong code),
 `bot.pairing_code_locked` (5 wrong tries), `bot.pairing_code_used`, `bot.pairing_code_expired`, `bot.no_pairing_code`,
 `bot.invalid_pairing_code` (malformed); `429` → "wait a minute". Plain `http://` is refused except for `localhost`
 (tests).
@@ -55,28 +55,28 @@ When the installer command carries `--network <URL> --pairing pair_… --code CO
 calls, in order:
 
 ```http
-POST <network>/api/v1/node-pairing
+POST <network>/api/v1/link-pairing
 Content-Type: application/json
 
 {"code": "ABCD1234", "pairing": "pair_…", "name": "rover"}
 ```
 
-`201` → `{"principal": "nod_…", "node_id": "n-…", "home_cell": "…", "credential": "…", "token_endpoint": "…",
+`201` → `{"principal": "lnk_…", "link_id": "n-…", "home_cell": "…", "credential": "…", "token_endpoint": "…",
 "paired_for": {"service": "bot", "ref": "rob_…"}}`; refusals are problems with `registry.pairing_code_invalid`,
 `_locked`, `_used`, `_expired`, `registry.invalid_pairing_code`, `registry.invalid_pairing_request`, and a plain `429`.
-The Node stores `{principal, node_credential, network, paired_for}` in `credential.json` (mode 0600, temp file and
+The Link stores `{principal, link_credential, network, paired_for}` in `credential.json` (mode 0600, temp file and
 rename) before anything else.
 
 ```http
 POST <network>/oauth/token
 Content-Type: application/x-www-form-urlencoded
 
-grant_type=client_credentials&client_id=nod_…&client_secret=<node credential>&audience=openvibe.bot
+grant_type=client_credentials&client_id=lnk_…&client_secret=<node credential>&audience=openvibe.bot
 ```
 
 `200` → `{"access_token": "<node token>", "token_type": "Bearer", "expires_in": 300}`. The audience is
-`openvibe.<paired_for.service>`. The Node caches the token until 30 s before it expires. `401` (`invalid_client`)
-means the credential is revoked or the machine removed: the Node stops with "pair again" and exit status 78, which the
+`openvibe.<paired_for.service>`. The Link caches the token until 30 s before it expires. `401` (`invalid_client`)
+means the credential is revoked or the machine removed: the Link stops with "pair again" and exit status 78, which the
 systemd unit does not restart (`RestartPreventExitStatus=78`). It never retries in a loop.
 
 ```http
@@ -85,9 +85,9 @@ Authorization: Bearer <node token>
 ```
 
 `201` → `{"device_id": "dev_…", "publish_key": "…", "whip_url": "…", "robot_id": "rob_…", "profile": {…}}`: the
-`POST /api/v1/pair` answer without a `credential`. The Node stores these fields exactly as it stores a pairing's. A
+`POST /api/v1/pair` answer without a `credential`. The Link stores these fields exactly as it stores a pairing's. A
 `401` refetches the token and retries once. `403 bot.node_not_bound` means Bot will not bind this principal. Every
-bind issues a new publish key, so the Node binds once at pairing, and again at start only while the device record is
+bind issues a new publish key, so the Link binds once at pairing, and again at start only while the device record is
 missing (a bind that failed at pairing).
 
 ## 2. The control link
@@ -97,32 +97,32 @@ One WebSocket per device, opened by the device:
 ```http
 GET wss://openvibe.bot/device
 Authorization: Bearer <credential>
-User-Agent: openvibe-node/<version>
+User-Agent: openvibe-link/<version>
 ```
 
-Bot upgrades first and authenticates after, so the Node sends nothing and counts the link as up only once `hello`
+Bot upgrades first and authenticates after, so the Link sends nothing and counts the link as up only once `hello`
 arrives (Bot answers any frame on a not-yet-authenticated socket with `error` `bot.not_paired`). Close codes:
 
-| code / answer                | meaning                                              | the Node                                               |
+| code / answer                | meaning                                              | the Link                                               |
 |------------------------------|------------------------------------------------------|--------------------------------------------------------|
 | `4000`                       | a second connection with this credential replaced it | reconnects with the normal backoff                      |
 | `4002`, or HTTP `401`/`403`  | the credential is wrong, rotated or revoked          | retries no sooner than 10 s (jitter only adds), logs "pair again, or import the owner's rotation" |
 | `4003`                       | the owner revoked the device (or rotated its credential) while it was connected | the same as `4002`             |
 
 A Network-paired machine presents a node token (`Authorization: Bearer <node token>`, audience `openvibe.bot`) instead
-of a credential. After a `4002` or `401` the next upgrade uses a freshly bought token. Once `hello` arrives the Node
+of a credential. After a `4002` or `401` the next upgrade uses a freshly bought token. Once `hello` arrives the Link
 sends `reauth` with a fresh token every 240 s (Bot closes `4002` when none arrives within 330 s), and every 15 s while
 Network does not answer.
 
 The link never gives up on its own: the owner may pair the device again. The one exception is a Network-paired
-machine whose node credential Network refuses (`/oauth/token` `401`): the Node stops, as above. Bot's `error` frames (`bot.not_paired`,
+machine whose node credential Network refuses (`/oauth/token` `401`): the Link stops, as above. Bot's `error` frames (`bot.not_paired`,
 `bot.not_ready`, `bot.forbidden`, …) are logged and never end the connection.
 
 ### Rotating a credential
 
 The owner can rotate a device's credential in OpenVibe.Bot (`POST /api/v1/devices/:id/rotate`). Its answer is JSON
 with `device.id`, `credential` and `publish_key`, and the old credential keeps working for 60 s. Pipe that response
-body into the Node to take the new pair without pairing again:
+body into the Link to take the new pair without pairing again:
 
 ```sh
 curl -s -X POST -H "Authorization: Bearer $TOKEN" https://openvibe.bot/api/v1/devices/dev_…/rotate \
@@ -131,7 +131,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" https://openvibe.bot/api/v1/de
 
 `import` keeps every other stored field (server, WHIP URL, robot ids, profile, version), rewrites `credential.json`
 atomically at mode 0600 and never prints either secret. It refuses unless a credential file exists ("pair first") and
-unless the response's `device.id` is the device this Node is paired as. A running Node keeps using the old credential
+unless the response's `device.id` is the device this Link is paired as. A running Link keeps using the old credential
 until it restarts; on a refused credential it logs the two remedies: pair again, or import the owner's rotation.
 
 ### Frames
@@ -148,7 +148,7 @@ Every frame is one JSON object in one text message with the envelope fields at t
 Unknown `type`s are ignored (a newer server may send more). Frames are at most 1 MiB. A `heartbeat` carries the
 device's send time in `t` (Unix ms), the last measured `rtt_ms` and, on a machine that runs coding agents, the `fleet`
 its logins probe last read (below); the server echoes `t` back in `heartbeat_ack` as
-`echo` (and `t`), so the Node measures the round trip against its own clock. A `heartbeat_ack`'s envelope `seq` is the
+`echo` (and `t`), so the Link measures the round trip against its own clock. A `heartbeat_ack`'s envelope `seq` is the
 server's own counter, never the heartbeat's.
 
 ### Server → device
@@ -157,19 +157,19 @@ server's own counter, never the heartbeat's.
 |-----------------|--------------------------------------------------------------------------------------------------|
 | `hello`         | `session_id`, `device_id`, `robot_ids` [], `server_time` (RFC 3339) — on every authenticated connection |
 | `config`        | `heartbeat_ms`, `limits` {`max_speed` 0..1, `max_turn` 0..1, `max_command_ms`, `heartbeat_ms`}, `allowed_commands` [kinds], `estop_latched`, `roles` [ids] — right after `hello` |
-| `command`       | `id` (server-minted: the idempotency and ack key), `ref` (the operator's own id, logs only), `kind`, `value`, `deadline_ms` (absolute, motion kinds only), `operator` {`subject`, `role`}, `robot_id`; Node only: `target` (plugin name) |
+| `command`       | `id` (server-minted: the idempotency and ack key), `ref` (the operator's own id, logs only), `kind`, `value`, `deadline_ms` (absolute, motion kinds only), `operator` {`subject`, `role`}, `robot_id`; Link only: `target` (plugin name) |
 | `estop`         | `latched` (true: the e-stop latched; false: the owner cleared it), `by`, `at`                    |
-| `heartbeat_ack` | `echo` (the heartbeat's `t`, or null), `t` (the same send time when the server has it), `server_time` (RFC 3339); the Node measures RTT from the echoed send time |
+| `heartbeat_ack` | `echo` (the heartbeat's `t`, or null), `t` (the same send time when the server has it), `server_time` (RFC 3339); the Link measures RTT from the echoed send time |
 | `error`         | `code`, `detail` — a frame the server refused; logged, never fatal                               |
 
 `config.estop_latched` is the robot's e-stop as the server holds it: an owner e-stop set while the device was offline
-latches the Node on reconnect, and a clear made while offline releases it. Until a connection's `config` has been
-applied the Node runs nothing but `halt` (`nack not_ready`), so that latch is in force before any motion.
+latches the Link on reconnect, and a clear made while offline releases it. Until a connection's `config` has been
+applied the Link runs nothing but `halt` (`nack not_ready`), so that latch is in force before any motion.
 `config.allowed_commands` absent allows every kind; present (Bot always sends it, `halt` included) it is the list.
 `config.roles` are the machine's roles for the network, as its owner set them on the hub (`codes.worker`,
-`desks.host`, `ai.host`, `bot.robot`): what the machine does for the network. The Node keeps them and applies the ones
+`desks.host`, `ai.host`, `bot.robot`): what the machine does for the network. The Link keeps them and applies the ones
 this machine was installed for; the local configuration always wins (a role never installs anything and never turns on
-a feature the owner turned off here), and a role the Node does not know is ignored.
+a feature the owner turned off here), and a role the Link does not know is ignored.
 `estop` `latched:false` is the owner's clear: it clears the remote latch only, never the local kill switch. A computer
 plugin is the one exception to the remote latch's reach: an e-stop on a computer waits for `openvibe-link resume` on the
 machine, whatever the server clears (docs/computer.md).
@@ -178,13 +178,13 @@ machine, whatever the server clears (docs/computer.md).
 
 | type          | fields                                                                                              |
 |---------------|-----------------------------------------------------------------------------------------------------|
-| `status`      | `firmware` (`openvibe-node-<version>`), `capabilities` {per plugin}, `faults` [{`code`, `driver`, `message`}], `estop_latched`; Node extras: `agent_version`, `device_kind`, `os`, `arch`, `drivers` [{`name`, `driver`, `version`, `state`, `capabilities`}], `local_stop`, `video`, `roles` [ids] (the roles the machine applies) |
-| `telemetry`   | `battery` (0..1), `voltage` (V), `rssi`, `sensors` {…}; Node extra: `events` [{`name`, `driver`, `ts`, `fields`}] |
-| `ack`         | `id`; Node extra: `latency_ms` (receipt → plugin ack); `data` on a computer command (its answer, ≤ 512 KB) |
-| `nack`        | `id`, `fault_code`; Node extra: `message`                                                           |
-| `heartbeat`   | `t` (send time, Unix ms), `rtt_ms` (the last measured round trip, once there is one; 0 is a real measurement); Node extra: `fleet` [{`agent`, `installed`, `signed_in`, `windows` [{`name`, `used`, `limit`, `resets_at`}]}] — what the machine's coding agents have left (Codes C9c) |
+| `status`      | `firmware` (`openvibe-link-<version>`), `capabilities` {per plugin}, `faults` [{`code`, `driver`, `message`}], `estop_latched`; Link extras: `agent_version`, `device_kind`, `os`, `arch`, `drivers` [{`name`, `driver`, `version`, `state`, `capabilities`}], `local_stop`, `video`, `roles` [ids] (the roles the machine applies) |
+| `telemetry`   | `battery` (0..1), `voltage` (V), `rssi`, `sensors` {…}; Link extra: `events` [{`name`, `driver`, `ts`, `fields`}] |
+| `ack`         | `id`; Link extra: `latency_ms` (receipt → plugin ack); `data` on a computer command (its answer, ≤ 512 KB) |
+| `nack`        | `id`, `fault_code`; Link extra: `message`                                                           |
+| `heartbeat`   | `t` (send time, Unix ms), `rtt_ms` (the last measured round trip, once there is one; 0 is a real measurement); Link extra: `fleet` [{`agent`, `installed`, `signed_in`, `windows` [{`name`, `used`, `limit`, `resets_at`}]}] — what the machine's coding agents have left (Codes C9c) |
 | `reauth`      | `token`: a fresh node token for the same principal (a Network-paired machine only; refused → `error` `bot.reauth_refused`) |
-| `estop_state` | `latched` (the device is stopped: remote e-stop or local kill switch), `by` (`device`), `at`; Node extras: `robot_id` (when `hello` named exactly one robot), `local_stop` (local kill switch), `reason` |
+| `estop_state` | `latched` (the device is stopped: remote e-stop or local kill switch), `by` (`device`), `at`; Link extras: `robot_id` (when `hello` named exactly one robot), `local_stop` (local kill switch), `reason` |
 
 The first `status` and `estop_state` go out once the connection's `config` has been applied, never right after the
 upgrade or `hello`; then `status` whenever a plugin changes state or faults and `estop_state` after every `config`,
@@ -193,7 +193,7 @@ clears that); `latched:false` is a report only. Plugin events (`cliff`, `picked_
 `low_battery`, `heartbeat_lost`, …) travel in `telemetry.events` and are sent within 100 ms; sensor telemetry is sent
 at most every 500 ms (≤ 2 Hz, Bot's cap). There is no separate `event` message type.
 
-`fleet` is the OpenVibe.Codes runner's own probe (`openvibe-codes logins --json`) read as the Node's own user, once a
+`fleet` is the OpenVibe.Codes runner's own probe (`openvibe-codes logins --json`) read as the Link's own user, once a
 minute and once per heartbeat when read: each agent's id, whether it is installed and signed in, and each limit
 window's label, used and limit numbers and when it frees. Nothing else leaves the machine — no key, token or account
 name — and a reading is bounded (16 agents, 10 windows each, short labels). Absent means the machine has no reading
@@ -223,7 +223,7 @@ Sign conventions: `throttle`/`x` positive = forward; `steer` positive = turn rig
 servo in their config to make the hardware match).
 
 `deadline_ms` is an **absolute** instant in Unix milliseconds on the server's clock, present on `drive`, `actuator`,
-`ptz` and `button` (a held button is re-sent, so its deadline releases the hold — see the [`relay`](plugins.md) plugin). A device's clock may be minutes off, so the Node never compares it with its own clock: it estimates the
+`ptz` and `button` (a held button is re-sent, so its deadline releases the hold — see the [`relay`](plugins.md) plugin). A device's clock may be minutes off, so the Link never compares it with its own clock: it estimates the
 server's clock from the `ts` of every frame on the connection (the largest `ts` − receive time: the skew less the
 fastest transit, kept for the whole connection so a run of delayed frames cannot reopen an expired deadline) and
 compares `deadline_ms` with that at receipt. A command that arrives at or after its deadline →
@@ -231,7 +231,7 @@ compares `deadline_ms` with that at receipt. A command that arrives at or after 
 300 ms. Always capped at `max_command_ms` (default 1000). A held control is re-sent by the panel every 150 ms, each
 with a new `id`. Plugins still get a relative `deadline_ms` and keep their own stop timer ([plugins.md](plugins.md)).
 
-What the Node does with a command, in order:
+What the Link does with a command, in order:
 
 1. A repeated `id` is answered with the first result and never executed again (the cache lives for 10 minutes and
    across reconnects).
@@ -263,7 +263,7 @@ Commands are never queued while offline and never replayed after a reconnect.
 
 ### Jobs
 
-The job frames of OpenVibe.Contracts `platform.job-frame@1` (plan T14 Run) ride the same link and envelope. The Node
+The job frames of OpenVibe.Contracts `platform.job-frame@1` (plan T14 Run) ride the same link and envelope. The Link
 runs classes `function` and `code` only: each only when the owner declared an entry of that class, turned the worker on
 in the local config, the OS is Linux and a boot-time probe could start a process in its own user, network and PID
 namespaces ([worker.md](worker.md)); both run in the same sandbox.
@@ -271,7 +271,7 @@ Otherwise it advertises no class and refuses every well-formed job with `class n
 
 | direction        | type           | fields                                                                                    |
 |------------------|----------------|-------------------------------------------------------------------------------------------|
-| server → device  | `job`          | `job` {`id` (`job_<ULID>`: the idempotency and ack key), `class`, `artifact` {`name`, `version`} (required for `function` and `code`, one exact version), `args` {}, `ttl_ms`, `limits` {`wall_ms`, `cpu_ms`, `mem_bytes`}, `net` (`deny`, `none`, `public`, `openvibe-only`; absent means `deny`, which the Node never widens to its own `worker.egress`; `public` and `openvibe-only` run under the stricter of what is asked and what `worker.egress` allows, and are refused when it is `none`), `inputs` (at most 32 files, each `name`, `media_id`, `sha256`, optional `size_bytes`: fetched and checked against the digest before the job starts when `worker.media` is on, the job ending `failed` with nothing run otherwise; **refused**, `job inputs not supported`, when it is off)} |
+| server → device  | `job`          | `job` {`id` (`job_<ULID>`: the idempotency and ack key), `class`, `artifact` {`name`, `version`} (required for `function` and `code`, one exact version), `args` {}, `ttl_ms`, `limits` {`wall_ms`, `cpu_ms`, `mem_bytes`}, `net` (`deny`, `none`, `public`, `openvibe-only`; absent means `deny`, which the Link never widens to its own `worker.egress`; `public` and `openvibe-only` run under the stricter of what is asked and what `worker.egress` allows, and are refused when it is `none`), `inputs` (at most 32 files, each `name`, `media_id`, `sha256`, optional `size_bytes`: fetched and checked against the digest before the job starts when `worker.media` is on, the job ending `failed` with nothing run otherwise; **refused**, `job inputs not supported`, when it is off)} |
 | server → device  | `job_cancel`   | `id`                                                                                      |
 | server → device  | `job_exit_ack` | `id`                                                                                      |
 | device → server  | `job_started`  | `id`, `started_ms`                                                                        |
@@ -290,16 +290,16 @@ checked in this order:
 | `function or code job needs an artifact with an exact version` | `bad_value` | a `function` or `code` job without `artifact`, or a name or version outside the contract's pattern (a range) |
 | `net policy not supported`                   | `unsupported` | `net` is present and not one of `deny`, `none`, `public`, `openvibe-only`, or is one the host cannot enforce |
 | `invalid inputs`                             | `bad_value`   | an entry of `inputs` outside the contract's patterns, a repeated name, or more than 32 |
-| `job inputs not supported`                   | `unsupported` | the job carries `inputs`: this Node cannot stage and check them yet, so it never runs it with them dropped |
+| `job inputs not supported`                   | `unsupported` | the job carries `inputs`: this Link cannot stage and check them yet, so it never runs it with them dropped |
 | `missing or invalid args, ttl_ms or limits`  | `bad_value`   | `args` is not an object, or `ttl_ms` or a limit is missing or below 1 |
-| `class not available`                        | `unsupported` | the class is valid but this Node does not run it (every class but `function`, `code` and `linux`; every class while the worker is off) |
+| `class not available`                        | `unsupported` | the class is valid but this Link does not run it (every class but `function`, `code` and `linux`; every class while the worker is off) |
 | `the e-stop or local stop is latched`        | `estopped` or `local_stop` | the stop latch is set: no job starts until it clears |
-| `class not available`                        | `shutting_down` | the Node is stopping                                      |
+| `class not available`                        | `shutting_down` | the Link is stopping                                      |
 | `unknown artifact`                           | `unsupported` | `artifact` is not a function the owner declared, at that exact version |
 | `worker busy`                                | `not_ready`   | `worker.caps.max_jobs` jobs are already running              |
 
 A resent `job` with an id already answered gets the same answer again, never a second acceptance and never a second
-process: `ack` while it runs, its `job_exit` once it ended; the Node remembers the last 1024 well-formed ids.
+process: `ack` while it runs, its `job_exit` once it ended; the Link remembers the last 1024 well-formed ids.
 
 An accepted job runs once the `ack` is out: `job_started` (`started_ms` anchors every usage second), its stdout as
 `job_stdout` chunks (at most 16 KiB each as sent and `max_output_bytes` in all, valid UTF-8 with invalid bytes as
@@ -314,11 +314,11 @@ is the 0-based wall second — the `second` of the `job_usage` it covers, both c
 `job` or `job_cancel` repeats the same `job_exit` and so the same keys, never a second reading and never a `:<n>`
 for a second already metered. `job_exit.usage.wall_ms` is at least `(n + 1) * 1000` for every second `n` already
 sent, so the exit's own usage covers everything the per-second frames announced — it is never corrected downward
-by the resent `job_exit`. The Node resends `job_started` for running jobs and `job_exit` for ended ones after every
+by the resent `job_exit`. The Link resends `job_started` for running jobs and `job_exit` for ended ones after every
 reconnect, and `job_exit` again on a `job` or `job_cancel` for that id, until `job_exit_ack`. `job_started` goes out
 only once the job's CPU limit is set; a job that fails before (no namespaces, spawn or CPU limit failed) ends
 `failed` without it.
-A Node shutting down sends `job_exit` (`stopped`) also for a job acked but not started yet. `job_exit.reason`:
+A Link shutting down sends `job_exit` (`stopped`) also for a job acked but not started yet. `job_exit.reason`:
 
 | `reason`    | `code`  | when                                                                                                |
 |-------------|---------|-----------------------------------------------------------------------------------------------------|
@@ -326,33 +326,33 @@ A Node shutting down sends `job_exit` (`stopped`) also for a job acked but not s
 | `cancelled` | null    | `job_cancel`: the process group is killed; a job cancelled before it started never starts            |
 | `ttl`       | null    | `ttl_ms` (from receipt, clamped to `worker.caps.max_ttl_ms`) ran out, before or while it ran         |
 | `limit`     | null    | `wall_ms`, `cpu_ms` or `mem_bytes` (each clamped to the local cap), more stdout than `max_output_bytes`, or more than 256 KiB of result |
-| `stopped`   | null    | the e-stop or the local stop latched, or the Node shut down                                          |
+| `stopped`   | null    | the e-stop or the local stop latched, or the Link shut down                                          |
 | `failed`    | null    | the worker could not run it: the namespaces could not be created, the spawn failed, or its CPU limit could not be set |
 
 `job_cancel` for an id that is not running (unknown, refused or ended) and `job_exit_ack` for an unknown id are
 ignored, with no answer: an `ack` keyed by a job id means the job was accepted.
-A Node that runs jobs lists its classes, the reserved Fabric capability names they advertise, and its effective local
+A Link that runs jobs lists its classes, the reserved Fabric capability names they advertise, and its effective local
 worker caps in `status.capabilities.worker`:
 `{"capabilities":["worker:function"],"runtime_classes":["function"],"max_jobs":1,"max_ttl_ms":600000,"max_wall_ms":300000,"max_cpu_ms":300000,"max_mem_bytes":536870912,"max_output_bytes":1048576}`.
 `capabilities` holds one `worker:<class>` name per entry in `runtime_classes` (the `platform.resource-offer@1`
 capabilities namespace OpenVibe.Run routes on; the names are reserved in OpenVibe.Contracts and no schema change
-was needed), so only classes this Node actually runs are advertised: `worker:function` when a `function` entry is declared,
-`worker:code` when a `code` entry is, and `worker:linux` when a `linux` entry is (`"runtime_classes":["function","code","linux"]`, in that order, with all three). A Node's `linux` class runs one declared Linux command per job, single-shot like `code`: it is not the persistent environment that lives across commands which `platform.runtime-class@1` also lets `linux` mean, so a linux job without an `artifact` naming a declared entry is refused (`unknown artifact`). The limits are `worker.caps` with defaults applied; the key is absent while the worker is off or
-declares no `functions` entry (a probe that passes with none advertises nothing, so Fabric places no job this Node would
+was needed), so only classes this Link actually runs are advertised: `worker:function` when a `function` entry is declared,
+`worker:code` when a `code` entry is, and `worker:linux` when a `linux` entry is (`"runtime_classes":["function","code","linux"]`, in that order, with all three). A Link's `linux` class runs one declared Linux command per job, single-shot like `code`: it is not the persistent environment that lives across commands which `platform.runtime-class@1` also lets `linux` mean, so a linux job without an `artifact` naming a declared entry is refused (`unknown artifact`). The limits are `worker.caps` with defaults applied; the key is absent while the worker is off or
+declares no `functions` entry (a probe that passes with none advertises nothing, so Fabric places no job this Link would
 refuse), and `worker` is reserved as a plugin name.
 
-### Node descriptor → Fabric offers
+### Link descriptor → Fabric offers
 
-When OpenVibe.Run turns a Node descriptor into `platform.resource-offer@1` / `platform.runtime-offer@1`, it applies
+When OpenVibe.Run turns a Link descriptor into `platform.resource-offer@1` / `platform.runtime-offer@1`, it applies
 this mapping:
 
-| Node descriptor field | Fabric offer | Example |
+| Link descriptor field | Fabric offer | Example |
 | --- | --- | --- |
 | capabilities.worker.runtime_classes | resource-offer.capabilities item `worker:<class>` | worker:function, worker:code, worker:linux |
 | capabilities.worker.max_jobs | runtime-offer.limits.concurrency | 1 |
 | capabilities.worker.max_ttl_ms | runtime-offer.limits.duration_seconds | 600 |
 | device node_id / cell | resource-offer.node_id / resource-offer.cell | node_01H… / wnam-1 |
-| worker trust (local policy) | resource-offer.trust | user-owned for a user's own Node |
+| worker trust (local policy) | resource-offer.trust | user-owned for a user's own Link |
 
 ### Fault codes
 
@@ -366,7 +366,7 @@ original expiry, [plugins.md](plugins.md) answer 9). Plugins may add their own; 
 - The device sends `heartbeat` every `config.heartbeat_ms` (default 1000), starting once `hello` has arrived. The
   server answers `heartbeat_ack`. Until `hello`, a new connection may stay silent for up to 10 s (Bot may still be
   checking the credential); the deadman below applies from `hello` on.
-- If nothing at all arrives from the server for 2 × `heartbeat_ms` (two missed heartbeats), the Node closes the link.
+- If nothing at all arrives from the server for 2 × `heartbeat_ms` (two missed heartbeats), the Link closes the link.
   Every close stops every actuator at once. (Bot marks the device offline after `heartbeat_ms × 2 + 3000 ms`.)
 - Reconnect: exponential backoff from 0.5 s to 30 s with full jitter; see the close-code table for `4000`, `4002` and
   `4003`.
@@ -390,7 +390,7 @@ The latch file is `latch.json` in the state directory. A corrupt latch file is r
 
 Bot hands out only the publish key (in the pairing answer); it does not own media and names no WHIP endpoint (the
 camera publishes to OpenRestream). So the endpoint is local config, `video.whip_url` in `config.json`; without it video stays
-off and the log says so. When it is set, the Node publishes one H.264 track (Constrained Baseline,
+off and the log says so. When it is set, the Link publishes one H.264 track (Constrained Baseline,
 `profile-level-id=42e01f`, packetization-mode 1) to it with `Authorization: Bearer <publish_key>`: `POST` with `Content-Type: application/sdp` → `201` with the
 answer and a `Location`; `DELETE <Location>` on shutdown. PLI/FIR from the far end request a keyframe. The session is
 re-established with backoff; video runs on its own goroutines and never waits on control or vice versa.

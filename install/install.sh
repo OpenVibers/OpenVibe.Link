@@ -1,5 +1,5 @@
 #!/bin/sh
-# OpenVibe Link installer (the former OpenVibe Node; the openvibe-node command and service name keep working as aliases).
+# OpenVibe Link installer.
 #
 #   curl -fsSL https://openvibe.link/install | sh
 #   curl -fsSL https://openvibe.link/install | sh -s -- --robot <rob_…> --code <CODE> [--driver adeept|adeept-mecanum|cozmo|looi|ros2|ros2-holonomic|none]
@@ -8,9 +8,7 @@
 #   curl -fsSL https://openvibe.link/install | sh -s -- --network <URL> --pairing <pair_…> --code <CODE> --plan-logins
 #   curl -fsSL https://openvibe.link/install | sh -s -- --setup <osk_…>
 #
-# (the same script is also at https://openvibe.bot/install, which keeps working)
-#
-# Detects the OS and CPU, downloads the openvibe-node binary and the plugin bundle (checking their SHA-256), creates
+# Detects the OS and CPU, downloads the openvibe-link binary and the plugin bundle (checking their SHA-256), creates
 # a Python virtual environment for the plugins, disables the Adeept kit's stock control server if it finds it,
 # installs the system service and pairs the device with <CODE>. Run it again to upgrade; the credential is kept.
 # openvibe.bot shows one of these lines with the robot id (or the Network pairing) and a fresh code filled in.
@@ -35,7 +33,7 @@
 #   --driver KIND    adeept (ordinary wheels), adeept-mecanum, cozmo (bridge), looi (bridge, Bluetooth), ros2 (a ROS 2
 #                    robot through rosbridge), ros2-holonomic (mecanum or omni wheels), none (dry run).
 #                    Default: none.
-#   --worker         this machine runs its owner's jobs (openvibe.bot/machines): the job worker is turned on, jobs run
+#   --worker         this machine runs its owner's jobs (openvibe.link/machines): the job worker is turned on, jobs run
 #                    as the unprivileged user openvibe-job in the worker's sandbox with public egress (the service
 #                    runs as root, which run_as and the egress need), and the OpenVibe.Codes job runner is added when
 #                    Node.js 20+ is installed system-wide. Linux only. docs/worker.md has the details.
@@ -43,7 +41,7 @@
 #                    computer (Claude Code, Codex, OpenCode, Command Code) as the worker's plan logins, so a Codes job
 #                    uses the plan you signed in for. A tool that is not installed or not signed in is skipped with a
 #                    line saying how to sign it in. The installer never reads, copies or prints a login's content, and
-#                    sets the Node service's HOME to your home (the logins must sit under it). Linux only.
+#                    sets the Link service's HOME to your home (the logins must sit under it). Linux only.
 #                    docs/worker.md has the details.
 #   --desk-host      this machine hosts desks for its owner's agents (docs/computer.md "Desk hosts"; the Desks plan's
 #                    step D5): an old laptop, a mini PC or a spare workstation, no screen or login needed. The
@@ -63,17 +61,17 @@
 #   --ai             this machine's own models for its owner's OpenVibe work (docs/ai.md): adds the ai plugin, which
 #                    finds Ollama, LM Studio or llama.cpp's server on this machine and relays its owner's questions to
 #                    it, with no port opened. The installer says which one answers. Works with any of the above; on
-#                    openvibe.bot/machines turn on "Let my AI use this computer's models" for it.
+#                    openvibe.link/machines turn on "Let my AI use this computer's models" for it.
 #   --ai-endpoint URL  the model server's http(s) base when it is not on one of the usual ports (implies --ai).
 #   --no-service     install and pair, but do not install the service.
 #   --no-claim       with no robot and no code: install without pairing (no code is asked for on openvibe.bot).
 #   --setup KEY      the osk_… setup key from card files made on openvibe.bot/setup/sd-card (or OPENVIBE_SETUP_KEY):
 #                    the claim is approved by the key, with no code to enter. Used on its own.
-#   --local DIR      install from DIR (openvibe-node-<os>-<arch> and openvibe-node-plugins.tar.gz) instead of
+#   --local DIR      install from DIR (openvibe-link-<os>-<arch> and openvibe-link-plugins.tar.gz) instead of
 #                    downloading.
 #   --version TAG    release to download (default: latest).
 # Environment:
-#   OPENVIBE_NODE_BASE   download base URL (default: GitHub releases of OpenVibers/OpenVibe.Node).
+#   OPENVIBE_LINK_BASE   download base URL (default: GitHub releases of OpenVibers/OpenVibe.Link).
 #   OPENVIBE_SERVER      OpenVibe.Bot origin (default https://openvibe.bot).
 #
 # The Adeept stock-server check can be pointed at plain files for testing (no root, no crontab command):
@@ -81,7 +79,7 @@
 #   OPENVIBE_CRONTAB_ROOT=FILE      edit FILE as root's crontab instead of the real one.
 #   OPENVIBE_CRONTAB_USER=FILE      edit FILE as the invoking user's crontab instead of the real one.
 #   OPENVIBE_RC_LOCAL=FILE          edit FILE as rc.local instead of /etc/rc.local.
-# OPENVIBE_INSTALL_PAIR_ARGS_ONLY=1 prints the `openvibe-node pair` arguments the flags make, one per line, and exits.
+# OPENVIBE_INSTALL_PAIR_ARGS_ONLY=1 prints the `openvibe-link pair` arguments the flags make, one per line, and exits.
 # OPENVIBE_INSTALL_AI_CONFIG_ONLY=<config.json> adds the --ai plugin entry to that file and exits.
 # OPENVIBE_INSTALL_WORKER_CONFIG_ONLY=<config.json> writes the --worker section into that file (OPENVIBE_JOB_UID,
 #   OPENVIBE_JOB_GID, OPENVIBE_NODEJS and OPENVIBE_CODES_DIR stand in for the job user and the runner) and exits.
@@ -90,7 +88,7 @@
 #   config's worker.plan_logins and exits (no root, no service).
 set -eu
 
-REPO_URL="https://github.com/OpenVibers/OpenVibe.Node"
+REPO_URL="https://github.com/OpenVibers/OpenVibe.Link"
 CODE=""
 DRIVER="none"
 ROBOT_ID=""
@@ -216,7 +214,7 @@ pair_with() {
 
 # plan_logins_home: set PLAN_HOME to the home whose coding-tool login files --plan-logins names. That is the person's
 # own home, never root's: run the installer as yourself (it asks for sudo itself), or with sudo from that account.
-# The login files must sit under the Node user's home; --plan-logins sets the service's HOME to this one.
+# The login files must sit under the Link user's home; --plan-logins sets the service's HOME to this one.
 plan_logins_home() {
 	if [ "$(id -u)" -eq 0 ]; then
 		_user="${SUDO_USER:-}"
@@ -274,10 +272,10 @@ plan_logins_steps() {
 	_home="$1" _paths="$2"
 	say "plan logins (dry run): what --plan-logins will do"
 	say "  1. pair this computer for its owner's OpenVibe.Codes jobs (the code from openvibe.codes → Machines)"
-	say "  2. set the openvibe-node service's HOME to $_home (the login files must sit under the Node user's home)"
+	say "  2. set the openvibe-link service's HOME to $_home (the login files must sit under the Link user's home)"
 	say "  3. name the coding tools' own login files for the job runner (their content is never read, copied or printed):"
 	plan_logins_scan "$_home" "$_paths"
-	say "  4. write the names into config.json's worker.plan_logins and restart openvibe-node"
+	say "  4. write the names into config.json's worker.plan_logins and restart openvibe-link"
 }
 
 # write_plan_logins <config.json> <paths-file>: add the ready login files to worker.plan_logins, keeping the ones the
@@ -306,21 +304,21 @@ os.replace(path + '.tmp', path)
 PY
 }
 
-# plan_logins_service_home <home>: make the Node service start with the owner's HOME. The worker runs as root, and the
-# plan logins must sit under the Node user's home; without this the service's home is root's and the config is refused.
+# plan_logins_service_home <home>: make the Link service start with the owner's HOME. The worker runs as root, and the
+# plan logins must sit under the Link user's home; without this the service's home is root's and the config is refused.
 plan_logins_service_home() {
 	_home="$1"
 	if [ "$SERVICE" = 0 ]; then
-		say "plan logins: no service to set HOME on; run the Node with HOME=$_home so it finds the login files"
+		say "plan logins: no service to set HOME on; run the Link with HOME=$_home so it finds the login files"
 		return 0
 	fi
 	if ! command -v systemctl >/dev/null 2>&1; then
-		say "warning: systemctl is not here: start openvibe-node with HOME=$_home so it finds the plan logins"
+		say "warning: systemctl is not here: start openvibe-link with HOME=$_home so it finds the plan logins"
 		return 0
 	fi
-	$SUDO mkdir -p /etc/systemd/system/openvibe-node.service.d
-	$SUDO sh -c "cat > /etc/systemd/system/openvibe-node.service.d/home.conf" <<EOF
-# Plan logins are files under the Node user's home (install.sh --plan-logins).
+	$SUDO mkdir -p /etc/systemd/system/openvibe-link.service.d
+	$SUDO sh -c "cat > /etc/systemd/system/openvibe-link.service.d/home.conf" <<EOF
+# Plan logins are files under the Link user's home (install.sh --plan-logins).
 [Service]
 Environment="HOME=$_home"
 EOF
@@ -389,7 +387,7 @@ if found:
     hw['found'] = found
 def call(method, path, body=None, headers=None):
     req = urllib.request.Request(server + path, method=method, data=None if body is None else json.dumps(body).encode(),
-                                 headers={'Content-Type': 'application/json', 'User-Agent': 'openvibe-node-installer', **(headers or {})})
+                                 headers={'Content-Type': 'application/json', 'User-Agent': 'openvibe-link-installer', **(headers or {})})
     with urllib.request.urlopen(req, timeout=20) as r:
         return json.load(r)
 def die(msg):
@@ -650,7 +648,7 @@ SUDO=""
 # depending on kit version. Besides the systemd unit and any running process, comment out those autostart lines
 # (marked, never deleted) so they cannot start it again.
 STOCK_SERVER_RE='Server_(Ordinary|Mecanum)Wheels/(WebServer|APPServer|GUIServer|app)\.py'
-STOCK_SERVER_MARKER='#openvibe-node-disabled:'
+STOCK_SERVER_MARKER='#openvibe-link-disabled:'
 # Root's crontab is always scanned. Scan the invoking user's crontab on the normal install path or through sudo.
 # From a plain root shell (sudo -i, root login), use the kit's usual owner pi when that account exists.
 CRON_USER="${SUDO_USER:-$(id -un 2>/dev/null || printf '%s' root)}"
@@ -755,9 +753,9 @@ fi
 # ---- platform ----
 OS="$(uname -s)"
 case "$OS" in
-Linux) OS=linux; BIN_DIR=/usr/local/bin; STATE=/var/lib/openvibe-node; CONF=/etc/openvibe-node ;;
-Darwin) OS=darwin; BIN_DIR=/usr/local/bin; STATE="/Library/Application Support/OpenVibe Node"; CONF="$STATE" ;;
-*) die "unsupported OS $OS (on Windows, download openvibe-node-windows-amd64.exe from $REPO_URL/releases)" ;;
+Linux) OS=linux; BIN_DIR=/usr/local/bin; STATE=/var/lib/openvibe-link; CONF=/etc/openvibe-link ;;
+Darwin) OS=darwin; BIN_DIR=/usr/local/bin; STATE="/Library/Application Support/OpenVibe Link"; CONF="$STATE" ;;
+*) die "unsupported OS $OS (on Windows, download openvibe-link-windows-amd64.exe from $REPO_URL/releases)" ;;
 esac
 ARCH="$(uname -m)"
 case "$ARCH" in
@@ -860,21 +858,14 @@ if [ "$CLAIM" = 1 ] || [ "$DRIVER" = adeept ] || [ "$DRIVER" = adeept-mecanum ];
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 BIN_NAME="openvibe-link-$OS-$ARCH"
-OLD_BIN_NAME="openvibe-node-$OS-$ARCH"
 if [ -n "$LOCAL" ]; then
-	if [ -f "$LOCAL/$BIN_NAME" ]; then
-		cp "$LOCAL/$BIN_NAME" "$TMP/$BIN_NAME" || die "$LOCAL/$BIN_NAME not found"
-	else
-		# A folder filled from a release before the rename still installs; the old name is an alias either way.
-		BIN_NAME="$OLD_BIN_NAME"
-		cp "$LOCAL/$BIN_NAME" "$TMP/$BIN_NAME" || die "$LOCAL/$BIN_NAME not found"
-	fi
-	cp "$LOCAL/openvibe-node-plugins.tar.gz" "$TMP/" || die "$LOCAL/openvibe-node-plugins.tar.gz not found"
+	cp "$LOCAL/$BIN_NAME" "$TMP/$BIN_NAME" || die "$LOCAL/$BIN_NAME not found"
+	cp "$LOCAL/openvibe-link-plugins.tar.gz" "$TMP/" || die "$LOCAL/openvibe-link-plugins.tar.gz not found"
 else
 	if [ "$TAG" = latest ]; then
-		BASE="${OPENVIBE_NODE_BASE:-$REPO_URL/releases/latest/download}"
+		BASE="${OPENVIBE_LINK_BASE:-$REPO_URL/releases/latest/download}"
 	else
-		BASE="${OPENVIBE_NODE_BASE:-$REPO_URL/releases/download/$TAG}"
+		BASE="${OPENVIBE_LINK_BASE:-$REPO_URL/releases/download/$TAG}"
 	fi
 	fetch() {
 		if command -v curl >/dev/null 2>&1; then curl -fsSL --retry 3 -o "$2" "$1"
@@ -882,25 +873,22 @@ else
 		else die "curl or wget is needed"; fi
 	}
 	say "downloading $BIN_NAME"
-	# A release made before the rename has only the old asset name: install it as the alias, the same program.
-	fetch "$BASE/$BIN_NAME" "$TMP/$BIN_NAME" || { say "no $BIN_NAME in this release; trying $OLD_BIN_NAME"; BIN_NAME="$OLD_BIN_NAME"; fetch "$BASE/$BIN_NAME" "$TMP/$BIN_NAME"; } || die "download failed: $BASE/$BIN_NAME"
-	fetch "$BASE/openvibe-node-plugins.tar.gz" "$TMP/openvibe-node-plugins.tar.gz" || die "download failed: plugin bundle"
+	fetch "$BASE/$BIN_NAME" "$TMP/$BIN_NAME" || die "download failed: $BASE/$BIN_NAME"
+	fetch "$BASE/openvibe-link-plugins.tar.gz" "$TMP/openvibe-link-plugins.tar.gz" || die "download failed: plugin bundle"
 	fetch "$BASE/SHA256SUMS" "$TMP/SHA256SUMS" || die "download failed: SHA256SUMS"
 	( cd "$TMP"
-	  grep -E " ($BIN_NAME|openvibe-node-plugins\.tar\.gz)\$" SHA256SUMS > sums || die "no checksums for $BIN_NAME"
+	  grep -E " ($BIN_NAME|openvibe-link-plugins\.tar\.gz)\$" SHA256SUMS > sums || die "no checksums for $BIN_NAME"
 	  if command -v sha256sum >/dev/null 2>&1; then sha256sum -c sums >/dev/null
 	  else shasum -a 256 -c sums >/dev/null; fi ) || die "checksum mismatch: refusing to install"
 fi
 
 # ---- binary ----
 $SUDO install -m 0755 "$TMP/$BIN_NAME" "$BIN_DIR/openvibe-link"
-# The old command is a link to the same program for a year (plan 2026-11-07 §5), never a second install.
-$SUDO ln -sf openvibe-link "$BIN_DIR/openvibe-node" || $SUDO install -m 0755 "$TMP/$BIN_NAME" "$BIN_DIR/openvibe-node"
-say "installed $BIN_DIR/openvibe-link ($("$BIN_DIR/openvibe-link" version)); openvibe-node is an alias"
+say "installed $BIN_DIR/openvibe-link ($("$BIN_DIR/openvibe-link" version))"
 
 # ---- service account (Linux): hardware groups, no login ----
 # A worker (--worker) runs the service as root: the job sandbox's run_as and its public egress (a veth, NAT and the
-# Node's nftables table) need it, and each job still runs as the unprivileged openvibe-job user.
+# Link's nftables table) need it, and each job still runs as the unprivileged openvibe-job user.
 SVC_USER=""
 if [ "$WORKER" = 1 ] && [ "$OS" != linux ]; then die "--worker is for Linux"; fi
 COMPUTER_HOME=""
@@ -931,16 +919,16 @@ elif [ "$DESK_HOST" = 1 ]; then
 	$SUDO chmod 700 "$COMPUTER_HOME"
 elif [ -n "$COMPUTER" ]; then
 	case "$COMPUTER" in observe|ask|trusted|full) ;; *) die "--computer is observe, ask, trusted or full" ;; esac
-	[ "$OS" = linux ] || die "--computer is for Linux in this installer (docs/computer.md: run the Node in your own session elsewhere)"
+	[ "$OS" = linux ] || die "--computer is for Linux in this installer (docs/computer.md: run the Link in your own session elsewhere)"
 	[ "$WORKER" = 0 ] || die "--computer and --worker cannot share a machine yet (the worker's service runs as root)"
 	SVC_USER="${SUDO_USER:-$(id -un)}"
-	[ "$SVC_USER" != root ] || die "--computer runs the Node as your own account: run the installer from it (it uses sudo itself), not as root"
+	[ "$SVC_USER" != root ] || die "--computer runs the Link as your own account: run the installer from it (it uses sudo itself), not as root"
 	COMPUTER_HOME=$(getent passwd "$SVC_USER" | cut -d: -f6)
 	if [ -z "$COMPUTER_HOME" ] || [ ! -d "$COMPUTER_HOME" ]; then die "no home folder for $SVC_USER"; fi
 fi
 case "$COMPUTER" in ""|observe|ask|trusted|full) ;; *) die "--computer is observe, ask, trusted or full" ;; esac
 if [ "$OS" = linux ] && [ "$SERVICE" = 1 ] && [ "$WORKER" = 0 ] && [ -z "$COMPUTER" ] && [ "$DESK_HOST" != shared ]; then
-	SVC_USER=openvibe-node
+	SVC_USER=openvibe-link
 	if ! id "$SVC_USER" >/dev/null 2>&1; then
 		$SUDO useradd --system --home-dir "$STATE" --no-create-home --shell /usr/sbin/nologin "$SVC_USER" 2>/dev/null ||
 			$SUDO adduser --system --home "$STATE" --no-create-home --shell /usr/sbin/nologin "$SVC_USER"
@@ -956,7 +944,7 @@ $SUDO chmod 700 "$CONF" "$STATE"
 command -v python3 >/dev/null 2>&1 || die "python3 is needed for the plugins (sudo apt install python3 python3-venv)"
 $SUDO rm -rf "$STATE/plugins"
 $SUDO mkdir -p "$STATE/plugins"
-$SUDO tar -xzf "$TMP/openvibe-node-plugins.tar.gz" -C "$STATE/plugins"
+$SUDO tar -xzf "$TMP/openvibe-link-plugins.tar.gz" -C "$STATE/plugins"
 if [ ! -x "$STATE/venv/bin/python" ]; then
 	say "creating the plugin environment in $STATE/venv"
 	# --system-site-packages lets the Pi use the OS's picamera2/lgpio builds.
@@ -994,13 +982,13 @@ ros2|ros2-holonomic)
 	say "     rosbridge_url, cmd_vel, max_linear and image_topic in $CONF/config.json if yours differ"
 	;;
 looi)
-	# LOOI's camera is its phone, which streams on its own (docs/hardware-looi.md): the Node publishes no video.
+	# LOOI's camera is its phone, which streams on its own (docs/hardware-looi.md): the Link publishes no video.
 	PLUGINS='[{"name": "looi"}]'
 	KIND=bridge
 	VIDEO='"source": "off"'
 	if ! "$STATE/venv/bin/python" -c 'import openvibe_looi' >/dev/null 2>&1; then
 		say "the Generic LOOI driver is not in $STATE/venv yet: install it with \"$SUDO $PIP install <the driver>\", then"
-		say "restart the Node's service. Until then the panel shows the plugin's fault and LOOI never moves."
+		say "restart the Link's service. Until then the panel shows the plugin's fault and LOOI never moves."
 	fi
 	;;
 esac
@@ -1013,7 +1001,7 @@ if [ -n "$COMPUTER" ]; then
 fi
 if [ "$DESK_HOST" = shared ]; then
 	# What a sandboxed browser desk needs: a browser installed under /usr or /opt (never a snap, which cannot run in
-	# the sandbox), fonts, and the sandbox's network tools (its egress is a veth the Node NATs).
+	# the sandbox), fonts, and the sandbox's network tools (its egress is a veth the Link NATs).
 	if command -v apt-get >/dev/null 2>&1; then
 		say "installing what shared desks need (a browser, fonts, nftables, iproute2)"
 		$SUDO apt-get install -y nftables iproute2 util-linux fonts-dejavu-core fonts-noto-color-emoji fonts-liberation >/dev/null 2>&1 ||
@@ -1033,9 +1021,9 @@ if [ "$DESK_HOST" = shared ]; then
 		say "install Google Chrome (or a Chromium that is not a snap), fonts, nftables and iproute2: shared desks need them"
 	fi
 	if [ "$(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null || echo 0)" != 1 ]; then
-		say "turning on IPv4 forwarding (the sandbox NATs each desk's own network; /etc/sysctl.d/90-openvibe-node-worker.conf)"
-		$SUDO sh -c "printf 'net.ipv4.ip_forward = 1\n' > /etc/sysctl.d/90-openvibe-node-worker.conf"
-		$SUDO sysctl -q -p /etc/sysctl.d/90-openvibe-node-worker.conf || say "warning: could not turn IPv4 forwarding on"
+		say "turning on IPv4 forwarding (the sandbox NATs each desk's own network; /etc/sysctl.d/90-openvibe-link-worker.conf)"
+		$SUDO sh -c "printf 'net.ipv4.ip_forward = 1\n' > /etc/sysctl.d/90-openvibe-link-worker.conf"
+		$SUDO sysctl -q -p /etc/sysctl.d/90-openvibe-link-worker.conf || say "warning: could not turn IPv4 forwarding on"
 	fi
 elif [ "$DESK_HOST" = 1 ]; then
 	# What a desk needs: a display (Xvfb), a window manager, its own D-Bus, input (xdotool), screenshots (ImageMagick),
@@ -1071,7 +1059,7 @@ if [ "$DESK_HOST" = shared ]; then
 		$SUDO useradd --system --no-create-home --shell /usr/sbin/nologin --user-group openvibe-job 2>/dev/null ||
 			$SUDO adduser --system --no-create-home --shell /usr/sbin/nologin --group openvibe-job
 	fi
-	# The worker is on (no functions: no jobs are offered) so the Node sets up its cgroup before any desk starts, and
+	# The worker is on (no functions: no jobs are offered) so the Link sets up its cgroup before any desk starts, and
 	# its sandbox, run_as and egress are the desks'.
 	write_worker_config "$CONF/config.json" "$(id -u openvibe-job)" "$(id -g openvibe-job)"
 	write_computer_config "$CONF/config.json" "$COMPUTER" "$COMPUTER_HOME" shared
@@ -1100,7 +1088,7 @@ elif [ "$DESK_HOST" = 1 ]; then
 	mem_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
 	desks=$(( mem_kb / 2097152 )); [ "$desks" -ge 1 ] || desks=1; [ "$desks" -le 8 ] || desks=8
 	say "this machine is a desk host: up to $desks desks at once for your agents, each its own screen, browser and files"
-	say "(max_desks in $CONF/config.json changes it). On https://openvibe.bot/machines turn on \"Let my agent use this"
+	say "(max_desks in $CONF/config.json changes it). On https://openvibe.link/machines turn on \"Let my agent use this"
 	say "computer\" for it: your agents' tasks then each get a desk of their own here."
 elif [ -n "$COMPUTER" ]; then
 	write_computer_config "$CONF/config.json" "$COMPUTER" "$COMPUTER_HOME"
@@ -1111,7 +1099,7 @@ elif [ -n "$COMPUTER" ]; then
 	if XDG_CONFIG_HOME="$COMPUTER_HOME/.config" "$BIN_DIR/openvibe-link" tray --autostart on >/dev/null 2>&1; then
 		if [ "$(id -u)" = 0 ]; then
 			[ "$had_config" = 1 ] || chown "$SVC_USER": "$COMPUTER_HOME/.config" 2>/dev/null || true
-			chown "$SVC_USER": "$COMPUTER_HOME/.config/autostart" "$COMPUTER_HOME/.config/autostart/openvibe-node-tray.desktop" 2>/dev/null || true
+			chown "$SVC_USER": "$COMPUTER_HOME/.config/autostart" "$COMPUTER_HOME/.config/autostart/openvibe-link-tray.desktop" 2>/dev/null || true
 		fi
 		say "the tray starts when $SVC_USER signs in (openvibe-link tray; openvibe-link tray --autostart off removes it)"
 	fi
@@ -1125,9 +1113,9 @@ if [ "$AI" = 1 ]; then
 		say "your own models: found $found"
 	else
 		say "your own models: no model server answers yet. Install one (Ollama: https://ollama.com, then: ollama pull llama3.1:8b),"
-		say "  or start LM Studio's or llama.cpp's server; the Node finds it on its usual port (--ai-endpoint URL for another)."
+		say "  or start LM Studio's or llama.cpp's server; the Link finds it on its usual port (--ai-endpoint URL for another)."
 	fi
-	say "on https://openvibe.bot/machines turn on \"Let my AI use this computer's models\" for this machine: OpenVibe then"
+	say "on https://openvibe.link/machines turn on \"Let my AI use this computer's models\" for this machine: OpenVibe then"
 	say "  asks them for your own work only (your Vibe, your AI members), and nobody else's."
 fi
 
@@ -1153,9 +1141,9 @@ if [ "$WORKER" = 1 ]; then
 	fi
 	for tool in nft ip nsenter; do command -v "$tool" >/dev/null 2>&1 || say "warning: $tool is missing: jobs that need the internet are refused until it is installed"; done
 	if [ "$(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null || echo 0)" != 1 ]; then
-		say "turning on IPv4 forwarding (the worker NATs each job's own network; /etc/sysctl.d/90-openvibe-node-worker.conf)"
-		$SUDO sh -c "printf 'net.ipv4.ip_forward = 1\n' > /etc/sysctl.d/90-openvibe-node-worker.conf"
-		$SUDO sysctl -q -p /etc/sysctl.d/90-openvibe-node-worker.conf || say "warning: could not turn IPv4 forwarding on"
+		say "turning on IPv4 forwarding (the worker NATs each job's own network; /etc/sysctl.d/90-openvibe-link-worker.conf)"
+		$SUDO sh -c "printf 'net.ipv4.ip_forward = 1\n' > /etc/sysctl.d/90-openvibe-link-worker.conf"
+		$SUDO sysctl -q -p /etc/sysctl.d/90-openvibe-link-worker.conf || say "warning: could not turn IPv4 forwarding on"
 	fi
 	NODEJS=""
 	for candidate in /usr/bin/node /usr/local/bin/node; do
@@ -1194,7 +1182,7 @@ if [ "$WORKER" = 1 ]; then
 	say "the job worker is on: jobs run as openvibe-job in the worker's sandbox, with public egress"
 	say "add your agent keys (DEEPSEEK_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, and GITHUB_TOKEN to push branches) to"
 	say "  worker.functions[openvibe-codes].env in $CONF/config.json, and install agent CLIs system-wide"
-	say "  (sudo npm install -g @anthropic-ai/claude-code @openai/codex), then: sudo systemctl restart openvibe-node"
+	say "  (sudo npm install -g @anthropic-ai/claude-code @openai/codex), then: sudo systemctl restart openvibe-link"
 fi
 
 # ---- the Adeept kit's stock server: never run it (fixed admin:123456 login on 0.0.0.0:8888, MJPEG on :5000) ----
@@ -1232,12 +1220,12 @@ fi
 # ---- pair ----
 if [ -n "$CODE" ]; then
 	if $SUDO "$BIN_DIR/openvibe-link" status --json 2>/dev/null | grep -q '"paired":true'; then
-		say "already paired; keeping the credential (to pair again: sudo openvibe-node pair --force <CODE>, adding --network <URL> --pairing <pair_…> for a Network pairing)"
+		say "already paired; keeping the credential (to pair again: sudo openvibe-link pair --force <CODE>, adding --network <URL> --pairing <pair_…> for a Network pairing)"
 	else
 		pair_with $SUDO "$BIN_DIR/openvibe-link"
 	fi
 else
-	say "not paired yet: get a code on openvibe.bot and run: sudo openvibe-node pair <CODE>"
+	say "not paired yet: get a code on openvibe.bot and run: sudo openvibe-link pair <CODE>"
 fi
 
 # ---- the one command: is it driving and streaming? ----
@@ -1255,7 +1243,7 @@ import json, sys
 try:
     s = json.load(sys.stdin)
 except ValueError:
-    sys.exit("openvibe-node: the service did not answer: sudo journalctl -u openvibe-node -n 50")
+    sys.exit("openvibe-link: the service did not answer: sudo journalctl -u openvibe-link -n 50")
 link = s.get("link") or {}
 print("  link     " + ("connected" if link.get("connected") else "not connected" + (": " + link["last_error"] if link.get("last_error") else "")))
 for p in s.get("plugins") or []:
@@ -1269,4 +1257,4 @@ print("  camera   %s%s" % (v.get("state") or "off", (" (" + v["last_error"] + ")
 fi
 
 say "done. Check it with: sudo openvibe-link status   Stop everything with: sudo openvibe-link stop"
-say "first run: sudo openvibe-link   (checks the link and reports this machine's first job on openvibe.bot/machines)"
+say "first run: sudo openvibe-link   (checks the link and reports this machine's first job on openvibe.link/machines)"

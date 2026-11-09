@@ -42,13 +42,13 @@ class Registry:
             raise ValueError('pool registry requires an https:// Network (a Network-paired machine)')
         if time.monotonic() >= self.expires:
             data = urllib.parse.urlencode({'grant_type': 'client_credentials', 'client_id': cred['principal'],
-                                           'client_secret': cred['node_credential'], 'audience': 'openvibe.network'}).encode()
+                                           'client_secret': cred['link_credential'], 'audience': 'openvibe.network'}).encode()
             request = urllib.request.Request(network + '/oauth/token', data=data,
                                              headers={'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json'})
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 token = json.loads(response.read(65536))
             self.token, self.expires = token['access_token'], time.monotonic() + min(int(token['expires_in']), 240)
-        request = urllib.request.Request(network + '/api/v1/node/self/pools' + path,
+        request = urllib.request.Request(network + '/api/v1/link/self/pools' + path,
                                          method=method, data=json.dumps(body).encode() if body is not None else None,
                                          headers={'Authorization': 'Bearer ' + self.token, 'Content-Type': 'application/json'})
         with urllib.request.urlopen(request, timeout=self.timeout) as response:

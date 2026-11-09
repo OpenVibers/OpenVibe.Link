@@ -1,5 +1,5 @@
 /dist/
-/openvibe-node
+/openvibe-link
 *.exe
 __pycache__/
 *.pyc

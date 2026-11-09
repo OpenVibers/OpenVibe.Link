@@ -5,7 +5,7 @@
 // login file carries with when they free. Nothing else leaves the machine: no key, no token and no account name; the
 // probe reads the owner's own files read-only and reports labels, numbers and times.
 //
-// The prober runs the CLI as the Node's own user (worker.plan_logins are files under that user's home, so the same home
+// The prober runs the CLI as the Link's own user (worker.plan_logins are files under that user's home, so the same home
 // is where the logins are), caches the last answer, and the link sends it with the heartbeat. A probe that fails keeps
 // the previous reading until the next one, and says so in the log; it never invents a state.
 package fleet
@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/protocol"
+	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
 // Defaults for the prober: a minute between readings (a plan window moves in hours, not seconds) and a probe that
@@ -42,7 +42,7 @@ var (
 // Options configure a Prober.
 type Options struct {
 	Command  []string      // the probe: [node, /opt/openvibe-codes/…/openvibe-codes.js, logins, --json]
-	Home     string        // HOME for the probe; empty means the Node user's home
+	Home     string        // HOME for the probe; empty means the Link user's home
 	Interval time.Duration // default DefaultInterval
 	Timeout  time.Duration // default DefaultTimeout
 	Log      *slog.Logger

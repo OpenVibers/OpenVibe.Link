@@ -399,7 +399,7 @@ def _password_field_macos():
 
 class Hotkey:
     """A global curtain hotkey. X11: Ctrl+Alt+P through XGrabKey (ctypes, no dependency). Elsewhere: unavailable, and
-    the owner uses Curtain now on Live or `openvibe-node stream` (SIGUSR1) instead."""
+    the owner uses Curtain now on Live or `openvibe-link stream` (SIGUSR1) instead."""
 
     def __init__(self, callback, combo="ctrl+alt+p"):
         self.callback = callback

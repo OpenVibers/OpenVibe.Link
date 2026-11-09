@@ -1,5 +1,5 @@
 #!/bin/sh
-# Tests install.sh's flag parsing into the `openvibe-node pair` command: the legacy Bot form (--robot rob_… --code)
+# Tests install.sh's flag parsing into the `openvibe-link pair` command: the legacy Bot form (--robot rob_… --code)
 # unchanged, and the Network form (--network URL --pairing pair_… --code). OPENVIBE_INSTALL_PAIR_ARGS_ONLY=1 makes
 # the installer print the arguments and exit before it downloads, installs or pairs anything.
 set -eu

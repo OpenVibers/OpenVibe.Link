@@ -192,7 +192,7 @@ class StopInfo:
     own deadline passed; motion_only is True: stop what moves on its own), "heartbeat" (the core went quiet),
     "handler_error", "eof". An older core sends no cause: "stop".
     emergency is True for the platform's e-stop, with cause "remote" (a robot owner or staff), "local"
-    (`openvibe-node stop` on the device), "driver" (a driver's own local stop) or "latched" (the stop was already
+    (`openvibe-link stop` on the device), "driver" (a driver's own local stop) or "latched" (the stop was already
     latched when this process or the Node started: replayed is True and first_cause is the original cause when the core
     knows it); an older core sends "estop". reason is the latch's reason text, when there is one.
     latched is whether the platform's stop latch is set as this is delivered. It is cleared only by its owner, which
@@ -302,7 +302,7 @@ class Plugin:
         """Release the hardware. stop() has already been called."""
 
     def on_approval(self, cid, approved):
-        """The owner answered, on the machine (`openvibe-node approve|deny <id>`), an approval this plugin asked for
+        """The owner answered, on the machine (`openvibe-link approve|deny <id>`), an approval this plugin asked for
         with emit_event("approval", id=…). Runs on the runtime's main thread."""
 
     def on_voice(self, on, call_word):
@@ -315,7 +315,7 @@ class Plugin:
         answered or refused; text is what to say, url the Vibe chat that keeps it."""
 
     def on_tray(self, attached, ttl_s):
-        """The Node's tray (`openvibe-node tray`, in the owner's graphical session) is showing this plugin's approvals,
+        """The Node's tray (`openvibe-link tray`, in the owner's graphical session) is showing this plugin's approvals,
         for the next ttl_s seconds unless told again. A plugin that notifies the desktop itself can stay quiet then.
         Sent only to the plugin that handles computer kinds."""
 
@@ -347,7 +347,7 @@ class Plugin:
 
     def local_stop(self, reason=""):
         """Latch the Node's local stop: the driver's own stop button, or a sensor it trusts. Every actuator stops now,
-        the panel shows the robot as stopped on the robot, and only ``openvibe-node resume`` on this machine releases
+        the panel shows the robot as stopped on the robot, and only ``openvibe-link resume`` on this machine releases
         it (the owner's remote clear does not). Safe to call from any thread."""
         if self.runtime is not None:
             self.runtime.local_stop(reason)

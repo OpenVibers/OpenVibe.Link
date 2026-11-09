@@ -1,9 +1,9 @@
-// Package stream is Node's part of Agent Streams S1: the desk stream. It publishes a desk's screen to OpenVibe.Live
+// Package stream is Link's part of Agent Streams S1: the desk stream. It publishes a desk's screen to OpenVibe.Live
 // over WHIP with a publish ticket (wpt_…), polls the stream's state, sends snapshots while nobody watches, renews the
 // ticket at three hours, blanks the picture behind the curtain, and measures glass-to-glass latency with a QR probe.
 //
 // The design is plan-state-2026-10-22/AGENT-STREAMS-S1-DESIGN-2026-11-06.md. Tickets and tokens are credentials.Secret:
-// they go on the wire and nowhere else, never into a log line, an error or `openvibe-node status`.
+// they go on the wire and nowhere else, never into a log line, an error or `openvibe-link status`.
 package stream
 
 import (
@@ -12,7 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/OpenVibers/OpenVibe.Node/internal/voice"
+	"github.com/OpenVibers/OpenVibe.Link/internal/voice"
 	"io"
 	"net"
 	"net/http"
@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
+	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
 )
 
 // DefaultLiveURL is where the agent-stream API lives.
@@ -56,7 +56,7 @@ type CreateRequest struct {
 	AllowSites []string `json:"allow_sites,omitempty"`
 }
 
-// Stream is live.agent-stream@1, the fields Node needs.
+// Stream is live.agent-stream@1, the fields Link needs.
 type Stream struct {
 	ID            string  `json:"id"`
 	Owner         string  `json:"owner"`
@@ -158,7 +158,7 @@ func NewClient(o ClientOptions) (*Client, error) {
 		c.http = &http.Client{Timeout: 20 * time.Second}
 	}
 	if c.ua == "" {
-		c.ua = "openvibe-node"
+		c.ua = "openvibe-link"
 	}
 	return c, nil
 }
