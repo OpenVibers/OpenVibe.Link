@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use OpenVibe.Link in research or a product, cite it as below."
+title: openvibe-link
+type: software
+authors:
+  - name: OpenVibe
+    alias: OpenVibers
+    website: https://openvibe.network
+repository-code: https://github.com/OpenVibers/OpenVibe.Link
+url: https://openvibe.link
+license: AGPL-3.0-only
+abstract: "Pair your computers, servers, phones and robots with OpenVibe, with no open ports, at openvibe.link."
+keywords:
+  - openvibe
+  - device-agent
+  - iot
+  - nodejs
+  - raspberry-pi
