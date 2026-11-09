@@ -795,11 +795,17 @@ class Browser:
         from urllib.parse import urlparse
         self._need()
         cookies = self.call("Storage.getCookies", {}, session=False).get("cookies") or []
+
+        def under(host):
+            # The site and every subdomain of it: signing out of google.com also signs out of accounts.google.com.
+            h = (host or "").lstrip(".").lower()
+            return h == site or h.endswith("." + site)
+
         for cookie in cookies:
-            if cookie.get("domain", "").lstrip(".").lower() == site:
+            if under(cookie.get("domain", "")):
                 self.call("Network.deleteCookies", {k: cookie[k] for k in ("name", "domain", "path", "partitionKey") if k in cookie})
         for origin in list(self.storage_origins):
-            if urlparse(origin).hostname == site:
+            if under(urlparse(origin).hostname):
                 self.call("Storage.clearDataForOrigin", {"origin": origin, "storageTypes": "local_storage,indexeddb,cache_storage,service_workers"})
                 self.storage_origins.discard(origin)
         return {"done": True}

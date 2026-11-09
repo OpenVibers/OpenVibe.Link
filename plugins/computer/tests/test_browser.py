@@ -22,7 +22,7 @@ from test_computer import Out, reply  # noqa: E402
 
 class ActorProfileTests(unittest.TestCase):
     def test_restart_and_site_only_signout(self):
-        state = {"cookies": [{"name": "login", "value": "fixture-a", "domain": ".a.example", "path": "/"}, {"name": "login", "value": "fixture-b", "domain": "b.example", "path": "/"}], "origins": {"https://a.example": [["theme", "dark"]]}}
+        state = {"cookies": [{"name": "login", "value": "fixture-a", "domain": ".a.example", "path": "/"}, {"name": "login", "value": "fixture-b", "domain": "b.example", "path": "/"}, {"name": "sso", "value": "fixture-c", "domain": "accounts.a.example", "path": "/"}], "origins": {"https://a.example": [["theme", "dark"]]}}
         def browser(state):
             b = Browser("unused", "/unused")
             b._need = lambda: None
