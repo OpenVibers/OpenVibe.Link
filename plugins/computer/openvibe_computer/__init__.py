@@ -170,7 +170,7 @@ STREAM_QUALITY = 70
 STREAM_MAX_FAILURES = 5
 INPUT_ACTIONS = frozenset({"move", "click", "double_click", "right_click", "scroll", "type", "key"})
 BROWSER_READS = frozenset({"read", "screenshot", "close", "active_origin"})
-BROWSER_ACTS = frozenset({"open", "click", "fill", "press", "back", "blind_fill"})
+BROWSER_ACTS = frozenset({"open", "click", "fill", "press", "back", "blind_fill", "profile_export", "profile_import", "profile_sign_out"})
 MAX_URL = 2048
 MAX_DESK_PROGRAMS = 16
 PROFILE_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,23}$")
@@ -1994,6 +1994,13 @@ class Computer(Plugin):
         action = v.get("action")
         if action not in BROWSER_READS and action not in BROWSER_ACTS:
             raise Fault("bad_value", "action is one of %s" % ", ".join(sorted(BROWSER_READS | BROWSER_ACTS)))
+        if action.startswith("profile_"):
+            if not desk or desk == "main":
+                raise Fault("not_allowed", "Saved sign-ins belong to a private desk")
+            if action == "profile_import" and (not isinstance(v.get("profile"), dict) or len(json.dumps(v["profile"])) > 47000):
+                raise Fault("bad_value", "Invalid saved sign-ins")
+            if action == "profile_sign_out" and (not isinstance(v.get("site"), str) or not re.fullmatch(r"[a-z0-9.-]{1,253}", v["site"])):
+                raise Fault("bad_value", "Invalid site")
         selector, text, key, url = v.get("selector"), v.get("text"), v.get("key"), None
         if action == "open":
             url = self._browser_url(v.get("url"), level)
@@ -2050,6 +2057,12 @@ class Computer(Plugin):
                         out = b.open(url)
                     elif action == "read":
                         out = b.read()
+                    elif action == "profile_export":
+                        out = b.profile_export()
+                    elif action == "profile_import":
+                        out = b.profile_import(v["profile"])
+                    elif action == "profile_sign_out":
+                        out = b.profile_sign_out(v["site"])
                     elif action == "active_origin":
                         out = b.active_origin()
                     elif action == "blind_fill":

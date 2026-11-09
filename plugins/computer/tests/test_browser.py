@@ -20,6 +20,34 @@ from openvibe_plugin import Runtime  # noqa: E402
 from test_computer import Out, reply  # noqa: E402
 
 
+class ActorProfileTests(unittest.TestCase):
+    def test_restart_and_site_only_signout(self):
+        state = {"cookies": [{"name": "login", "value": "fixture-a", "domain": ".a.example", "path": "/"}, {"name": "login", "value": "fixture-b", "domain": "b.example", "path": "/"}], "origins": {"https://a.example": [["theme", "dark"]]}}
+        def browser(state):
+            b = Browser("unused", "/unused")
+            b._need = lambda: None
+            def call(method, params=None, **kw):
+                params = params or {}
+                if method == "Storage.getCookies": return {"cookies": state["cookies"]}
+                if method == "Storage.setCookies": state["cookies"].extend(params["cookies"])
+                if method == "Page.getFrameTree": return {"frameTree": {"frame": {"securityOrigin": "https://a.example"}}}
+                if method == "DOMStorage.getDOMStorageItems": return {"entries": state["origins"].get(params["storageId"]["securityOrigin"], [])}
+                if method == "DOMStorage.setDOMStorageItem": state["origins"].setdefault(params["storageId"]["securityOrigin"], []).append([params["key"], params["value"]])
+                if method == "Network.deleteCookies": state["cookies"] = [c for c in state["cookies"] if c["domain"] != params["domain"]]
+                if method == "Storage.clearDataForOrigin": state["origins"].pop(params["origin"], None)
+                return {}
+            b.call = call
+            return b
+        saved = browser(state).profile_export()
+        restarted = {"cookies": [], "origins": {}}
+        b = browser(restarted)
+        b.profile_import(saved)
+        self.assertEqual(restarted, state)
+        b.profile_sign_out("a.example")
+        self.assertEqual([c["domain"] for c in restarted["cookies"]], ["b.example"])
+        self.assertEqual(restarted["origins"], {})
+
+
 class FakeBrowser:
     """What the plugin asks of a browser, recorded; pages are made up."""
 
