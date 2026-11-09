@@ -234,7 +234,7 @@ func ComputerActs(kind string, value json.RawMessage) bool {
 			Action string `json:"action"`
 		}
 		_ = json.Unmarshal(value, &v)
-		return v.Action != "read" && v.Action != "screenshot" && v.Action != "close"
+		return v.Action != "read" && v.Action != "screenshot" && v.Action != "close" && v.Action != "active_origin"
 	case KindDesk:
 		var v struct {
 			Action string `json:"action"`

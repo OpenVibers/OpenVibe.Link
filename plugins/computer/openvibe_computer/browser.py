@@ -18,6 +18,7 @@ Every page answer is ``{url, title, text, links}``: the page's visible text (cut
 import base64
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -30,6 +31,9 @@ MAX_ELEMENTS = 120
 MAX_APPEARED = 8
 MAX_FOLLOWED = 5
 MAX_SESSION_COOKIES = 3000
+EXACT_HTTPS_ORIGIN = re.compile(r"^https://[a-z0-9.-]+(:[0-9]{1,5})?$")
+_blind_fill_lock = threading.Lock()
+_blind_fill_ids = {}
 # What Storage.setCookies takes back of what Storage.getCookies gives.
 COOKIE_FIELDS = ("name", "value", "domain", "path", "secure", "httpOnly", "sameSite", "priority", "sourceScheme",
                  "sourcePort", "partitionKey")   # pages opened from pages (a sign-in popup, a new tab) followed at most this deep
@@ -452,21 +456,27 @@ class Browser:
             time.sleep(0.05)
         return False
 
-    def _eval(self, expression, gesture=False):
+    def _eval(self, expression, gesture=False, context_id=None, sanitize_errors=False):
         # gesture: as a person's click (user activation), so a page may open its sign-in popup from the agent's click.
         params = {"expression": expression, "returnByValue": True, "awaitPromise": True}
         if gesture:
             params["userGesture"] = True
+        if context_id is not None:
+            params["contextId"] = context_id
         session = self.session
         try:
             r = self.call("Runtime.evaluate", params)
         except BrowserError as e:
+            if sanitize_errors:
+                raise BrowserError("bad_value", "the browser refused the page script")
             # The page in front just closed (a popup closes itself after a sign-in) before the browser said so: wait for
             # it to say so (a second at most), then once more on the page in front again.
             if "session" not in e.message.lower() or not self._front_changed(session):
                 raise
             r = self.call("Runtime.evaluate", params)
         if r.get("exceptionDetails"):
+            if sanitize_errors:
+                raise BrowserError("bad_value", "the browser refused the page script")
             raise BrowserError("bad_value", "the page refused: %s" % r["exceptionDetails"].get("text", "an exception"))
         return r.get("result", {}).get("value")
 
@@ -495,6 +505,80 @@ class Browser:
     def read(self):
         self._need()
         return self.summary()
+
+    def active_origin(self):
+        """Return the active target's top-level frame origin, never child-frame URLs."""
+        self._need()
+        self._follow()
+        tree = self.call("Page.getFrameTree").get("frameTree", {}).get("frame", {})
+        raw = tree.get("url", "")
+        from urllib.parse import urlsplit
+        u = urlsplit(raw)
+        if u.scheme != "https" or not u.hostname:
+            return {"origin": None}
+        host = u.hostname.lower()
+        if ":" in host:
+            host = "[" + host + "]"
+        try:
+            port = u.port
+        except ValueError:
+            return {"origin": None}
+        origin = "%s://%s%s" % (u.scheme, host, (":" + str(port)) if port and port != 443 else "")
+        return {"origin": origin if EXACT_HTTPS_ORIGIN.fullmatch(origin) else None}
+
+    def blind_fill(self, request_id, origin, username, password, code="", submit=False):
+        """Fill visible fields in the top-level document and return only an outcome code."""
+        self._need()
+        import json
+        if not isinstance(request_id, str) or not re.fullmatch(r"fr_[A-Za-z0-9_-]{16,64}", request_id):
+            raise BrowserError("bad_value", "invalid fill request")
+        if not isinstance(origin, str) or not EXACT_HTTPS_ORIGIN.fullmatch(origin):
+            raise BrowserError("bad_value", "invalid fill origin")
+        if not isinstance(username, str) or not username or len(username) > 4096 or not isinstance(password, str) or not password or len(password) > 4096:
+            raise BrowserError("bad_value", "invalid fill grant")
+        if not isinstance(code, str) or len(code) > 32 or not isinstance(submit, bool):
+            raise BrowserError("bad_value", "invalid fill grant")
+        now = time.monotonic()
+        with _blind_fill_lock:
+            for key, expiry in list(_blind_fill_ids.items()):
+                if expiry <= now: del _blind_fill_ids[key]
+            if request_id in _blind_fill_ids:
+                return {"outcome": "failed", "reason": "reused"}
+            _blind_fill_ids[request_id] = now + 120
+        active = self.active_origin().get("origin")
+        if active != origin:
+            return {"outcome": "failed", "reason": "origin_changed"}
+        script = """(() => {
+          const origin = %s;
+          if (location.origin !== origin) return {ok:false,reason:'origin_changed'};
+          const visible = e => { const r=e.getBoundingClientRect(),s=getComputedStyle(e); return r.width>0&&r.height>0&&s.visibility!=='hidden'&&s.display!=='none'&&!e.disabled; };
+          const inputs = [...document.querySelectorAll('input')].filter(visible);
+          const password = inputs.find(e => e.type === 'password');
+          const username = inputs.find(e => e !== password && (e.autocomplete === 'username' || ['email','text'].includes(e.type)) && !/search|hidden/i.test(e.name+' '+e.autocomplete));
+          if (!username || !password || username.ownerDocument !== document || password.ownerDocument !== document) return {ok:false,reason:'no_fields'};
+          const set = (e,v) => { const p=Object.getPrototypeOf(e),d=Object.getOwnPropertyDescriptor(p,'value'); if(d&&d.set)d.set.call(e,v); else e.value=v; e.dispatchEvent(new Event('input',{bubbles:true})); e.dispatchEvent(new Event('change',{bubbles:true})); };
+          set(username,%s); set(password,%s);
+          const code = %s;
+          if(code) { const otp=inputs.find(e => e !== username && e !== password && (e.autocomplete === 'one-time-code' || /otp|one.?time|verification.?code/i.test(e.name+' '+e.id+' '+e.placeholder))); if(!otp) return {ok:false,reason:'no_fields'}; set(otp,code); }
+          if(%s) { const form=password.form; if(!form) return {ok:false,reason:'refused'}; const button=[...form.querySelectorAll('button[type=submit],input[type=submit]')].find(visible); form.requestSubmit(button || undefined); }
+          return {ok:true};
+        })()""" % (json.dumps(origin), json.dumps(username), json.dumps(password), json.dumps(code), "true" if submit else "false")
+        frame = self.call("Page.getFrameTree").get("frameTree", {}).get("frame", {})
+        frame_id = frame.get("id")
+        if not frame_id:
+            return {"outcome": "failed", "reason": "origin_changed"}
+        world = self.call("Page.createIsolatedWorld", {"frameId": frame_id, "grantUniveralAccess": False})
+        context_id = world.get("executionContextId")
+        if not context_id:
+            return {"outcome": "failed", "reason": "refused"}
+        try:
+            result = self._eval(script, context_id=context_id, sanitize_errors=True)
+        finally:
+            # Python strings cannot be zeroed; release the grant and generated script references promptly.
+            del script, username, password, code
+        if not isinstance(result, dict) or result.get("ok") is not True:
+            return {"outcome": "failed", "reason": result.get("reason", "refused") if isinstance(result, dict) else "refused"}
+        return {"outcome": "ok"}
 
     def _before(self):
         try:
