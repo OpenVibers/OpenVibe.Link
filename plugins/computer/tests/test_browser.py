@@ -217,6 +217,12 @@ class BlindFillCDPTest(unittest.TestCase):
         b.call=lambda method: {"frameTree":{"frame":{"url":"http://example.org/login"}}}
         self.assertEqual(b.active_origin(),{"origin":None},"plain HTTP cannot receive credentials")
 
+    def test_blind_fill_refuses_when_the_active_top_origin_changed(self):
+        b=Browser.__new__(Browser); b._need=lambda:None; b._follow=lambda:None
+        b.call=lambda method: {"frameTree":{"frame":{"url":"https://other.example/login"}}}
+        b._eval=lambda script: self.fail("changed origin must be refused before filling")
+        self.assertEqual(b.blind_fill("fr_01JAB2C3D4E5F6G7H8J9K0MNPQ","https://example.org","u","p"),{"outcome":"failed","reason":"origin_changed"})
+
 
 class DownloadPolicyTest(unittest.TestCase):
     def test_the_download_behavior_sent_to_the_browser(self):

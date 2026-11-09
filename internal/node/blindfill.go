@@ -15,7 +15,6 @@ import (
 type blindFillRequest struct {
 	Action    string `json:"action"`
 	RequestID string `json:"request_id"`
-	Origin    string `json:"origin"`
 	Envelope  string `json:"envelope"`
 }
 type blindFillGrant struct {
@@ -53,10 +52,6 @@ func (n *Node) prepareBlindFillAt(value json.RawMessage, now time.Time) (json.Ra
 	if n.opt.Creds == nil || !strings.HasPrefix(n.opt.Creds.Principal, "nod_") || !exactFillRequestID.MatchString(req.RequestID) || len(req.Envelope) > 16384 {
 		return nil, func() {}, fmt.Errorf("invalid blind fill request")
 	}
-	wantOrigin, ok := exactHTTPOrigin(req.Origin)
-	if !ok {
-		return nil, func() {}, fmt.Errorf("invalid blind fill origin")
-	}
 	encoded, err := lockeropen.DecodeEnvelope(req.Envelope)
 	if err != nil {
 		return nil, func() {}, err
@@ -77,16 +72,16 @@ func (n *Node) prepareBlindFillAt(value json.RawMessage, now time.Time) (json.Ra
 		return nil, func() {}, fmt.Errorf("invalid blind fill grant")
 	}
 	defer func() { grant.Username, grant.Password, grant.Code = "", "", "" }()
-	if !exactFillRequestID.MatchString(grant.RequestID) || grant.RequestID != req.RequestID || grant.Origin != wantOrigin || len(grant.Username) == 0 || len(grant.Username) > 4096 || len(grant.Password) == 0 || len(grant.Password) > 4096 || len(grant.Code) > 8 || (grant.Code != "" && !totpDigits.MatchString(grant.Code)) {
+	if !exactFillRequestID.MatchString(grant.RequestID) || grant.RequestID != req.RequestID || len(grant.Username) == 0 || len(grant.Username) > 4096 || len(grant.Password) == 0 || len(grant.Password) > 4096 || len(grant.Code) > 8 || (grant.Code != "" && !totpDigits.MatchString(grant.Code)) {
 		return nil, func() {}, fmt.Errorf("invalid blind fill grant")
 	}
 	if grant.Exp <= now.UnixMilli() || grant.Exp > now.Add(60*time.Second).UnixMilli() {
 		return nil, func() {}, fmt.Errorf("expired blind fill grant")
 	}
-	if grantOrigin, valid := exactHTTPOrigin(grant.Origin); !valid || grantOrigin != wantOrigin {
+	if grantOrigin, valid := exactHTTPOrigin(grant.Origin); !valid || grantOrigin != grant.Origin {
 		return nil, func() {}, fmt.Errorf("blind fill origin mismatch")
 	}
-	pluginRequest := blindFillPluginRequest{Action: "blind_fill", RequestID: req.RequestID, Origin: wantOrigin, Username: grant.Username, Password: grant.Password, Code: grant.Code, Submit: grant.Submit}
+	pluginRequest := blindFillPluginRequest{Action: "blind_fill", RequestID: req.RequestID, Origin: grant.Origin, Username: grant.Username, Password: grant.Password, Code: grant.Code, Submit: grant.Submit}
 	pluginValue, err := json.Marshal(pluginRequest)
 	pluginRequest.Username, pluginRequest.Password, pluginRequest.Code = "", "", ""
 	if err != nil {

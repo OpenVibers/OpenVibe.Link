@@ -36,7 +36,7 @@ func blindFillTestNode(t *testing.T) (*Node, string) {
 		t.Fatal(err)
 	}
 	n := &Node{opt: Options{Creds: &credentials.Credentials{Principal: v.Recipient.ID}, Paths: config.Paths{ConfigDir: dir}}}
-	raw, _ := json.Marshal(map[string]any{"action": "blind_fill", "request_id": v.Expected["request_id"], "origin": v.Expected["origin"], "envelope": v.Envelope})
+	raw, _ := json.Marshal(map[string]any{"action": "blind_fill", "request_id": v.Expected["request_id"], "envelope": v.Envelope})
 	return n, string(raw)
 }
 
@@ -59,11 +59,10 @@ func TestPrepareBlindFillOpensSDKGrantAndClearsPayload(t *testing.T) {
 	}
 }
 
-func TestPrepareBlindFillBindsRequestOriginAndRecipient(t *testing.T) {
+func TestPrepareBlindFillBindsRequestAndRecipient(t *testing.T) {
 	n, raw := blindFillTestNode(t)
 	for _, mutate := range []func(map[string]any){
 		func(v map[string]any) { v["request_id"] = "different" },
-		func(v map[string]any) { v["origin"] = "https://other.example" },
 		func(v map[string]any) { v["envelope"] = "not-base64" },
 	} {
 		var v map[string]any
