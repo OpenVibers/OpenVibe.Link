@@ -11,6 +11,7 @@ import (
 
 // DeskSpec is one desk's program as RunDesk runs it; off Linux a desk never runs sandboxed (desk_linux.go).
 type DeskSpec struct {
+	Proxy                                func(string) (string, func(), error)
 	Argv                                 []string
 	Env                                  []string
 	Binds                                []string

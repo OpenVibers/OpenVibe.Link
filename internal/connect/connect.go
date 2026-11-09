@@ -71,14 +71,15 @@ var ErrStopped = errors.New("connect: share stopped by the server")
 
 // Options tune a client; the zero value is right for production.
 type Options struct {
-	Log       *slog.Logger
-	Version   string
-	LocalHost string      // default "localhost"
-	OnReady   func(Ready) // called after each successful hello
-	OnRequest func(method, path string, status int, d time.Duration)
-	Dialer    *websocket.Dialer
-	MinWait   time.Duration // reconnect backoff floor (default 1 s)
-	MaxWait   time.Duration // reconnect backoff ceiling (default 30 s)
+	Log          *slog.Logger
+	Version      string
+	LocalHost    string // default "localhost"
+	OnDisconnect func()
+	OnReady      func(Ready) // called after each successful hello
+	OnRequest    func(method, path string, status int, d time.Duration)
+	Dialer       *websocket.Dialer
+	MinWait      time.Duration // reconnect backoff floor (default 1 s)
+	MaxWait      time.Duration // reconnect backoff ceiling (default 30 s)
 
 	// NodeToken buys this computer's node token for openvibe.link, for shares it serves by id (node.go). An error
 	// wrapping ErrStopped (the machine was removed on OpenVibe) stops the share; any other is tried again.
@@ -143,6 +144,9 @@ func Run(ctx context.Context, s Share, o Options) error {
 	wait := o.MinWait
 	for {
 		err := runOnce(ctx, s, o, func() { wait = o.MinWait })
+		if o.OnDisconnect != nil {
+			o.OnDisconnect()
+		}
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}

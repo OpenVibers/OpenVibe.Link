@@ -5,12 +5,15 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 
 	"github.com/OpenVibers/OpenVibe.Node/internal/config"
+	"github.com/OpenVibers/OpenVibe.Node/internal/credentials"
+	linkegress "github.com/OpenVibers/OpenVibe.Node/internal/egress"
 	"github.com/OpenVibers/OpenVibe.Node/internal/worker"
 )
 
@@ -45,6 +48,7 @@ func cmdDeskSandbox(args []string, stderr io.Writer) int {
 	diskMB := fs.Int64("disk-mb", 512, "the size of the desk's /tmp, where its profile lives, in MiB")
 	pids := fs.Int64("pids", 256, "the most processes and threads of the desk")
 	egress := fs.String("egress", "", `"public" to reach the public internet (never the host's networks); none by default`)
+	linkDesk := fs.String("link-egress-desk", "", "the cloud desk assigned by Run")
 	var binds, env listFlag
 	fs.Var(&binds, "bind", "a read-only path the program needs (repeatable): its install directory, /etc/fonts")
 	fs.Var(&env, "setenv", "NAME=VALUE in the program's environment (repeatable); it gets nothing else")
@@ -75,7 +79,33 @@ func cmdDeskSandbox(args []string, stderr io.Writer) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
 	defer stop()
-	code, err := worker.RunDesk(ctx, wcfg, worker.DeskSpec{Argv: argv, Env: env, Binds: binds,
+	var proxy func(string) (string, func(), error)
+	if *linkDesk != "" {
+		if !linkegress.IsCloudDesk(*linkDesk) {
+			fmt.Fprintln(stderr, "invalid cloud desk")
+			return 125
+		}
+		creds, e := credentials.Load(paths.CredentialFile(), nil)
+		if e != nil || !creds.NetworkPaired() {
+			fmt.Fprintln(stderr, "computer sign-in unavailable")
+			return 125
+		}
+		plan, e := linkegress.NewClient(creds).Desk(ctx, *linkDesk)
+		if e != nil {
+			fmt.Fprintln(stderr, "browsing connection unavailable")
+			return 125
+		}
+		proxy = func(gateway string) (string, func(), error) {
+			listener, e := net.Listen("tcp", net.JoinHostPort(gateway, "0"))
+			if e != nil {
+				return "", nil, e
+			}
+			proxyCtx, cancelProxy := context.WithCancel(ctx)
+			server := linkegress.Bridge(proxyCtx, listener, plan)
+			return listener.Addr().String(), func() { cancelProxy(); _ = server.Close() }, nil
+		}
+	}
+	code, err := worker.RunDesk(ctx, wcfg, worker.DeskSpec{Argv: argv, Env: env, Binds: binds, Proxy: proxy,
 		MemBytes: *memMB << 20, CPUMillis: *cpu, DiskBytes: *diskMB << 20, Pids: *pids, Egress: *egress,
 		In: in, Out: out, Stderr: os.Stderr})
 	if err != nil && ctx.Err() == nil {
