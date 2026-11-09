@@ -2056,10 +2056,12 @@ class Computer(Plugin):
                         try:
                             out = b.blind_fill(v["request_id"], v["origin"], v["username"], v["password"], v.get("code", ""), v["submit"])
                         finally:
+                            # Python strings are immutable; overwrite the request slots and drop local references promptly.
                             for secret in ("username", "password", "code"):
                                 value = v.get(secret)
                                 if isinstance(value, str):
                                     v[secret] = "\x00" * len(value)
+                            del value
                     elif action == "screenshot":
                         out = b.screenshot(width)
                     elif action == "click":

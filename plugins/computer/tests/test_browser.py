@@ -206,20 +206,32 @@ class BrowserKindTest(unittest.TestCase):
 class BlindFillCDPTest(unittest.TestCase):
     def test_top_frame_only_and_origin_recheck(self):
         b=Browser.__new__(Browser); b._need=lambda:None; b._follow=lambda:None
-        b.call=lambda method: {"frameTree":{"frame":{"url":"https://example.org/login"}}}
-        seen=[]; b._eval=lambda script: seen.append(script) or {"ok":False,"reason":"no_fields"}
+        b.call=lambda method, params=None: {"frameTree":{"frame":{"url":"https://example.org/login","id":"top"}},"executionContextId":7}
+        seen=[]; b._eval=lambda script, **kwargs: seen.append((script,kwargs)) or {"ok":False,"reason":"no_fields"}
         self.assertEqual(b.active_origin(),{"origin":"https://example.org"})
-        self.assertEqual(b.blind_fill("fr_01JAB2C3D4E5F6G7H8J9K0MNPQ","https://example.org","u","p"),{"outcome":"failed","reason":"no_fields"})
-        self.assertIn("location.origin !== origin",seen[0])
-        self.assertIn("document.querySelectorAll('input')",seen[0])
-        self.assertNotIn("iframe",seen[0].lower(),"child frames are never searched")
-        self.assertIn("if(false)",seen[0],"submit remains guarded by the user's choice")
-        b.call=lambda method: {"frameTree":{"frame":{"url":"http://example.org/login"}}}
+        request_id = "fr_01JAB2C3D4E5F6G7H8J9K0MNPA"
+        self.assertEqual(b.blind_fill(request_id,"https://example.org","u","p"),{"outcome":"failed","reason":"no_fields"})
+        self.assertIn("location.origin !== origin",seen[0][0])
+        self.assertIn("document.querySelectorAll('input')",seen[0][0])
+        self.assertNotIn("iframe",seen[0][0].lower(),"child frames are never searched")
+        self.assertIn("if(false)",seen[0][0],"submit remains guarded by the user's choice")
+        self.assertEqual(seen[0][1], {"context_id":7,"sanitize_errors":True})
+        self.assertEqual(b.blind_fill(request_id,"https://example.org","u","p"),{"outcome":"failed","reason":"reused"})
+        b.call=lambda method, params=None: {"frameTree":{"frame":{"url":"http://example.org/login","id":"top"}},"executionContextId":7}
         self.assertEqual(b.active_origin(),{"origin":None},"plain HTTP cannot receive credentials")
+
+    def test_blind_fill_evaluation_errors_do_not_echo_script_or_secret(self):
+        b=Browser.__new__(Browser)
+        b.session="s"
+        b.call=lambda method, params=None: {"exceptionDetails":{"text":"vector-password leaked from expression"}}
+        with self.assertRaises(BrowserError) as caught:
+            b._eval("secret vector-password", context_id=9, sanitize_errors=True)
+        self.assertNotIn("vector-password", str(caught.exception))
+        self.assertNotIn("secret", str(caught.exception))
 
     def test_blind_fill_refuses_when_the_active_top_origin_changed(self):
         b=Browser.__new__(Browser); b._need=lambda:None; b._follow=lambda:None
-        b.call=lambda method: {"frameTree":{"frame":{"url":"https://other.example/login"}}}
+        b.call=lambda method, params=None: {"frameTree":{"frame":{"url":"https://other.example/login","id":"top"}},"executionContextId":7}
         b._eval=lambda script: self.fail("changed origin must be refused before filling")
         self.assertEqual(b.blind_fill("fr_01JAB2C3D4E5F6G7H8J9K0MNPQ","https://example.org","u","p"),{"outcome":"failed","reason":"origin_changed"})
 
