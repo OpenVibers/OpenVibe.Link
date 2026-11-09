@@ -32,7 +32,7 @@ func Paused() bool {
 		return strings.Contains(probe("pmset", "-g", "batt"), "'Battery Power'")
 	}
 	if runtime.GOOS == "windows" {
-		return strings.TrimSpace(probe("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", `Add-Type -AssemblyName System.Windows.Forms; if ([System.Windows.Forms.SystemInformation]::PowerStatus.PowerLineStatus -eq 'Offline') {'pause'}`)) == "pause"
+		return strings.TrimSpace(probe("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", `Add-Type -AssemblyName System.Windows.Forms; if ([System.Windows.Forms.SystemInformation]::PowerStatus.PowerLineStatus -eq 'Offline') {'pause'; exit}; $p = [Windows.Networking.Connectivity.NetworkInformation, Windows.Networking.Connectivity, ContentType=WindowsRuntime]::GetInternetConnectionProfile(); if ($p) {$c=$p.GetConnectionCost(); if ($c.NetworkCostType -eq 'Fixed' -or $c.NetworkCostType -eq 'Variable' -or $c.Roaming -or $c.OverDataLimit) {'pause'}}`)) == "pause"
 	}
 	return false
 }

@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -91,6 +92,8 @@ func (e *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conn := &wsConn{Conn: ws}
 	defer conn.Close()
 	ctx, cancel := context.WithCancel(r.Context())
+	var currentCap atomic.Int64
+	currentCap.Store(grant.Cap)
 	defer cancel()
 	// Revocation, a stop, opt-out and a newly reported battery state close existing streams too.
 	go func() {
@@ -102,6 +105,7 @@ func (e *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			case <-ticker.C:
 				g, err := e.Client.Open(ctx, session, credential, e.Node)
+				currentCap.Store(g.Cap)
 				if err != nil || e.Pause() || e.Budget.Reserve(0, g.Cap) != nil {
 					cancel()
 					_ = conn.Close()
@@ -137,7 +141,7 @@ func (e *Endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		for {
 			n, err := src.Read(buf)
 			if n > 0 {
-				if e.Budget.Reserve(int64(n), grant.Cap) != nil {
+				if e.Budget.Reserve(int64(n), currentCap.Load()) != nil {
 					return
 				}
 				if _, werr := dst.Write(buf[:n]); werr != nil {
@@ -390,7 +394,8 @@ func Bridge(ctx context.Context, listener net.Listener, p Plan, testDial ...Dial
 }
 
 func BrowserArgs(address string) []string {
-	return []string{"--proxy-server=http://" + address, "--proxy-bypass-list=<-loopback>", "--host-resolver-rules=MAP * ~NOTFOUND", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp", "--disable-quic", "--disable-features=DnsOverHttps,UseDnsHttpsSvcbAlpn"}
+	host, _, _ := net.SplitHostPort(address)
+	return []string{"--proxy-server=http://" + address, "--proxy-bypass-list=<-loopback>", "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE " + host, "--force-webrtc-ip-handling-policy=disable_non_proxied_udp", "--disable-quic", "--disable-features=DnsOverHttps,UseDnsHttpsSvcbAlpn"}
 }
 
 func readRequest(br *bufio.Reader) (*http.Request, *bufio.Reader, error) {

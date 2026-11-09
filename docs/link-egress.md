@@ -10,7 +10,7 @@ ordinary HTTP proxy requests, or authenticated SOCKS5 CONNECT. Both Connect and 
 new stream. Network compares the current device owner with the Run session owner, checks the credential hash,
 expiry, opt-out and cap. A cookie or an ordinary share API key never grants access to the browsing endpoint.
 Node checks active streams again every five seconds, closing them on expiry, revocation, opt-out or a reported
-battery/metered state. OS readings are best effort: Linux battery/NetworkManager, macOS battery, Windows battery.
+battery/metered state. OS readings are best effort: Linux battery/NetworkManager, macOS battery, Windows battery/network cost.
 
 The shared desk plugin adds only the desk name to `desk-sandbox`. The Node authenticates to Network, reads the
 session assigned to its own machine, and gets a fresh credential kept in its proxy process. Chrome never receives

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 )
@@ -65,5 +66,16 @@ func (b *Budget) Reserve(n, cap int64) error {
 	if closeErr != nil {
 		return closeErr
 	}
-	return os.Rename(b.path+".tmp", b.path)
+	if err = os.Rename(b.path+".tmp", b.path); err != nil {
+		return err
+	}
+	if runtime.GOOS != "windows" {
+		dir, err := os.Open(filepath.Dir(b.path))
+		if err != nil {
+			return err
+		}
+		defer dir.Close()
+		return dir.Sync()
+	}
+	return nil
 }
