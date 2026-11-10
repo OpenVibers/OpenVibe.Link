@@ -29,6 +29,8 @@ fragment: `/panel/#t=<token>`. The page sends that token as `X-Link-Panel` on ev
 | `POST /panel/api/files/:id/decline` | — | Removes the incoming item. |
 | `POST /panel/api/files/:id/complete` | — | Removes the accepted item after download starts. |
 | `POST /panel/api/first-run` | `{ "uses": ["codes", "browser"], "skip": false }` | The first-run answer. Uses are `codes`, `browser`, `models`, `earn` and `vibe`. The daemon turns on what each says (`earn` stays off until it is confirmed on Exchange) and stops asking; `skip: true` only stops asking. |
+| `POST /panel/api/clipboard` | `{ "on": true }` | The per-machine clipboard-sharing switch, off by default; text only, sealed like every other item. |
+| `POST /panel/api/send/auto-accept` | `{ "on": true }` | Save incoming items from the person's own machines without asking, per machine. Off by default. |
 
 ## `GET /panel/api/state`
 
@@ -47,7 +49,9 @@ Every key is optional. A section with nothing in it is left out; the window neve
     "agents": [{ "id": "claude-code", "name": "Claude Code", "state": "ready", "version": "2.1.3" }, { "id": "codex", "name": "Codex", "state": "signin", "hint": "codex login" }],
     "tasks": [{ "id": "tsk_01M6Q1Z8V4T7R2N5K3B9C6D0EF", "title": "Make every page work at 320 px", "folder": "~/code/openvibe-site", "agent": "Claude Code", "state": "running", "started_at": "2026-11-07T09:52:00Z", "url": "https://openvibe.codes/tasks/tsk_01M6Q1Z8V4T7R2N5K3B9C6D0EF" }]
   },
-  "activity": [{ "at": "2026-11-07T10:02:00Z", "text": "Vibe opened a browser to compare hosting plans" }]
+  "activity": [{ "at": "2026-11-07T10:02:00Z", "text": "Vibe opened a browser to compare hosting plans" }],
+  "clipboard": false,
+  "auto_accept": false
 }
 ```
 

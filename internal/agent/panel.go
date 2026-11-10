@@ -93,12 +93,29 @@ func (n *Agent) panelSendOptions(ctx context.Context) panelSend {
 	}
 	client := &send.Client{BaseURL: n.opt.Creds.Network,
 		Tokens: link.NewTokenSourceFor(n.opt.Creds, nil, "openvibe-link/"+n.opt.Version, "openvibe.network"),
-		Agent:  "openvibe-link/" + n.opt.Version}
+		Agent:  "openvibe-link/" + n.opt.Version, Self: n.opt.Creds.Principal}
+	// A random local port accepts a sealed envelope from another of the owner's machines on this network. The relay
+	// stays the fallback, and nothing unauthenticated can reach the inbox.
+	lan := send.NewLAN(n.opt.Creds.Principal)
+	if err := lan.Listen(""); err != nil {
+		n.log.Warn("Link Send stays on the relay: no local listening port", "err", err)
+	} else {
+		go func() {
+			<-ctx.Done()
+			_ = lan.Close()
+		}()
+	}
 	go func() {
 		t := time.NewTicker(time.Minute)
 		defer t.Stop()
 		for {
-			if err := client.Register(ctx, key); err == nil {
+			secretOK := false
+			if secret, err := client.LANKey(ctx); err == nil {
+				if err := lan.SetSecret(secret); err == nil {
+					secretOK = true
+				}
+			}
+			if err := client.Register(ctx, key, lan.URLs()...); err == nil && secretOK {
 				return
 			}
 			select {
@@ -129,15 +146,33 @@ func (n *Agent) panelSendOptions(ctx context.Context) panelSend {
 			if err != nil {
 				return nil, err
 			}
-			out := make([]panel.IncomingSend, 0, len(items))
+			out := make([]panel.IncomingSend, 0, len(items)+len(lan.Items()))
 			for _, item := range items {
 				out = append(out, panel.IncomingSend{ID: item.ID, Sender: item.Sender, SenderName: item.SenderName, Bytes: item.Bytes, CreatedAt: item.CreatedAt})
 			}
+			for _, item := range lan.Items() {
+				out = append(out, panel.IncomingSend{ID: item.ID, Sender: item.Sender, SenderName: "one of your machines", Bytes: item.Bytes, CreatedAt: item.CreatedAt})
+			}
 			return out, nil
 		},
-		accept:   func(id string) (string, error) { return client.Accept(ctx, id) },
-		decline:  func(id string) error { return client.Decline(ctx, id) },
-		complete: func(id string) error { return client.Complete(ctx, id) },
+		accept: func(id string) (string, error) {
+			if strings.HasPrefix(id, "lan_") {
+				return lan.Accept(id)
+			}
+			return client.Accept(ctx, id)
+		},
+		decline: func(id string) error {
+			if strings.HasPrefix(id, "lan_") {
+				return lan.Decline(id)
+			}
+			return client.Decline(ctx, id)
+		},
+		complete: func(id string) error {
+			if strings.HasPrefix(id, "lan_") {
+				return lan.Complete(id)
+			}
+			return client.Complete(ctx, id)
+		},
 	}
 }
 
@@ -145,6 +180,22 @@ type panelSaved struct {
 	Off []string `json:"off"`
 	// FirstRun is absent in a file written before the question existed.
 	FirstRun *panelFirstRun `json:"first_run,omitempty"`
+	// Clipboard sync is off until the person turns it on, on this machine. It is text only.
+	Clipboard bool `json:"clipboard,omitempty"`
+	// AutoAccept saves incoming items from the person's own machines without asking, per machine.
+	AutoAccept bool `json:"auto_accept,omitempty"`
+}
+
+func readPanel(dir string) (panelSaved, bool) {
+	b, err := os.ReadFile(filepath.Join(dir, panelFile))
+	if err != nil {
+		return panelSaved{}, false
+	}
+	var s panelSaved
+	if json.Unmarshal(b, &s) != nil {
+		return panelSaved{}, false
+	}
+	return s, true
 }
 
 // loadPanel reads the switches turned off and the first-run answer. A file written before the question existed, on a
@@ -152,12 +203,8 @@ type panelSaved struct {
 // is not asked. A machine that never answered and has no such file is asked once.
 func loadPanel(dir string, paired bool) (map[string]bool, *panelFirstRun) {
 	off := map[string]bool{}
-	b, err := os.ReadFile(filepath.Join(dir, panelFile))
-	if err != nil {
-		return off, nil
-	}
-	var s panelSaved
-	if json.Unmarshal(b, &s) != nil {
+	s, ok := readPanel(dir)
+	if !ok {
 		return off, nil
 	}
 	for _, id := range s.Off {
@@ -172,11 +219,17 @@ func loadPanel(dir string, paired bool) (map[string]bool, *panelFirstRun) {
 	return off, nil
 }
 
-func savePanel(dir string, off map[string]bool, first *panelFirstRun) error {
-	s := panelSaved{Off: []string{}, FirstRun: first}
-	for id := range off {
-		s.Off = append(s.Off, id)
+// loadPanelSettings reads the two transfer switches. Both are false when the file has neither: clipboard sync and
+// auto-accept are off by default and only this machine's person turns them on.
+func loadPanelSettings(dir string) (clipboard, autoAccept bool) {
+	s, ok := readPanel(dir)
+	if !ok {
+		return false, false
 	}
+	return s.Clipboard, s.AutoAccept
+}
+
+func writePanel(dir string, s panelSaved) error {
 	b, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
@@ -186,6 +239,22 @@ func savePanel(dir string, off map[string]bool, first *panelFirstRun) error {
 		return err
 	}
 	return os.Rename(tmp, filepath.Join(dir, panelFile))
+}
+
+func savePanel(dir string, off map[string]bool, first *panelFirstRun) error {
+	// Keep the transfer switches, which this call does not name.
+	old, _ := readPanel(dir)
+	s := panelSaved{Off: []string{}, FirstRun: first, Clipboard: old.Clipboard, AutoAccept: old.AutoAccept}
+	for id := range off {
+		s.Off = append(s.Off, id)
+	}
+	return writePanel(dir, s)
+}
+
+func savePanelSettings(dir string, clipboard, autoAccept bool) error {
+	old, _ := readPanel(dir)
+	s := panelSaved{Off: old.Off, FirstRun: old.FirstRun, Clipboard: clipboard, AutoAccept: autoAccept}
+	return writePanel(dir, s)
 }
 
 // startPanel serves Link's window until ctx ends. A failure leaves the Agent running without it.
@@ -208,6 +277,8 @@ func (n *Agent) startPanel(ctx context.Context) {
 		Share:         n.shareAdd,
 		Unshare:       n.shareRemove,
 		FirstRun:      n.applyFirstRun,
+		SetClipboard:  n.setClipboard,
+		SetAutoAccept: n.setAutoAccept,
 		CodesStop:     n.panelStopCodesTask,
 		SendKey:       transfer.key,
 		SendTargets:   transfer.targets,
@@ -268,6 +339,8 @@ func (n *Agent) panelState() panel.State {
 	n.mu.Lock()
 	out.Activity = append([]panel.Activity(nil), n.activity...)
 	out.FirstRun = n.panelFirst == nil || !n.panelFirst.Answered
+	out.Clipboard = n.panelClipboard
+	out.AutoAccept = n.panelAutoAccept
 	n.mu.Unlock()
 	return out
 }
@@ -396,6 +469,45 @@ func (n *Agent) setCapability(id string, on bool) error {
 		n.addActivity("Turned " + id + " back on")
 	} else {
 		n.addActivity("Turned " + id + " off")
+	}
+	return nil
+}
+
+// setClipboard keeps the clipboard-sync switch. It starts off, and turning it on is this machine's consent: text
+// copied with the window's Send clipboard action is sealed for one of the person's own machines, never sent in clear.
+func (n *Agent) setClipboard(on bool) error {
+	n.mu.Lock()
+	err := savePanelSettings(n.opt.Paths.StateDir, on, n.panelAutoAccept)
+	if err == nil {
+		n.panelClipboard = on
+	}
+	n.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if on {
+		n.addActivity("Turned on clipboard sharing with your other machines")
+	} else {
+		n.addActivity("Turned off clipboard sharing")
+	}
+	return nil
+}
+
+// setAutoAccept keeps the per-machine choice to save incoming items from the person's own machines without asking.
+func (n *Agent) setAutoAccept(on bool) error {
+	n.mu.Lock()
+	err := savePanelSettings(n.opt.Paths.StateDir, n.panelClipboard, on)
+	if err == nil {
+		n.panelAutoAccept = on
+	}
+	n.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if on {
+		n.addActivity("Turned on saving what your own machines send")
+	} else {
+		n.addActivity("Turned off saving what your own machines send without asking")
 	}
 	return nil
 }

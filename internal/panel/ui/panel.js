@@ -78,6 +78,10 @@
         root.setAttribute('data-needs', m.needs_you ? '1' : '0');
         root.style.setProperty('--fill', String(Math.max(10, 100 - Math.min(running.length, 4) * 22)));
         $('[data-lk-down]').hidden = true;
+        settings.clipboard = !!s.clipboard;
+        settings.auto_accept = !!s.auto_accept;
+        if ($('[data-lk-clipboard]')) $('[data-lk-clipboard]').checked = settings.clipboard;
+        if ($('[data-lk-auto-accept]')) $('[data-lk-auto-accept]').checked = settings.auto_accept;
         $('[data-lk-first]').hidden = !s.first_run;
         $('[data-lk-name]').textContent = m.name || 'This computer';
         drawCodes(s.codes, m);
@@ -175,6 +179,8 @@
     });
     var drop = $('[data-lk-drop]'), say = $('[data-lk-drop-say]'), targetSelect = $('[data-lk-send-target]');
     var sendKey = null, lockerModule = null;
+    var settings = { clipboard: false, auto_accept: false };
+    var seenInbox = {};
     function panelApi(path, method, body) {
         return fetch('/panel/api/' + path, { method: method || 'GET', headers: Object.assign({ 'X-Link-Panel': token }, body ? { 'Content-Type': 'application/json' } : {}),
             body: body ? JSON.stringify(body) : undefined, credentials: 'same-origin' }).then(function (r) {
@@ -184,8 +190,10 @@
     }
     function base64(bytes) { var s = ''; for (var i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); }
     function unbase64(s) { var raw = atob(s), out = new Uint8Array(raw.length); for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i); return out; }
-    function packed(name, mime, data) {
-        var meta = new TextEncoder().encode(JSON.stringify({ name: name, mime: mime || 'application/octet-stream' }));
+    function packed(name, mime, data, kind) {
+        var info = { name: name, mime: mime || 'application/octet-stream' };
+        if (kind) info.kind = kind;
+        var meta = new TextEncoder().encode(JSON.stringify(info));
         var out = new Uint8Array(4 + meta.length + data.length); new DataView(out.buffer).setUint32(0, meta.length); out.set(meta, 4); out.set(data, 4 + meta.length); return out;
     }
     function moduleLocker() { return lockerModule || (lockerModule = import('https://openvibe.link/locker.mjs').then(function (m) { return m.locker; })); }
@@ -197,14 +205,14 @@
             if (targetSelect.options.length === 1) say('Open Link on another paired machine to turn on receiving.');
         }).catch(function (e) { if (targetSelect.options.length === 1) { targetSelect.replaceChildren(new Option('No receiving machine is ready', '')); say(e.message); } });
     }
-    function sendPayload(name, mime, data) {
+    function sendPayload(name, mime, data, kind) {
         var opt = targetSelect.options[targetSelect.selectedIndex];
         if (!opt || !opt.value) { say('Choose one of your machines first.'); return Promise.resolve(); }
         if (data.length > 20 * 1024 * 1024) { say('Choose a file smaller than 20 MB for now.'); return Promise.resolve(); }
         say('Encrypting on this computer…');
         return moduleLocker().then(function (locker) {
             var publicKey = JSON.parse(opt.dataset.publicKey || '{}');
-            var content = packed(name, mime, data);
+            var content = packed(name, mime, data, kind);
             return locker.seal(content, { lock: 'people', keys: [{ subject: { type: 'link', id: opt.value }, publicKey: publicKey }] }).then(function (sealed) {
                 say('Sending encrypted data…');
                 return panelApi('files', 'POST', { target_node: opt.value, envelope: base64(sealed.bytes) });
@@ -214,6 +222,12 @@
     }
     function sendFile(file) { return file.arrayBuffer().then(function (b) { return sendPayload(file.name, file.type, new Uint8Array(b)); }); }
     function sendNote() { var text = $('[data-lk-send-note]').value; if (!text.trim()) { say('Write a note first.'); return; } sendPayload('note.txt', 'text/plain;charset=utf-8', new TextEncoder().encode(text)).then(function () { $('[data-lk-send-note]').value = ''; }); }
+    function saveFile(info, fileBytes, id) {
+        var safeName = String(info.name || 'received-file').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 180) || 'received-file';
+        var url = URL.createObjectURL(new Blob([fileBytes], { type: info.mime || 'application/octet-stream' }));
+        var a = document.createElement('a'); a.href = url; a.download = safeName; a.click(); setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
+        return panelApi('files/' + encodeURIComponent(id) + '/complete', 'POST', {}).then(function () { say('Accepted. Your browser saved ' + safeName + ' to Downloads.'); });
+    }
     function downloadAccepted(item) {
         var path = 'files/' + encodeURIComponent(item.id);
         return Promise.all([moduleLocker(), panelApi('send/key'), panelApi(path + '/accept', 'POST', {})]).then(function (parts) {
@@ -224,10 +238,15 @@
             var view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes), n = new DataView(view.buffer, view.byteOffset, view.byteLength).getUint32(0);
             if (n < 2 || n > view.length - 4) throw new Error('The encrypted item is incomplete.');
             var info = JSON.parse(new TextDecoder().decode(view.subarray(4, 4 + n))), fileBytes = view.subarray(4 + n);
-            var safeName = String(info.name || 'received-file').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 180) || 'received-file';
-            var url = URL.createObjectURL(new Blob([fileBytes], { type: info.mime || 'application/octet-stream' }));
-            var a = document.createElement('a'); a.href = url; a.download = safeName; a.click(); setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
-            return panelApi('files/' + encodeURIComponent(item.id) + '/complete', 'POST', {}).then(function () { say('Accepted. Your browser saved ' + safeName + ' to Downloads.'); });
+            if (info.kind === 'clipboard' && navigator.clipboard && navigator.clipboard.writeText) {
+                var text = new TextDecoder().decode(fileBytes);
+                return navigator.clipboard.writeText(text).then(function () {
+                    return panelApi('files/' + encodeURIComponent(item.id) + '/complete', 'POST', {}).then(function () {
+                        say('Copied text from ' + (item.sender_name || 'your machine') + ' to this computer\'s clipboard.');
+                    });
+                }, function () { return saveFile(info, fileBytes, item.id); });
+            }
+            return saveFile(info, fileBytes, item.id);
         });
     }
     function size(bytes) {
@@ -237,6 +256,11 @@
     function loadInbox() {
         panelApi('send/inbox').then(function (body) {
             var list = $('[data-lk-send-inbox]');
+            (body.items || []).forEach(function (item) {
+                if (!settings.auto_accept || seenInbox[item.id]) return;
+                seenInbox[item.id] = true;
+                downloadAccepted(item).catch(function (e) { say(e.message || 'An item from one of your machines could not be opened.'); });
+            });
             list.replaceChildren.apply(list, (body.items || []).map(function (item) {
                 var li = el('li', 'lk-send-item'), label = el('span', '', 'Encrypted item from ' + (item.sender_name || 'your machine') + ' · ' + size(item.bytes) + ' · ' + ago(item.created_at));
                 var actions = el('div'), accept = el('button', '', 'Accept'), decline = el('button', '', 'Decline');
@@ -253,6 +277,16 @@
     dropTarget.addEventListener('drop', function (e) { e.preventDefault(); if (e.dataTransfer.files[0]) sendFile(e.dataTransfer.files[0]); });
     $('[data-lk-files]').addEventListener('change', function () { if (this.files[0]) sendFile(this.files[0]); this.value = ''; });
     $('[data-lk-send-note-button]').addEventListener('click', sendNote);
+    if ($('[data-lk-clipboard]')) $('[data-lk-clipboard]').addEventListener('change', function () { send('clipboard', 'POST', { on: this.checked }); });
+    if ($('[data-lk-auto-accept]')) $('[data-lk-auto-accept]').addEventListener('change', function () { send('send/auto-accept', 'POST', { on: this.checked }); });
+    if ($('[data-lk-clipboard-button]')) $('[data-lk-clipboard-button]').addEventListener('click', function () {
+        if (!settings.clipboard) { say('Turn on sharing copied text first.'); return; }
+        if (!navigator.clipboard || !navigator.clipboard.readText) { say('This browser does not let Link read the clipboard.'); return; }
+        navigator.clipboard.readText().then(function (text) {
+            if (!text.trim()) { say('There is no text on this computer\'s clipboard.'); return; }
+            return sendPayload('clipboard.txt', 'text/plain;charset=utf-8', new TextEncoder().encode(text), 'clipboard');
+        }).catch(function () { say('Link could not read the clipboard. Click the page and try again.'); });
+    });
     loadTargets(); loadInbox(); setInterval(function () { if (document.visibilityState === 'visible') { loadTargets(); loadInbox(); } }, 3000);
     function tick() { if (document.visibilityState === 'visible') load(); }
     load();
