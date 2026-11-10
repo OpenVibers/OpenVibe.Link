@@ -2,6 +2,9 @@
 
 OpenVibe Link connects your computers, phones and robots to OpenVibe.
 
+**Live site:** https://openvibe.link · **API docs:** https://openvibe.services · **For AI:** https://openvibe.link/llms.txt
+**Install:** `curl -fsSL https://openvibe.link/install | sh`
+
 One service for your computers, servers, Raspberry Pis, phones and robots: pair it once with OpenVibe and products
 like **OpenVibe.Bot** (robots: drive, cameras, sensors, with safety) and **OpenVibe.Actor** (computer control for AI
 agents, at the level you set on the machine) can use the device. It connects out, needs no open ports, and keeps a local kill switch.
