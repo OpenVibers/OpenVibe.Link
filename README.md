@@ -129,6 +129,14 @@ Dock's activity read-only, and **Send to OpenVibe** from any app's share sheet t
 openvibe.bot/link/phone and shows up as a device of kind `phone`. No phone automation at all in this version: no
 AccessibilityService, no screen capture. Build, install and the security notes: [docs/android.md](docs/android.md).
 
+**Git on this computer (Git plan G3):** `openvibe-link clone '<link>'` serves a "Clone to my computer" request from
+git.openvibe.codes: it shows the repository and the folder, asks you, clones with your own git inside the root you
+chose (`--root`, default `~/OpenVibe`), reports progress to the page, and refuses an expired request, a folder
+outside the root, or a non-empty folder without a second answer. One clone runs at a time per machine. The page's
+`openvibe-link://clone?url=…` deep link is the same request. `openvibe-link git connect '<link>'` publishes the
+repositories under `--root` to OpenVibe Git, read-only, until Ctrl-C: the page lists them and browses tree, file and
+log through the poll the Link opened. Neither command opens a port on this computer; both connect out to Git.
+
 Docs: [protocol](docs/protocol.md) (the wire format with OpenVibe.Bot), [plugins](docs/plugins.md) (the driver
 protocol, the bundled drivers, and where Actor's computer-control plugin attaches), [install](docs/install.md),
 [panel](docs/panel.md) (Link's own window and its security rules),

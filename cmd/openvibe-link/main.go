@@ -104,6 +104,10 @@ Usage:
                                                    behind OpenVibe sign-in, until Ctrl-C
   openvibe-link share add|list|remove …             the shares the Link service keeps up (openvibe-link share)
   openvibe-link party host <party-id>               host a shared browser for an openvibe.party room, until stopped
+  openvibe-link clone <LINK>                        clone a repository here: the "Clone to my computer" link from
+                                                    its page on git.openvibe.codes, approved in this terminal
+  openvibe-link git connect <LINK>                  publish the repositories under --root to OpenVibe Git, read-only,
+                                                    until Ctrl-C (the link is on your Git page)
   openvibe-link version
 
 Global flags (before or after the command):
@@ -206,6 +210,8 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		shPort  = fs.Int("port", 0, "the local port to share (share)")
 		shSrv   = fs.String("connect-server", "", "OpenVibe Connect's tunnel URL; default wss://connect.openvibe.link/tunnel (share)")
 		shID    = fs.String("share", "", "a share this computer serves itself, as OpenVibe Link: its shr_… id, no key (share)")
+		gitRoot = fs.String("root", "", "the folder Link may clone into or publish from (clone, git); default ~/OpenVibe")
+		yes     = fs.Bool("yes", false, "approve this clone without asking (clone; for a script, never for a person)")
 	)
 	// Accept flags anywhere: split positionals out.
 	var positional []string
@@ -297,6 +303,18 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 			return 2
 		}
 		err = cmdProfileVerify(g, positional[1], *server, *keyID, stdout)
+	case "clone":
+		if len(positional) != 1 {
+			fmt.Fprintln(stderr, "usage: openvibe-link clone <LINK> [--root DIR] [--yes]")
+			return 2
+		}
+		err = cmdClone(g, positional[0], *gitRoot, *yes, stdin, stdout)
+	case "git":
+		if len(positional) != 2 || positional[0] != "connect" {
+			fmt.Fprintln(stderr, "usage: openvibe-link git connect <LINK> [--root DIR]")
+			return 2
+		}
+		err = cmdGitConnect(g, positional[1], *gitRoot, stdout)
 	case "share":
 		err = cmdShare(g, positional, shareArgs{key: *shKey, port: *shPort, server: *shSrv, share: *shID}, stdout, stderr)
 		if errors.Is(err, errUsage) {
