@@ -120,6 +120,16 @@ type Config struct {
 	LogLevel string `json:"log_level,omitempty"`
 	// Worker runs `function`, `code` and `linux` jobs from the control link (docs/worker.md). Off unless enabled.
 	Worker WorkerConfig `json:"worker,omitzero"`
+	// PartyPool offers this machine to OpenVibe's own computer pool for openvibe.party (docs/party-desktop.md).
+	// Off unless enabled. The machine still has to be registered by the owner on openvibe.party/pool.
+	PartyPool PartyPoolConfig `json:"party_pool,omitzero"`
+}
+
+// PartyPoolConfig is this machine's part in OpenVibe's own computer pool: the Link asks Chat, as this machine, what
+// the owner's pool is holding for it, and starts the same host path as `openvibe-link party host <party>`.
+type PartyPoolConfig struct {
+	Enabled  bool   `json:"enabled,omitempty"`
+	PartyURL string `json:"party_url,omitempty"` // default https://openvibe.party; loopback http for a test
 }
 
 // WorkerConfig is the job worker. Disabled (the default), every job is refused "class not available". Only the
@@ -488,6 +498,13 @@ func (c *Config) Validate() error {
 	}
 	if c.Stream.LiveURL != "" && !strings.HasPrefix(c.Stream.LiveURL, "https://") {
 		return errors.New("config: stream.live_url must be an https:// origin")
+	}
+	if c.PartyPool.PartyURL != "" {
+		u, err := url.Parse(c.PartyPool.PartyURL)
+		loopback := err == nil && (u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1" || u.Hostname() == "::1")
+		if err != nil || u.Host == "" || u.User != nil || (u.Scheme != "https" && !(u.Scheme == "http" && loopback)) {
+			return errors.New("config: party_pool.party_url must be an https:// origin (or loopback http for a test)")
+		}
 	}
 	for _, l := range []*float64{c.Limits.MaxSpeed, c.Limits.MaxTurn} {
 		if l != nil && (*l < 0 || *l > 1) {

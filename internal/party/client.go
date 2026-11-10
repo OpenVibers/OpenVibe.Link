@@ -170,3 +170,20 @@ func (c Client) SyncMembers(ctx context.Context, share Share, access Access) err
 func (c Client) CloseShare(ctx context.Context, share Share) error {
 	return c.call(ctx, false, http.MethodDelete, "/api/v1/link/shares/"+url.PathEscape(share.ID)+"/party", nil, nil)
 }
+
+// Assignment is one party the owner's pool is holding for this machine.
+type Assignment struct {
+	Party string `json:"party"`
+	Hold  string `json:"hold"`
+	Title string `json:"title,omitempty"`
+}
+
+// Assignment asks Chat, as this machine, for the oldest party OpenVibe's pool is holding for it. A machine that the
+// owner did not register is answered null, never an error; the poll is also how the machine reports it is alive.
+func (c Client) Assignment(ctx context.Context) (*Assignment, error) {
+	var out struct {
+		Assignment *Assignment `json:"assignment"`
+	}
+	err := c.call(ctx, true, http.MethodGet, "/api/chat/parties/desktop/assignment", nil, &out)
+	return out.Assignment, err
+}
