@@ -83,10 +83,14 @@ func TestMachineCloneApproved(t *testing.T) {
 	if got := f.states(); len(got) < len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] || got[len(got)-1] != want[3] {
 		t.Fatalf("states=%v", got)
 	}
-	if done := f.last(); done["path"] != filepath.Join(root, "demo") {
+	// The root may be reached through a symlink (macOS /var) or a short name (Windows RUNNER~1): the machine reports
+	// the resolved folder, so compare its name, and read through the path it reported.
+	done := f.last()
+	folder, _ := done["path"].(string)
+	if filepath.Base(folder) != "demo" {
 		t.Fatalf("done path=%v", done["path"])
 	}
-	if b, err := os.ReadFile(filepath.Join(root, "demo", "README.md")); err != nil || strings.ReplaceAll(string(b), "\r\n", "\n") != "hello\n" {
+	if b, err := os.ReadFile(filepath.Join(folder, "README.md")); err != nil || strings.ReplaceAll(string(b), "\r\n", "\n") != "hello\n" {
 		t.Fatalf("clone contents: %q %v", b, err)
 	}
 }
