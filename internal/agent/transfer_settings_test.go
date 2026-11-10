@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -31,7 +32,7 @@ func TestClipboardAndAutoAcceptStartOffAndPersist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("panel.json mode = %o, want 600", info.Mode().Perm())
 	}
 	raw, err := os.ReadFile(filepath.Join(dir, panelFile))
