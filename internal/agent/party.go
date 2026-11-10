@@ -38,7 +38,11 @@ func (n *Agent) startParty(id string) error {
 
 	chatTokens := link.NewTokenSourceFor(n.opt.Creds, nil, "openvibe-link/"+n.opt.Version, "openvibe.chat")
 	connectTokens := link.NewTokenSourceFor(n.opt.Creds, nil, "openvibe-link/"+n.opt.Version, link.ConnectAudience)
-	client := party.Client{PartyURL: "https://openvibe.party", ConnectServer: connect.DefaultServer, PartyID: id,
+	partyURL := n.opt.Config.PartyPool.PartyURL
+	if partyURL == "" {
+		partyURL = "https://openvibe.party"
+	}
+	client := party.Client{PartyURL: partyURL, ConnectServer: connect.DefaultServer, PartyID: id,
 		ChatToken: func(ctx context.Context) (string, error) {
 			t, err := chatTokens.Token(ctx)
 			if err != nil {
