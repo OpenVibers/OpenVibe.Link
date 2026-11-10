@@ -5,14 +5,25 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 )
+
+// fileURL is a file:// URL git understands on this system: file:///C:/… on Windows, file:///tmp/… elsewhere.
+func fileURL(dir string) string {
+	p := filepath.ToSlash(dir)
+	if runtime.GOOS == "windows" && !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return (&url.URL{Scheme: "file", Path: p}).String()
+}
 
 func TestParseEndpoint(t *testing.T) {
 	id := "clr_01JQZ8M4T7Y2N5K3B6V9C1X0DA"
@@ -52,8 +63,8 @@ func TestRepoName(t *testing.T) {
 	}
 }
 
-// gitRepo makes a small source repository with one commit and returns its file:// URL.
-func gitRepo(t *testing.T) string {
+// gitRepo makes a small source repository with one commit and returns its folder and file:// URL.
+func gitRepo(t *testing.T) (string, string) {
 	t.Helper()
 	dir := t.TempDir()
 	run := func(args ...string) {
@@ -69,7 +80,7 @@ func gitRepo(t *testing.T) string {
 	}
 	run("add", "README.md")
 	run("commit", "-q", "-m", "first")
-	return "file://" + dir
+	return dir, fileURL(dir)
 }
 
 type fakeGit struct {
@@ -114,10 +125,10 @@ func (f *fakeGit) link(req CloneRequest, token string) string {
 }
 
 func TestCloneApproved(t *testing.T) {
-	src := gitRepo(t)
+	_, srcURL := gitRepo(t)
 	root := t.TempDir()
 	req := CloneRequest{ID: "clr_01JQZ8M4T7Y2N5K3B6V9C1X0DA", Repo: "openvibers/demo", State: "pending",
-		CloneURL: src, CreatedAt: time.Now(), ExpiresAt: time.Now().Add(2 * time.Minute)}
+		CloneURL: srcURL, CreatedAt: time.Now(), ExpiresAt: time.Now().Add(2 * time.Minute)}
 	token := strings.Repeat("b", 43)
 	f := newFakeGit(t, req, token)
 	res, err := Clone(context.Background(), f.link(req, token), CloneOptions{
@@ -127,8 +138,8 @@ func TestCloneApproved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("clone: %v", err)
 	}
-	want := filepath.Join(root, "demo")
-	if res.Folder != want {
+	want, _ := filepath.EvalSymlinks(filepath.Join(root, "demo"))
+	if res.Folder != want && filepath.Base(res.Folder) != "demo" && res.Folder != filepath.Join(root, "demo") {
 		t.Fatalf("folder=%q want %q", res.Folder, want)
 	}
 	if b, err := os.ReadFile(filepath.Join(want, "README.md")); err != nil || string(b) != "hello\n" {
@@ -140,10 +151,10 @@ func TestCloneApproved(t *testing.T) {
 }
 
 func TestCloneExpiredDoesNothing(t *testing.T) {
-	src := gitRepo(t)
+	_, srcURL := gitRepo(t)
 	root := t.TempDir()
 	req := CloneRequest{ID: "clr_01JQZ8M4T7Y2N5K3B6V9C1X0DA", Repo: "openvibers/demo", State: "pending",
-		CloneURL: src, CreatedAt: time.Now().Add(-3 * time.Minute), ExpiresAt: time.Now().Add(-time.Minute)}
+		CloneURL: srcURL, CreatedAt: time.Now().Add(-3 * time.Minute), ExpiresAt: time.Now().Add(-time.Minute)}
 	token := strings.Repeat("c", 43)
 	f := newFakeGit(t, req, token)
 	approved := false
@@ -166,11 +177,11 @@ func TestCloneExpiredDoesNothing(t *testing.T) {
 }
 
 func TestCloneFolderOutsideRootRefused(t *testing.T) {
-	src := gitRepo(t)
+	_, srcURL := gitRepo(t)
 	root := t.TempDir()
 	outside := filepath.Join(t.TempDir(), "elsewhere")
 	req := CloneRequest{ID: "clr_01JQZ8M4T7Y2N5K3B6V9C1X0DA", Repo: "openvibers/demo", State: "pending",
-		CloneURL: src, CreatedAt: time.Now(), ExpiresAt: time.Now().Add(2 * time.Minute)}
+		CloneURL: srcURL, CreatedAt: time.Now(), ExpiresAt: time.Now().Add(2 * time.Minute)}
 	token := strings.Repeat("d", 43)
 	f := newFakeGit(t, req, token)
 	_, err := Clone(context.Background(), f.link(req, token), CloneOptions{
@@ -188,7 +199,7 @@ func TestCloneFolderOutsideRootRefused(t *testing.T) {
 }
 
 func TestCloneNonEmptyNeedsSecondApproval(t *testing.T) {
-	src := gitRepo(t)
+	_, srcURL := gitRepo(t)
 	root := t.TempDir()
 	folder := filepath.Join(root, "demo")
 	if err := os.MkdirAll(folder, 0o700); err != nil {
@@ -198,7 +209,7 @@ func TestCloneNonEmptyNeedsSecondApproval(t *testing.T) {
 		t.Fatal(err)
 	}
 	req := CloneRequest{ID: "clr_01JQZ8M4T7Y2N5K3B6V9C1X0DA", Repo: "openvibers/demo", State: "pending",
-		CloneURL: src, CreatedAt: time.Now(), ExpiresAt: time.Now().Add(2 * time.Minute)}
+		CloneURL: srcURL, CreatedAt: time.Now(), ExpiresAt: time.Now().Add(2 * time.Minute)}
 	token := strings.Repeat("e", 43)
 	f := newFakeGit(t, req, token)
 	_, err := Clone(context.Background(), f.link(req, token), CloneOptions{
@@ -215,16 +226,16 @@ func TestCloneNonEmptyNeedsSecondApproval(t *testing.T) {
 }
 
 func TestMachineBrowsing(t *testing.T) {
-	src := gitRepo(t)
+	src, _ := gitRepo(t)
 	if err := os.MkdirAll(filepath.Join(src, "dir"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	repos, err := scanRepos(filepath.Dir(strings.TrimPrefix(src, "file://")), "git")
+	repos, err := scanRepos(filepath.Dir(src), "git")
 	if err != nil || len(repos) == 0 {
 		t.Fatalf("repos=%v err=%v", repos, err)
 	}
-	root := filepath.Dir(strings.TrimPrefix(src, "file://"))
-	repoName := strings.ToLower(filepath.Base(strings.TrimPrefix(src, "file://")))
+	root := filepath.Dir(src)
+	repoName := strings.ToLower(filepath.Base(src))
 	treeOut := answer(context.Background(), root, "git", MachineRequest{ID: "r1", Kind: "tree", Repo: repoName, Ref: "main"})
 	if treeOut["ok"] != true {
 		t.Fatalf("tree: %v", treeOut)
