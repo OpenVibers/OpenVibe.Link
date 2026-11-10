@@ -113,8 +113,10 @@ turns on a feature you turned off here.
 **Link's own window:** the tray's **Open Link** (or `openvibe-link panel`) opens a small page on the machine itself
 at `127.0.0.1` that shows what runs here, what this computer allows, your shares, the coding-agent CLIs and the Codes
 tasks this machine ran today, and what happened, and lets you pause everything, stop one thing, turn a capability off,
-share a port, or send a file or a note to another of your machines (sealed on this computer with
-openvibe-sdk/locker; the other machine lists the sender and size and asks before saving). It is served only on
+share a port, or send a file, a note or copied text to another of your machines (sealed on this computer with
+openvibe-sdk/locker; the other machine lists the sender and size and asks before saving). A transfer is uploaded in
+parts, so a dropped connection continues where it stopped; on the same network it is handed over directly, and
+otherwise the relay holds only ciphertext. Clipboard sharing is a per-machine switch, off by default and text only. It is served only on
 loopback, with a per-run token in the address fragment that every API call must send; see [docs/panel.md](docs/panel.md)
 for the security rules.
 

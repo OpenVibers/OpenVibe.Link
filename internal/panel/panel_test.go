@@ -372,3 +372,36 @@ func TestAPIUnknownPathIs404(t *testing.T) {
 		t.Fatalf("unknown: %d", w.Code)
 	}
 }
+
+// Clipboard sharing and auto-accept are per-machine switches that start off; the window can turn each one on and
+// the state it polls says which way it is.
+func TestTransferSwitchesStartOffAndCanBeTurnedOn(t *testing.T) {
+	clipboard, autoAccept := false, false
+	srv := testServer(t, Options{
+		State:         func() State { return State{Clipboard: clipboard, AutoAccept: autoAccept} },
+		SetClipboard:  func(on bool) error { clipboard = on; return nil },
+		SetAutoAccept: func(on bool) error { autoAccept = on; return nil },
+	})
+	state := func() State {
+		w := do(t, srv, http.MethodGet, "/panel/api/state", testToken, "", "")
+		if w.Code != http.StatusOK {
+			t.Fatalf("state: %d %s", w.Code, w.Body)
+		}
+		var st State
+		if err := json.Unmarshal(w.Body.Bytes(), &st); err != nil {
+			t.Fatal(err)
+		}
+		return st
+	}
+	if st := state(); st.Clipboard || st.AutoAccept {
+		t.Fatalf("a fresh machine reports clipboard=%v auto_accept=%v, want both off", st.Clipboard, st.AutoAccept)
+	}
+	for _, call := range []struct{ path string }{{"clipboard"}, {"send/auto-accept"}} {
+		if w := do(t, srv, http.MethodPost, "/panel/api/"+call.path, testToken, "", `{"on":true}`); w.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", call.path, w.Code, w.Body)
+		}
+	}
+	if st := state(); !st.Clipboard || !st.AutoAccept {
+		t.Fatalf("the switches did not turn on: clipboard=%v auto_accept=%v", st.Clipboard, st.AutoAccept)
+	}
+}

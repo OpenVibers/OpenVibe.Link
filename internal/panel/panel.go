@@ -145,6 +145,10 @@ type State struct {
 	Codes *Codes `json:"codes,omitempty"`
 	// FirstRun is true until the person has answered "What's this computer for?" or skipped it.
 	FirstRun bool `json:"first_run,omitempty"`
+	// Clipboard is the person's switch for sharing copied text between their own machines. Off by default.
+	Clipboard bool `json:"clipboard"`
+	// AutoAccept saves incoming items from the person's own machines without asking. Off by default.
+	AutoAccept bool `json:"auto_accept"`
 }
 
 // FirstRunAnswer is the body of POST /panel/api/first-run: the uses the person picked, or a skip that only stops the
@@ -188,6 +192,9 @@ type Options struct {
 	// FirstRun records the answer to "What's this computer for?" and turns on what each use says. A skip only stops
 	// the question.
 	FirstRun func(uses []string, skip bool) error
+	// SetClipboard and SetAutoAccept keep the two transfer switches. Both start off.
+	SetClipboard  func(on bool) error
+	SetAutoAccept func(on bool) error
 	// CodesStop stops the local Codes task with this id the way Codes' own stop does. It returns an error when the
 	// task is not running on this computer.
 	CodesStop    func(id string) error
@@ -439,6 +446,40 @@ func (s *Server) api() http.Handler {
 				return
 			}
 			w.WriteHeader(http.StatusNoContent)
+		case path == "clipboard" && r.Method == http.MethodPost:
+			var body struct {
+				On *bool `json:"on"`
+			}
+			if !decode(w, r, &body) || body.On == nil {
+				writeJSON(w, http.StatusBadRequest, errBody("on is true or false"))
+				return
+			}
+			if s.opt.SetClipboard == nil {
+				writeJSON(w, http.StatusServiceUnavailable, errBody("the panel cannot change this switch"))
+				return
+			}
+			if err := s.opt.SetClipboard(*body.On); err != nil {
+				writeJSON(w, http.StatusConflict, errBody(err.Error()))
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]bool{"on": *body.On})
+		case path == "send/auto-accept" && r.Method == http.MethodPost:
+			var body struct {
+				On *bool `json:"on"`
+			}
+			if !decode(w, r, &body) || body.On == nil {
+				writeJSON(w, http.StatusBadRequest, errBody("on is true or false"))
+				return
+			}
+			if s.opt.SetAutoAccept == nil {
+				writeJSON(w, http.StatusServiceUnavailable, errBody("the panel cannot change this switch"))
+				return
+			}
+			if err := s.opt.SetAutoAccept(*body.On); err != nil {
+				writeJSON(w, http.StatusConflict, errBody(err.Error()))
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]bool{"on": *body.On})
 		case path == "first-run" && r.Method == http.MethodPost:
 			var body FirstRunAnswer
 			if !decode(w, r, &body) {

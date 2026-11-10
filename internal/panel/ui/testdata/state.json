@@ -161,5 +161,7 @@
         "url": "https://openvibe.codes/tasks/tsk_01M6N2"
       }
     ]
-  }
+  },
+  "clipboard": false,
+  "auto_accept": false
 }

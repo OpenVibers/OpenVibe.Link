@@ -145,10 +145,12 @@ type Agent struct {
 	// panel is Link's own window (nil until Run started it). panelOff are the capability switches turned off in it and
 	// panelFirst is its first-run answer, both kept in state/panel.json; activity is what "What happened here" lists,
 	// newest first.
-	panel      *panel.Server
-	panelOff   map[string]bool
-	panelFirst *panelFirstRun
-	activity   []panel.Activity
+	panel           *panel.Server
+	panelOff        map[string]bool
+	panelFirst      *panelFirstRun
+	panelClipboard  bool
+	panelAutoAccept bool
+	activity        []panel.Activity
 	// codes is what the Codes worker ran here today; codesAgents caches the coding-agent CLIs the window shows.
 	codes       *codesTaskState
 	codesAgents codesAgentsCache
@@ -194,9 +196,10 @@ func New(opt Options) (*Agent, error) {
 		opt.Log.Error("latch", "err", err)
 	}
 	panelOff, panelFirst := loadPanel(opt.Paths.StateDir, opt.Creds != nil)
+	panelClipboard, panelAutoAccept := loadPanelSettings(opt.Paths.StateDir)
 	n := &Agent{opt: opt, log: opt.Log, latch: latch, dedup: safety.NewDedup(4096, 10*time.Minute),
 		jobs: newJobs(nil), telemetry: map[string]map[string]any{}, telemMS: 500, approvals: map[string]Approval{}, inputs: map[string]bool{},
-		panelOff: panelOff, panelFirst: panelFirst}
+		panelOff: panelOff, panelFirst: panelFirst, panelClipboard: panelClipboard, panelAutoAccept: panelAutoAccept}
 	home, _ := os.UserHomeDir()
 	n.codes = loadCodesTasks(opt.Paths.StateDir, home, opt.Log)
 	n.codesAgents.fn = opt.CodesAgents
