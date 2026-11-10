@@ -176,6 +176,38 @@ func TestCloneExpiredDoesNothing(t *testing.T) {
 	}
 }
 
+func TestCloneWithoutApprovalDoesNothing(t *testing.T) {
+	for name, approve := range map[string]func(context.Context, CloneRequest) (CloneDecision, error){
+		"no window to ask": nil,
+		"refused in Link": func(context.Context, CloneRequest) (CloneDecision, error) {
+			return CloneDecision{Approve: false}, nil
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, srcURL := gitRepo(t)
+			root := t.TempDir()
+			req := CloneRequest{ID: "clr_01JQZ8M4T7Y2N5K3B6V9C1X0DA", Repo: "openvibers/demo", State: "pending",
+				CloneURL: srcURL, CreatedAt: time.Now(), ExpiresAt: time.Now().Add(2 * time.Minute)}
+			token := strings.Repeat("f", 43)
+			f := newFakeGit(t, req, token)
+			res, err := Clone(context.Background(), f.link(req, token), CloneOptions{Root: root, AllowLocal: true, Approve: approve})
+			if name == "no window to ask" {
+				if err == nil {
+					t.Fatal("a clone ran without anyone to ask")
+				}
+			} else if err != nil || res.Reason != "refused in Link" {
+				t.Fatalf("refused: %v %q", err, res.Reason)
+			}
+			if _, err := os.Stat(filepath.Join(root, "demo")); !os.IsNotExist(err) {
+				t.Fatal("something was written without approval")
+			}
+			if len(f.posts) == 0 || f.posts[len(f.posts)-1]["state"] != "refused" {
+				t.Fatalf("posts=%v", f.posts)
+			}
+		})
+	}
+}
+
 func TestCloneFolderOutsideRootRefused(t *testing.T) {
 	_, srcURL := gitRepo(t)
 	root := t.TempDir()
