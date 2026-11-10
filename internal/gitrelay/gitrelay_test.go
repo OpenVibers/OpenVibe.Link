@@ -142,7 +142,7 @@ func TestCloneApproved(t *testing.T) {
 	if res.Folder != want && filepath.Base(res.Folder) != "demo" && res.Folder != filepath.Join(root, "demo") {
 		t.Fatalf("folder=%q want %q", res.Folder, want)
 	}
-	if b, err := os.ReadFile(filepath.Join(want, "README.md")); err != nil || string(b) != "hello\n" {
+	if b, err := os.ReadFile(filepath.Join(want, "README.md")); err != nil || strings.ReplaceAll(string(b), "\r\n", "\n") != "hello\n" {
 		t.Fatalf("clone contents: %q %v", b, err)
 	}
 	if len(f.posts) == 0 || f.posts[len(f.posts)-1]["state"] != "done" {
