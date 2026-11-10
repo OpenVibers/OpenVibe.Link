@@ -311,10 +311,10 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		err = cmdClone(g, positional[0], *gitRoot, *yes, stdin, stdout)
 	case "git":
 		if len(positional) != 2 || positional[0] != "connect" {
-			fmt.Fprintln(stderr, "usage: openvibe-link git connect <LINK> [--root DIR]")
+			fmt.Fprintln(stderr, "usage: openvibe-link git connect <LINK> [--root DIR] [--yes]")
 			return 2
 		}
-		err = cmdGitConnect(g, positional[1], *gitRoot, stdout)
+		err = cmdGitConnect(g, positional[1], *gitRoot, *yes, stdin, stdout)
 	case "share":
 		err = cmdShare(g, positional, shareArgs{key: *shKey, port: *shPort, server: *shSrv, share: *shID}, stdout, stderr)
 		if errors.Is(err, errUsage) {
