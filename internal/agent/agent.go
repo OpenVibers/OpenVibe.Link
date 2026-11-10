@@ -339,6 +339,11 @@ func (n *Agent) Run(parent context.Context) error {
 		wg.Add(1)
 		go func() { defer wg.Done(); n.fleet.Run(ctx) }()
 	}
+	// OpenVibe's own computer pool (docs/party-desktop.md): a machine the owner registered asks Chat what to host.
+	if n.opt.Config.PartyPool.Enabled {
+		wg.Add(1)
+		go func() { defer wg.Done(); n.pollPartyPool(ctx) }()
+	}
 	if n.link != nil {
 		wg.Add(1)
 		go func() {

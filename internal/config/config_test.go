@@ -239,3 +239,29 @@ func TestWorkerDNS(t *testing.T) {
 		}
 	}
 }
+
+func TestPartyPool(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.json")
+	os.WriteFile(p, []byte(`{"party_pool":{"enabled":true}}`), 0o600)
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.PartyPool.Enabled || c.PartyPool.PartyURL != "" {
+		t.Fatalf("party_pool = %+v", c.PartyPool)
+	}
+	os.WriteFile(p, []byte(`{"party_pool":{"enabled":true,"party_url":"http://127.0.0.1:4400"}}`), 0o600)
+	if _, err := Load(p); err != nil {
+		t.Fatalf("loopback http refused: %v", err)
+	}
+	for _, body := range []string{
+		`{"party_pool":{"enabled":true,"party_url":"http://example.com"}}`,
+		`{"party_pool":{"enabled":true,"party_url":"not a url"}}`,
+		`{"party_pool":{"enabled":true,"party_url":"https://user:pass@openvibe.party"}}`,
+	} {
+		os.WriteFile(p, []byte(body), 0o600)
+		if _, err := Load(p); err == nil {
+			t.Errorf("accepted %s", body)
+		}
+	}
+}
