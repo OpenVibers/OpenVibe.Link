@@ -117,6 +117,9 @@ type CloneRequest struct {
 	Progress  *Progress `json:"progress,omitempty"`
 	Path      string    `json:"path,omitempty"`
 	Reason    string    `json:"reason,omitempty"`
+	// RequestedBy is who asked on the repository page, when the request came over a computer's watch: the person
+	// answering here is told who it was. It is a username, never an address.
+	RequestedBy string `json:"requested_by,omitempty"`
 }
 
 // RepoName is the folder name of a repository (the part after the slash), once the shape is checked.

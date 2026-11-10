@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/OpenVibers/OpenVibe.Link/internal/gitrelay"
 )
@@ -27,13 +28,40 @@ func cmdClone(g *globals, raw, root string, yes bool, stdin io.Reader, stdout io
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	approve, overwrite := cloneApprover(root, yes, stdin, stdout)
+	res, err := gitrelay.Clone(ctx, raw, gitrelay.CloneOptions{Root: root, Approve: approve, ApproveOverwrite: overwrite})
+	if err != nil {
+		return err
+	}
+	if res.Reason != "" {
+		fmt.Fprintln(stdout, res.Reason+"; nothing was written.")
+		return nil
+	}
+	fmt.Fprintln(stdout, "Cloned into", res.Folder)
+	return nil
+}
+
+// cloneApprover is how a clone is allowed on this machine: the repository, who asked on the page, the folder and
+// how long is left, then one y/N here. --yes answers yes without asking, for a script that means it. Without a
+// terminal there is no one to ask, and the answer is no.
+func cloneApprover(root string, yes bool, stdin io.Reader, stdout io.Writer) (
+	func(context.Context, gitrelay.CloneRequest) (gitrelay.CloneDecision, error),
+	func(context.Context, gitrelay.CloneRequest, string) (bool, error),
+) {
 	approve := func(_ context.Context, req gitrelay.CloneRequest) (gitrelay.CloneDecision, error) {
 		_, name, err := gitrelay.RepoName(req.Repo)
 		if err != nil {
 			return gitrelay.CloneDecision{}, err
 		}
 		folder := filepath.Join(root, name)
-		fmt.Fprintf(stdout, "\nOpenVibe Git: clone %s\n  into %s\n", req.Repo, folder)
+		if !req.ExpiresAt.IsZero() {
+			left := time.Until(req.ExpiresAt).Round(time.Second)
+			if left > 0 {
+				fmt.Fprintf(stdout, "\nOpenVibe Git: clone %s\n  into %s\n  asked by %s, %s left\n", req.Repo, folder, orSomeone(req.RequestedBy), left)
+			}
+		} else {
+			fmt.Fprintf(stdout, "\nOpenVibe Git: clone %s\n  into %s\n", req.Repo, folder)
+		}
 		if yes {
 			return gitrelay.CloneDecision{Approve: true, Folder: folder}, nil
 		}
@@ -50,21 +78,20 @@ func cmdClone(g *globals, raw, root string, yes bool, stdin io.Reader, stdout io
 		}
 		return confirm(stdin, stdout, "Clone into it anyway?")
 	}
-	res, err := gitrelay.Clone(ctx, raw, gitrelay.CloneOptions{Root: root, Approve: approve, ApproveOverwrite: overwrite})
-	if err != nil {
-		return err
-	}
-	if res.Reason != "" {
-		fmt.Fprintln(stdout, res.Reason+"; nothing was written.")
-		return nil
-	}
-	fmt.Fprintln(stdout, "Cloned into", res.Folder)
-	return nil
+	return approve, overwrite
 }
 
-// cmdGitConnect publishes this computer's repositories to OpenVibe Git, read-only, until Ctrl-C. It needs a link
+func orSomeone(who string) string {
+	if strings.TrimSpace(who) == "" {
+		return "someone on the page"
+	}
+	return who
+}
+
+// cmdGitConnect publishes this computer's repositories to OpenVibe Git, read-only, until Ctrl-C, and lets the person
+// clone one of their repositories here: a page's request waits until it is answered with y here. It needs a link
 // from the person's Git page; the machine only ever polls Git, so nothing is opened on this computer.
-func cmdGitConnect(g *globals, raw, root string, stdout io.Writer) error {
+func cmdGitConnect(g *globals, raw, root string, yes bool, stdin io.Reader, stdout io.Writer) error {
 	if root == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -75,7 +102,11 @@ func cmdGitConnect(g *globals, raw, root string, stdout io.Writer) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	fmt.Fprintf(stdout, "Publishing the repositories under %s to OpenVibe Git, read-only, until Ctrl-C.\n", root)
-	return gitrelay.MachineConnect(ctx, raw, gitrelay.MachineOptions{Root: root, Log: g.log, Name: hostName()})
+	fmt.Fprintln(stdout, "A clone asked for from your repository page waits here for your answer; nothing is written before it.")
+	approve, overwrite := cloneApprover(root, yes, stdin, stdout)
+	return gitrelay.MachineConnect(ctx, raw, gitrelay.MachineOptions{
+		Root: root, Log: g.log, Name: hostName(), Approve: approve, ApproveOverwrite: overwrite,
+	})
 }
 
 func hostName() string {

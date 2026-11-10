@@ -82,11 +82,34 @@ func Clone(ctx context.Context, raw string, o CloneOptions) (CloneResult, error)
 	if req.State != "pending" {
 		return CloneResult{Reason: req.Reason}, fmt.Errorf("the request is already %s", req.State)
 	}
+	return serveClone(ctx, o, req, func(ctx context.Context, body map[string]any) error {
+		return postState(ctx, o, ep, body)
+	})
+}
+
+// ServeClone is one clone whose request arrived over a computer's own watch (the page's button addressed that
+// computer). It runs the same checks and steps as Clone and reports each one through post; the caller owns both the
+// request and the transport, so nothing here knows where it came from.
+func ServeClone(ctx context.Context, o CloneOptions, req CloneRequest, post func(context.Context, map[string]any) error) (CloneResult, error) {
+	if o.Log == nil {
+		o.Log = slog.Default()
+	}
+	if o.Now == nil {
+		o.Now = time.Now
+	}
+	if o.GitBin == "" {
+		o.GitBin = "git"
+	}
+	return serveClone(ctx, o, req, post)
+}
+
+func serveClone(ctx context.Context, o CloneOptions, req CloneRequest, post func(context.Context, map[string]any) error) (CloneResult, error) {
 	if req.ExpiresAt.Before(o.Now()) {
-		_ = postState(ctx, o, ep, map[string]any{"state": "refused", "reason": "the request expired before your Link answered it"})
+		_ = post(ctx, map[string]any{"state": "refused", "reason": "the request expired before your Link answered it"})
 		return CloneResult{}, errors.New("the request expired after two minutes; ask the page again")
 	}
 	if !cloneBusy.CompareAndSwap(false, true) {
+		_ = post(ctx, map[string]any{"state": "refused", "reason": ErrBusy.Error()})
 		return CloneResult{}, ErrBusy
 	}
 	defer cloneBusy.Store(false)
@@ -103,21 +126,21 @@ func Clone(ctx context.Context, raw string, o CloneOptions) (CloneResult, error)
 
 	_, repoName, err := RepoName(req.Repo)
 	if err != nil {
-		_ = postState(ctx, o, ep, map[string]any{"state": "refused", "reason": "the repository name is not valid"})
+		_ = post(ctx, map[string]any{"state": "refused", "reason": "the repository name is not valid"})
 		return CloneResult{}, err
 	}
 	folder := filepath.Join(root, repoName)
 	if o.Approve == nil {
-		_ = postState(ctx, o, ep, map[string]any{"state": "refused", "reason": "nothing on this computer asked for approval"})
+		_ = post(ctx, map[string]any{"state": "refused", "reason": "nothing on this computer asked for approval"})
 		return CloneResult{}, errors.New("no approval on this computer")
 	}
 	decision, err := o.Approve(ctx, req)
 	if err != nil {
-		_ = postState(ctx, o, ep, map[string]any{"state": "refused", "reason": "the approval could not be asked: " + short(err.Error())})
+		_ = post(ctx, map[string]any{"state": "refused", "reason": "the approval could not be asked: " + short(err.Error())})
 		return CloneResult{}, err
 	}
 	if !decision.Approve {
-		_ = postState(ctx, o, ep, map[string]any{"state": "refused", "reason": "refused in Link"})
+		_ = post(ctx, map[string]any{"state": "refused", "reason": "refused in Link"})
 		return CloneResult{Reason: "refused in Link"}, nil
 	}
 	if decision.Folder != "" {
@@ -128,16 +151,16 @@ func Clone(ctx context.Context, raw string, o CloneOptions) (CloneResult, error)
 	}
 	folder, err = insideRoot(root, folder)
 	if err != nil {
-		_ = postState(ctx, o, ep, map[string]any{"state": "refused", "reason": "the folder is outside the root you chose in Link"})
+		_ = post(ctx, map[string]any{"state": "refused", "reason": "the folder is outside the root you chose in Link"})
 		return CloneResult{}, err
 	}
 	if o.Now().After(req.ExpiresAt) {
-		_ = postState(ctx, o, ep, map[string]any{"state": "refused", "reason": "the request expired before the clone started"})
+		_ = post(ctx, map[string]any{"state": "refused", "reason": "the request expired before the clone started"})
 		return CloneResult{}, errors.New("the request expired after two minutes; ask the page again")
 	}
 	nonEmpty, err := folderNonEmpty(folder)
 	if err != nil {
-		_ = postState(ctx, o, ep, map[string]any{"state": "failed", "reason": "the folder could not be read"})
+		_ = post(ctx, map[string]any{"state": "failed", "reason": "the folder could not be read"})
 		return CloneResult{}, err
 	}
 	if nonEmpty {
@@ -145,27 +168,27 @@ func Clone(ctx context.Context, raw string, o CloneOptions) (CloneResult, error)
 		if o.ApproveOverwrite != nil {
 			overwrite, err = o.ApproveOverwrite(ctx, req, folder)
 			if err != nil {
-				_ = postState(ctx, o, ep, map[string]any{"state": "refused", "reason": "the overwrite could not be asked: " + short(err.Error())})
+				_ = post(ctx, map[string]any{"state": "refused", "reason": "the overwrite could not be asked: " + short(err.Error())})
 				return CloneResult{}, err
 			}
 		}
 		if !overwrite {
-			_ = postState(ctx, o, ep, map[string]any{"state": "refused", "reason": "the folder already has files in it"})
+			_ = post(ctx, map[string]any{"state": "refused", "reason": "the folder already has files in it"})
 			return CloneResult{Reason: "the folder already has files in it"}, nil
 		}
 	}
 	if !o.AllowLocal && !strings.HasPrefix(req.CloneURL, "https://") {
-		_ = postState(ctx, o, ep, map[string]any{"state": "failed", "reason": "the clone URL is not https"})
+		_ = post(ctx, map[string]any{"state": "failed", "reason": "the clone URL is not https"})
 		return CloneResult{}, errors.New("the clone URL is not https")
 	}
-	_ = postState(ctx, o, ep, map[string]any{"state": "approved"})
-	if err := postState(ctx, o, ep, map[string]any{"state": "cloning", "progress": Progress{Percent: 0, Line: "Starting"}}); err != nil {
+	_ = post(ctx, map[string]any{"state": "approved"})
+	if err := post(ctx, map[string]any{"state": "cloning", "progress": Progress{Percent: 0, Line: "Starting"}}); err != nil {
 		return CloneResult{}, err
 	}
-	if err := runClone(ctx, o, ep, req.CloneURL, folder, repoName); err != nil {
+	if err := runClone(ctx, o, post, req.CloneURL, folder, repoName); err != nil {
 		return CloneResult{Folder: folder, Reason: err.Error()}, err
 	}
-	_ = postState(ctx, o, ep, map[string]any{
+	_ = post(ctx, map[string]any{
 		"state": "done", "path": folder,
 		"progress": Progress{Percent: 100, Line: "Cloned into " + repoName},
 	})
@@ -288,7 +311,7 @@ func readPID(path string) int {
 	return pid
 }
 
-func runClone(ctx context.Context, o CloneOptions, ep Endpoint, cloneURL, folder, repoName string) error {
+func runClone(ctx context.Context, o CloneOptions, post func(context.Context, map[string]any) error, cloneURL, folder, repoName string) error {
 	cmd := exec.CommandContext(ctx, o.GitBin, "clone", "--progress", "--", cloneURL, folder)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=", "SSH_ASKPASS=", "GCM_INTERACTIVE=never")
 	stderr, err := cmd.StderrPipe()
@@ -300,7 +323,7 @@ func runClone(ctx context.Context, o CloneOptions, ep Endpoint, cloneURL, folder
 		return err
 	}
 	if err := cmd.Start(); err != nil {
-		_ = postState(ctx, o, ep, map[string]any{"state": "failed", "reason": "git could not start"})
+		_ = post(ctx, map[string]any{"state": "failed", "reason": "git could not start"})
 		return errors.New("git could not start")
 	}
 	var lastLine atomic.Value
@@ -332,7 +355,7 @@ func runClone(ctx context.Context, o CloneOptions, ep Endpoint, cloneURL, folder
 					percent = 100
 				}
 			}
-			_ = postState(ctx, o, ep, map[string]any{"state": "cloning", "progress": Progress{Percent: percent, Line: line}})
+			_ = post(ctx, map[string]any{"state": "cloning", "progress": Progress{Percent: percent, Line: line}})
 		}
 	}
 	wg.Add(2)
@@ -345,7 +368,7 @@ func runClone(ctx context.Context, o CloneOptions, ep Endpoint, cloneURL, folder
 		if reason == "" {
 			reason = "git clone failed"
 		}
-		_ = postState(ctx, o, ep, map[string]any{"state": "failed", "reason": reason})
+		_ = post(ctx, map[string]any{"state": "failed", "reason": reason})
 		return fmt.Errorf("git clone failed: %s", reason)
 	}
 	_ = repoName

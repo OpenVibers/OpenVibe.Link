@@ -38,15 +38,29 @@ type MachineOptions struct {
 	GitBin string
 	// PollTimeout is how long Git may hold one watch; it is under the client's deadline.
 	PollTimeout time.Duration
+	// Approve asks the person on this machine to allow one clone the page addressed here, and ApproveOverwrite asks
+	// again when the folder already has files. A nil Approve refuses every clone: a page's wish alone writes nothing.
+	Approve          func(ctx context.Context, req CloneRequest) (CloneDecision, error)
+	ApproveOverwrite func(ctx context.Context, req CloneRequest, folder string) (bool, error)
+	Now              func() time.Time
+	// AllowLocal lets a test clone a file:// repository. Production requests are https only.
+	AllowLocal bool
 }
 
-// MachineRequest is one read-only question from the page, carried on the watch the machine opened.
+// MachineRequest is one question from the page, carried on the watch the machine opened: a read-only tree, file or
+// log, or a clone the person asked for on their repository page ("Clone to <this computer>").
 type MachineRequest struct {
 	ID   string `json:"id"`
-	Kind string `json:"kind"` // tree, file or log
+	Kind string `json:"kind"` // tree, file or log, or clone
 	Repo string `json:"repo"`
 	Ref  string `json:"ref,omitempty"`
 	Path string `json:"path,omitempty"`
+	// A clone request: its clr_… id (the row the page follows), the https URL with a short read token (only this
+	// machine ever sees it), who asked on the page, and when the two minutes end.
+	CloneID     string    `json:"clone_id,omitempty"`
+	URL         string    `json:"url,omitempty"`
+	RequestedBy string    `json:"requested_by,omitempty"`
+	ExpiresAt   time.Time `json:"expires_at,omitempty"`
 }
 
 // Watch is Git's answer to one watch.
@@ -131,6 +145,10 @@ func MachineConnect(ctx context.Context, raw string, o MachineOptions) error {
 			if w.Request == nil {
 				continue
 			}
+			if w.Request.Kind == "clone" {
+				serveMachineClone(ctx, ep, client, o, *w.Request)
+				continue
+			}
 			body := answer(ctx, root, o.GitBin, *w.Request)
 			if err := call(ctx, client, "POST", linkURL(ep, "/results"), body, nil); err != nil {
 				if terminal(err) {
@@ -143,6 +161,50 @@ func MachineConnect(ctx context.Context, raw string, o MachineOptions) error {
 			return ctx.Err()
 		}
 		wait = nextWait(wait)
+	}
+}
+
+// serveMachineClone runs one clone the page addressed to this computer. The request came over the same watch the
+// browsing questions do; the person here is asked before anything runs (ServeClone refuses without an Approve), the
+// folder is checked against the root they chose, and each step goes back over the machine's own link.
+func serveMachineClone(ctx context.Context, ep Endpoint, client *http.Client, o MachineOptions, req MachineRequest) {
+	log := o.Log
+	if log == nil {
+		log = slog.Default()
+	}
+	if !requestIDRe.MatchString(req.CloneID) {
+		log.Warn("gitrelay: a clone request with no usable id was ignored", "repo", req.Repo)
+		return
+	}
+	clone := CloneRequest{ID: req.CloneID, Repo: req.Repo, State: "waiting", CloneURL: req.URL, ExpiresAt: req.ExpiresAt, RequestedBy: req.RequestedBy}
+	target := linkURL(ep, "/clone-requests/"+req.CloneID)
+	post := func(ctx context.Context, body map[string]any) error {
+		// The last answer should not be lost because the watch's context ended.
+		postCtx := ctx
+		if ctx.Err() != nil {
+			var cancel context.CancelFunc
+			postCtx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+		}
+		return call(postCtx, client, "POST", target, body, nil)
+	}
+	// The page says "waiting for your answer in Link" from here until the person answers.
+	if err := post(ctx, map[string]any{"state": "waiting"}); err != nil {
+		log.Warn("gitrelay: the clone request could not be acknowledged", "err", err)
+		return
+	}
+	log.Info("gitrelay: a clone was asked for here", "repo", req.Repo, "by", req.RequestedBy, "expires", req.ExpiresAt)
+	res, err := ServeClone(ctx, CloneOptions{
+		Root: o.Root, Client: client, Approve: o.Approve, ApproveOverwrite: o.ApproveOverwrite,
+		Log: log, Now: o.Now, GitBin: o.GitBin, AllowLocal: o.AllowLocal,
+	}, clone, post)
+	switch {
+	case err != nil:
+		log.Warn("gitrelay: the clone did not finish", "repo", req.Repo, "err", err)
+	case res.Reason != "":
+		log.Info("gitrelay: the clone was refused", "repo", req.Repo, "reason", res.Reason)
+	default:
+		log.Info("gitrelay: cloned", "repo", req.Repo, "into", res.Folder)
 	}
 }
 

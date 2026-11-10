@@ -135,7 +135,9 @@ chose (`--root`, default `~/OpenVibe`), reports progress to the page, and refuse
 outside the root, or a non-empty folder without a second answer. One clone runs at a time per machine. The page's
 `openvibe-link://clone?url=…` deep link is the same request. `openvibe-link git connect '<link>'` publishes the
 repositories under `--root` to OpenVibe Git, read-only, until Ctrl-C: the page lists them and browses tree, file and
-log through the poll the Link opened. Neither command opens a port on this computer; both connect out to Git.
+log through the poll the Link opened. The same poll also carries a **"Clone to <this computer>"** from the repository
+page: the terminal shows the repository, who asked, the folder and the time left, and nothing is written until you
+answer `y` (`--yes` answers for a script). Neither command opens a port on this computer; both connect out to Git.
 
 Docs: [protocol](docs/protocol.md) (the wire format with OpenVibe.Bot), [plugins](docs/plugins.md) (the driver
 protocol, the bundled drivers, and where Actor's computer-control plugin attaches), [install](docs/install.md),
