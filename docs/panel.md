@@ -39,8 +39,8 @@ A restart makes a new port and a new token: an old link stops working.
 | `POST /panel/api/shares` `{ "port": 3000 }` | Shares a port through Connect | Real for a share Connect already picked for this computer |
 | `DELETE /panel/api/shares/:port` | Ends that share | Real |
 | `POST /panel/api/first-run` `{ "uses": ["codes", "browser"] }` | The first-run answer: records it in `<state>/panel.json`, turns on a browser (`browser`) or the AI plugin (`models`), and stops asking. `codes` and `earn` are recorded only (Codes has no module switch yet, and Exchange confirms earning); `vibe` turns nothing on; `skip: true` only stops asking | Real; never turns on Terminal or Desktop |
-| `POST /panel/api/clipboard` `{ "on": true }` | The per-machine clipboard-sharing switch | Off by default, text only, kept in `<state>/panel.json` |
-| `POST /panel/api/send/auto-accept` `{ "on": true }` | Save items from the person's own machines without asking | Off by default, kept in `<state>/panel.json` |
+| `POST /panel/api/clipboard` `{ "on": true }` | The per-machine clipboard-sharing switch | Off by default, text only, kept in `<state>/panel.json`; while on, the daemon reads the clipboard and seals changes for the person's other machines, even when the window is closed |
+| `POST /panel/api/send/auto-accept` `{ "on": true }` | Save items from the person's own machines without asking | Off by default, kept in `<state>/panel.json`; the daemon saves files to Downloads and puts clipboard text on the clipboard while the window is closed |
 | `GET /panel/api/send/targets` | Your other active machines that have a receive key | Real for Network-paired machines |
 | `GET /panel/api/send/inbox` | Pending encrypted items | Real; the envelope remains ciphertext until you accept |
 | `GET /panel/api/send/key` | This machine's receive key for opening an accepted envelope | Real; loopback panel token required |
@@ -50,9 +50,17 @@ A restart makes a new port and a new token: an old link stops working.
 | `POST /panel/api/files/:id/complete` | Removes an accepted item after the browser download starts | Real |
 
 `state.clipboard` and `state.auto_accept` are the two per-machine switches; both are `false` until the person turns
-them on, and `panel.json` keeps them with the capability switches. A direct transfer on the same network is queued in
-memory by this machine's listener and appears in `send/inbox` beside the relay's items; the listener accepts only an
-HMAC from the owner's LAN secret, so another machine on the network cannot put anything there.
+them on, and `panel.json` keeps them with the capability switches. The daemon keeps the transfer loop running without
+the window: with auto-accept on it opens each item from this account's own machines, saves a file or note to
+`~/Downloads` (never replacing an existing file) and reports the save in activity; with clipboard sharing on it does
+the same for copied text, and seals each new clipboard change for the person's other machines. Clipboard text is
+capped at 64 KB and is never sent in clear. An item granted by another account through machine access stays in
+`send/inbox` for a person to answer, even when auto-accept is on.
+
+A direct transfer on the same network is queued in memory by this machine's listener and appears in `send/inbox`
+beside the relay's items; the listener accepts only an HMAC from the owner's LAN secret, so another machine on the
+network cannot put anything there. A granted transfer from another account uses the same listener with Network's
+signed `send` grant, and always waits for the person.
 
 `state` omits what the Link cannot fill truthfully: `devices` (the paired account's machine list is not read here),
 `gpu` (no GPU detection), and `earnings_today`. `activity` is the Link's own record of what it saw (an approval
