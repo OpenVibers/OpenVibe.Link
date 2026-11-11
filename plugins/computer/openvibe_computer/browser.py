@@ -24,11 +24,31 @@ import sys
 import threading
 import time
 
+from openvibe_computer.fence import cap_text, fence as fence_text, parse_fenced
+from openvibe_computer.origins import origin_of
+
 MAX_TEXT = 20000
+MAX_PAGE_BYTES = 48 * 1024
 STARTUP_S = 90.0   # a first start in a cold sandbox (CI runners took over 45 s on 2026-11-02)
 MAX_LINKS = 60
 MAX_ELEMENTS = 120
 MAX_APPEARED = 8
+
+
+def cap_json_text(value, max_bytes):
+    """Bound both source UTF-8 and the JSON bytes sent through the pipe (non-ASCII escapes can be 6x)."""
+    text, cut = cap_text(value, max_bytes)
+    if len(json.dumps(text).encode("utf-8")) <= max_bytes:
+        return text, cut
+    mark = "…[truncated]"
+    lo, hi = 0, len(text)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if len(json.dumps(text[:mid] + mark).encode("utf-8")) <= max_bytes:
+            lo = mid
+        else:
+            hi = mid - 1
+    return text[:lo] + mark, True
 MAX_FOLLOWED = 5
 MAX_SESSION_COOKIES = 3000
 EXACT_HTTPS_ORIGIN = re.compile(r"^https://[a-z0-9.-]+(:[0-9]{1,5})?$")
@@ -174,6 +194,23 @@ FOCUS_JS = """((selector) => {
   return true;
 })(%s)"""
 
+# What a click would follow, read before it is clicked (the origins gate): the same match as CLICK_JS,
+# then the nearest link's address, or null when the target is no link. Read-only: nothing is clicked.
+TARGET_JS = """((selector, text) => {
+  let el = null;
+  if (selector) el = document.querySelector(selector);
+  else {
+    const want = text.trim().toLowerCase();
+    const items = [...document.querySelectorAll('a, button, [role=button], input[type=submit], input[type=button], summary, label')];
+    el = items.find((e) => (e.innerText || e.value || e.getAttribute('aria-label') || '').trim().toLowerCase() === want)
+      || items.find((e) => (e.innerText || e.value || e.getAttribute('aria-label') || '').trim().toLowerCase().includes(want));
+  }
+  if (!el) return null;
+  const link = el.closest ? el.closest('a[href]') : null;
+  const href = (link && link.href) || null;
+  return href && /^https?:/.test(href) ? href : null;
+})(%s, %s)"""
+
 
 class BrowserError(Exception):
     def __init__(self, code, message):
@@ -235,6 +272,8 @@ class Browser:
         self.follow_mu = threading.Lock()
         self.storage_origins = set()
         self.after_start = None    # called once the browser runs (a kept profile's session cookies go back in)
+        self.allowed_origins = None  # fixed for this browser process; a new task gets a new proxy and process
+        self.task_egress = None
 
     # ---- the process and the pipe ------------------------------------------------------------------------------------
     def alive(self):
@@ -491,7 +530,49 @@ class Browser:
     def summary(self):
         self.used_at = time.monotonic()
         self._follow()
-        return self._eval(SUMMARY_JS)
+        page = self._eval(SUMMARY_JS)
+        # The page is untrusted. Cap UTF-8 bytes after JS's character cap, then put the nonce markers outside
+        # that cap. A multi-byte page can exceed MAX_TEXT bytes even when it has MAX_TEXT characters.
+        if isinstance(page, dict) and isinstance(page.get("text"), str):
+            capped, cut = cap_json_text(page["text"], MAX_TEXT)
+            title, title_cut = cap_json_text(page.get("title", ""), 512)
+            url, url_cut = cap_json_text(page.get("url", ""), 2048)
+            budget = MAX_PAGE_BYTES - len(json.dumps(capped).encode("utf-8")) - len(json.dumps(title).encode("utf-8")) - len(json.dumps(url).encode("utf-8")) - 2048
+            links, elements = [], []
+            for link in page.get("links") or []:
+                if not isinstance(link, dict):
+                    cut = True
+                    continue
+                label, label_cut = cap_json_text(link.get("text", ""), 160)
+                href, href_cut = cap_json_text(link.get("href", ""), 2048)
+                size = len(json.dumps({"text": label, "href": href}).encode("utf-8"))
+                if size > budget:
+                    cut = True
+                    break
+                links.append({"text": label, "href": href})
+                budget -= size
+                cut = cut or label_cut or href_cut
+            for element in page.get("elements") or []:
+                line, line_cut = cap_json_text(element, 256)
+                size = len(json.dumps(line).encode("utf-8")) + 8
+                if size > budget:
+                    cut = True
+                    break
+                elements.append(line)
+                budget -= size
+                cut = cut or line_cut
+            parts = origin_of(page.get("url"))
+            if parts:
+                scheme, host, port = parts
+                origin = "%s://%s:%d" % (scheme, "[%s]" % host if ":" in host else host, port)
+            else:
+                origin = "unknown"
+            if not re.fullmatch(r"https?://[A-Za-z0-9.:[\]-]+", origin):
+                origin = "unknown"
+            fenced, nonce = fence_text(capped, origin=origin)
+            page = dict(page, url=url, title=title, text=fenced, links=links, elements=elements,
+                        fence=nonce, origin=origin, truncated=bool(page.get("truncated") or cut or title_cut or url_cut))
+        return page
 
     def open(self, url):
         self.start()
@@ -589,12 +670,24 @@ class Browser:
 
     def _with_receipt(self, before):
         after = self.summary()
-        r = receipt(before, after)
+        # Compare the page's body, not its new fence markers; otherwise every action appears to add two lines.
+        plain = dict(after, text=parse_fenced(after.get("text")) or "")
+        r = receipt(before, plain)
         if r is not None:
             if self.tab_change:
                 r["page"] = self.tab_change   # a page it opened is now in front ("opened"), or that page closed ("closed")
+            r["appeared"] = [fence_text(line, after.get("fence"), after.get("origin", "unknown"))[0] for line in r["appeared"]]
             after["receipt"] = r
         return after
+
+    def click_href(self, selector=None, text=None):
+        """The http(s) address a click would follow, or None (no match, a button, a script link). Read-only."""
+        self._need()
+        try:
+            href = self._eval(TARGET_JS % (json.dumps(selector), json.dumps(text or "")))
+        except BrowserError:
+            return None
+        return href if isinstance(href, str) and href else None
 
     def click(self, selector=None, text=None):
         self._need()
@@ -872,4 +965,7 @@ class Browser:
                     proc.stderr.close()
                 except OSError:
                     pass
+        if self.task_egress is not None:
+            self.task_egress.stop()
+            self.task_egress = None
         return {"done": True, "closed": proc is not None}

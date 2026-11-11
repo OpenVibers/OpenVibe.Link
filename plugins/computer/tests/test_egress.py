@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), "sdk"))
 from openvibe_computer import Computer  # noqa: E402
 from openvibe_computer.browser import Browser, find_binary  # noqa: E402
 from openvibe_computer.egress import EgressProxy, not_public  # noqa: E402
+from openvibe_computer.origins import parse_origins  # noqa: E402
 from openvibe_plugin import Fault, Runtime  # noqa: E402
 from test_computer import Out  # noqa: E402
 
@@ -107,6 +108,20 @@ class EgressProxyTest(unittest.TestCase):
         s.close()
         self.assertTrue(data.startswith(b"HTTP/1.1 403"), data)
 
+    def test_task_origins_guard_http_and_tunnels_before_connect(self):
+        ok_port = self.ok.server_address[1]
+        proxy = EgressProxy(blocked=lambda ip, port: False,
+                            allow_origin=lambda scheme, host, port: (scheme, host, port) == ("http", "127.0.0.1", ok_port))
+        port = proxy.start()
+        self.addCleanup(proxy.stop)
+        for method, target, expected in ((b"GET", b"http://127.0.0.1:%d/" % ok_port, b"200"),
+                                         (b"GET", b"http://127.0.0.1:%d/" % self.no_port, b"403"),
+                                         (b"CONNECT", b"127.0.0.1:%d" % ok_port, b"403")):
+            s, data = ask(port, method + b" " + target + b" HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+            s.close()
+            self.assertIn(expected, data.split(b"\r\n", 1)[0])
+        self.assertEqual(proxy.refused, 2)
+
     def test_a_name_with_any_refused_address_is_refused(self):
         # One public and one private address: the name is refused, so no answer can pick the private one later.
         proxy = EgressProxy(blocked=lambda ip, port: not_public(ip), resolve=lambda host, port: ["93.184.215.14", "192.168.1.1"])
@@ -149,9 +164,44 @@ class PluginEgressTest(unittest.TestCase):
         with self.assertRaises(Fault):
             plugin._configure({"level": "trusted", "browser_egress": "sometimes"})
 
+    def test_task_proxy_overrides_open_egress_before_the_browser_starts(self):
+        plugin, _ = self.boot(browser_egress="open")
+        b = Browser("chromium", "/nonexistent", extra_args=[])
+        self.addCleanup(b.close)
+        plugin._set_task_origins(b, parse_origins(["https://example.org"]))
+        self.assertEqual(b.allowed_origins, (("https", "example.org", 443),))
+        self.assertTrue(b.extra_args[0].startswith("--proxy-server="))
+        s, head = ask(b.task_egress.port, b"CONNECT other.example.org:443 HTTP/1.1\r\nHost: other.example.org\r\n\r\n")
+        s.close()
+        self.assertTrue(head.startswith(b"HTTP/1.1 403"), head)
+
 
 @unittest.skipUnless(find_binary(shutil.which, sys.platform), "no Chromium-family browser on this machine")
 class RealEgressTest(unittest.TestCase):
+    def test_a_bounded_task_blocks_other_origins_even_with_open_egress(self):
+        ok, no = serve(), serve()
+        self.addCleanup(ok.shutdown)
+        self.addCleanup(no.shutdown)
+        profile = tempfile.mkdtemp(prefix="ov-origins-")
+        self.addCleanup(lambda: shutil.rmtree(profile, ignore_errors=True))
+        plugin = Computer(env={}, platform="linux", which=shutil.which)
+        rt = Runtime(plugin, infile=io.StringIO(""), outfile=Out())
+        rt.dispatch({"op": "hello", "config": {"level": "full", "roots": [tempfile.gettempdir()], "notify": False,
+                                              "browser_egress": "open", "browser_profile": profile}})
+        plugin.browser_factory = lambda binary, path, headless: Browser(
+            binary, path, headless, extra_args=["--no-sandbox"] if os.environ.get("CI") else [])
+        self.addCleanup(plugin._close_browser)
+        self.addCleanup(plugin.egress.stop)
+        allowed_url = "http://127.0.0.1:%d/" % ok.server_address[1]
+        blocked_url = "http://127.0.0.1:%d/" % no.server_address[1]
+        origins = ["http://127.0.0.1:%d" % ok.server_address[1]]
+        run, _, _ = plugin._browser_op({"action": "open", "url": allowed_url, "origins": origins}, "full")
+        self.assertEqual(run()["title"], "Here")
+        with self.assertRaises(Fault):
+            plugin._browser_op({"action": "open", "url": blocked_url, "origins": origins}, "full")
+        got = plugin.browser._eval("fetch(%r).then((r) => 'reached ' + r.status).catch(() => 'refused')" % blocked_url)
+        self.assertEqual(got, "refused", "a page script cannot leave the task's origins")
+
     def test_a_pages_script_cannot_reach_a_refused_address(self):
         ok, no = serve(), serve()
         self.addCleanup(ok.shutdown)
