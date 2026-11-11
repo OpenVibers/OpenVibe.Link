@@ -77,6 +77,7 @@ func New(bot *fakebot.Server) *Server {
 	s.HTTP = httptest.NewServer(mux)
 	if bot != nil {
 		bot.SetRelayAuthority(s.URL(), s.GrantActive)
+		bot.SetAgentResult(s.AgentResult)
 	}
 	return s
 }

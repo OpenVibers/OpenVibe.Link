@@ -739,32 +739,37 @@ func (JobUsage) MessageType() string     { return TypeJobUsage }
 func (JobExit) MessageType() string      { return TypeJobExit }
 
 var registry = map[string]func() Message{
-	TypeHello:         func() Message { return &Hello{} },
-	TypeConfig:        func() Message { return &Config{} },
-	TypeCommand:       func() Message { return &Command{} },
-	TypeEstop:         func() Message { return &Estop{} },
-	TypeHeartbeatAck:  func() Message { return &HeartbeatAck{} },
-	TypeError:         func() Message { return &Error{} },
-	TypeStatus:        func() Message { return &Status{} },
-	TypeTelemetry:     func() Message { return &Telemetry{} },
-	TypeAck:           func() Message { return &AckData{} }, // an Ack unless it carries data
-	TypeNack:          func() Message { return &Nack{} },
-	TypeHeartbeat:     func() Message { return &Heartbeat{} },
-	TypeReauth:        func() Message { return &Reauth{} },
-	TypeEstopState:    func() Message { return &EstopState{} },
-	TypeJob:           func() Message { return &JobRequest{} },
-	TypeJobCancel:     func() Message { return &JobCancel{} },
-	TypeJobExitAck:    func() Message { return &JobExitAck{} },
-	TypeJobStarted:    func() Message { return &JobStarted{} },
-	TypeJobStdout:     func() Message { return &JobStdout{} },
-	TypeJobUsage:      func() Message { return &JobUsage{} },
-	TypeJobExit:       func() Message { return &JobExit{} },
-	TypeVoiceAsk:      func() Message { return &VoiceAsk{} },
-	TypeVoiceAnswer:   func() Message { return &VoiceAnswer{} },
-	TypeAgentTask:     func() Message { return &AgentTaskFrame{} },
-	TypeAccessRevoked: func() Message { return &AccessRevoked{} },
-	TypeMachineRelay:  func() Message { return &MachineRelay{} },
-	TypeMachineReply:  func() Message { return &MachineReply{} },
+	TypeHello:              func() Message { return &Hello{} },
+	TypeConfig:             func() Message { return &Config{} },
+	TypeCommand:            func() Message { return &Command{} },
+	TypeEstop:              func() Message { return &Estop{} },
+	TypeHeartbeatAck:       func() Message { return &HeartbeatAck{} },
+	TypeError:              func() Message { return &Error{} },
+	TypeStatus:             func() Message { return &Status{} },
+	TypeTelemetry:          func() Message { return &Telemetry{} },
+	TypeAck:                func() Message { return &AckData{} }, // an Ack unless it carries data
+	TypeNack:               func() Message { return &Nack{} },
+	TypeHeartbeat:          func() Message { return &Heartbeat{} },
+	TypeReauth:             func() Message { return &Reauth{} },
+	TypeEstopState:         func() Message { return &EstopState{} },
+	TypeJob:                func() Message { return &JobRequest{} },
+	TypeJobCancel:          func() Message { return &JobCancel{} },
+	TypeJobExitAck:         func() Message { return &JobExitAck{} },
+	TypeJobStarted:         func() Message { return &JobStarted{} },
+	TypeJobStdout:          func() Message { return &JobStdout{} },
+	TypeJobUsage:           func() Message { return &JobUsage{} },
+	TypeJobExit:            func() Message { return &JobExit{} },
+	TypeVoiceAsk:           func() Message { return &VoiceAsk{} },
+	TypeVoiceAnswer:        func() Message { return &VoiceAnswer{} },
+	TypeRelayOpen:          func() Message { return &RelayOpen{} },
+	TypeRelayOpened:        func() Message { return &RelayOpened{} },
+	TypeRelayFrame:         func() Message { return &RelayFrame{} },
+	TypeRelayClose:         func() Message { return &RelayClose{} },
+	TypeRelayClosed:        func() Message { return &RelayClosed{} },
+	TypeAgentTask:          func() Message { return &AgentTaskFrame{} },
+	TypeAgentTaskResult:    func() Message { return &AgentTaskResult{} },
+	TypeAgentTaskResultAck: func() Message { return &AgentTaskResultAck{} },
+	TypeAccessRevoked:      func() Message { return &AccessRevoked{} },
 }
 
 // ErrUnknownType is returned (wrapped) by Decode for a frame whose type is not in this version's message set.
@@ -872,9 +877,19 @@ func derefMessage(m Message) Message {
 		return *v
 	case *AccessRevoked:
 		return *v
-	case *MachineRelay:
+	case *RelayOpen:
 		return *v
-	case *MachineReply:
+	case *RelayOpened:
+		return *v
+	case *RelayFrame:
+		return *v
+	case *RelayClose:
+		return *v
+	case *RelayClosed:
+		return *v
+	case *AgentTaskResult:
+		return *v
+	case *AgentTaskResultAck:
 		return *v
 	}
 	return m

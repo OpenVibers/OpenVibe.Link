@@ -64,6 +64,7 @@ func TestTwoLinksRequestApproveUseRevoke(t *testing.T) {
 	}
 	a, ap, _ := start("ACCESS11")
 	b, bp, _ := start("ACCESS22")
+	t.Logf("two Links, two state directories: A=%s B=%s", ap.StateDir, bp.StateDir)
 	a.registerLocalAgentsOnce(context.Background())
 	b.registerLocalAgentsOnce(context.Background())
 	call := func(paths config.Paths, req localctl.Request) (json.RawMessage, error) {
@@ -76,15 +77,18 @@ func TestTwoLinksRequestApproveUseRevoke(t *testing.T) {
 		t.Fatal(err)
 	}
 	var requested struct {
-		ID string `json:"id"`
+		Request struct {
+			ID string `json:"id"`
+		} `json:"request"`
 	}
-	if json.Unmarshal(request, &requested) != nil || requested.ID == "" {
+	if json.Unmarshal(request, &requested) != nil || requested.Request.ID == "" {
 		t.Fatalf("request: %s", request)
 	}
+	t.Logf("A asked B: %s", request)
 	b.refreshAccessRequests(context.Background())
 	var approval Approval
 	for _, item := range b.Approvals() {
-		if item.Plugin == "machine-access" && item.CommandID == requested.ID {
+		if item.Plugin == "machine-access" && item.CommandID == requested.Request.ID {
 			approval = item
 			break
 		}
@@ -95,9 +99,11 @@ func TestTwoLinksRequestApproveUseRevoke(t *testing.T) {
 	if approval.Title != "Alex's laptop asks for access" || approval.Summary != `Send you files, for 1 hour. "test two links"` {
 		t.Fatalf("tray words: %q / %q", approval.Title, approval.Summary)
 	}
+	t.Logf("B's tray: %q / %q (approval %s)", approval.Title, approval.Summary, approval.ID)
 	if _, err = call(bp, localctl.Request{Cmd: localctl.CmdApprove, ID: approval.ID}); err != nil {
 		t.Fatal(err)
 	}
+	t.Log("B's owner clicked Allow")
 	use := json.RawMessage(`{"machine":"` + other + `","scope":"send","action":"offer","data":{"envelope":"sealed-test-item"}}`)
 	result, err := call(ap, localctl.Request{Cmd: localctl.CmdMCP, ID: "machine_use", Data: use})
 	if err != nil {
@@ -106,6 +112,7 @@ func TestTwoLinksRequestApproveUseRevoke(t *testing.T) {
 	if !strings.Contains(string(result), `"scope":"send"`) {
 		t.Fatalf("machine_use: %s", result)
 	}
+	t.Logf("A used send: %s", result)
 	b.mu.Lock()
 	lan := b.grantedSend
 	b.mu.Unlock()
@@ -124,12 +131,15 @@ func TestTwoLinksRequestApproveUseRevoke(t *testing.T) {
 	if json.Unmarshal(grants, &list) != nil || len(list.Grants) != 1 {
 		t.Fatal("grant missing")
 	}
+	t.Logf("A holds grant %s", list.Grants[0].ID)
 	if _, err = call(bp, localctl.Request{Cmd: localctl.CmdAccess, ID: "revoke", Data: json.RawMessage(`{"id":"` + list.Grants[0].ID + `"}`)}); err != nil {
 		t.Fatal(err)
 	}
+	t.Log("B revoked the grant")
 	if _, err = call(ap, localctl.Request{Cmd: localctl.CmdMCP, ID: "machine_use", Data: use}); err == nil || !strings.Contains(err.Error(), "no active grant") {
 		t.Fatalf("revoke did not stop use: %v", err)
 	}
+	t.Logf("A's next use was refused: %v", err)
 	if listed, listErr := call(ap, localctl.Request{Cmd: localctl.CmdMCP, ID: "agents_list", Agent: "codex", Data: json.RawMessage(`{}`)}); listErr != nil || !strings.Contains(string(listed), "Codex") {
 		t.Fatalf("agents_list: %s %v", listed, listErr)
 	}

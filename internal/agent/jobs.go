@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
@@ -109,6 +110,43 @@ func (n *Agent) job(r protocol.JobRequest) {
 			n.worker.Launch(r.Job.ID)
 		}
 	}
+}
+
+// jobRelayed accepts only a fresh worker job. Its owner is recorded before the
+// acknowledgement leaves Link, so status and cancel cannot reach Bot jobs or
+// jobs started by another machine.
+func (n *Agent) jobRelayed(r protocol.JobRequest, source relaySource) error {
+	id := r.Job.ID
+	n.mu.Lock()
+	_, claimed := n.remoteJobs[id]
+	n.mu.Unlock()
+	if claimed {
+		return errors.New("job id is already in use")
+	}
+	if n.worker != nil {
+		if _, known := n.worker.Known(id); known {
+			return errors.New("job id is already in use")
+		}
+	}
+	answer, accepted := n.jobs.request(r)
+	if !accepted {
+		if nk, ok := answer.(protocol.Nack); ok {
+			return errors.New(nk.Message)
+		}
+		return errors.New("job id is already in use")
+	}
+	n.mu.Lock()
+	n.remoteJobs[id] = source.to
+	n.relaySources[id] = source
+	n.mu.Unlock()
+	n.send(answer)
+	if n.codes != nil {
+		n.codes.accepted(r.Job)
+	}
+	if n.worker != nil {
+		n.worker.Launch(id)
+	}
+	return nil
 }
 
 // sendJobFrame sends a worker frame; a job_exit also becomes the answer to a resent job frame.

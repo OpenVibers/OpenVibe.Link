@@ -105,7 +105,36 @@ func (c *Client) Request(ctx context.Context, machine string, scopes []string, s
 			return nil, errors.New("forever is only for agent and send")
 		}
 	}
-	return c.do(ctx, http.MethodPost, "/api/v1/link/self/access-requests", map[string]any{"machine": machine, "scopes": scopes, "duration_seconds": seconds, "reason": reason, "from_agent": agent})
+	if !strings.HasPrefix(machine, "lnk_") && !strings.HasPrefix(machine, "@") {
+		known, err := c.Machines(ctx)
+		if err != nil {
+			return nil, err
+		}
+		var list struct {
+			Machines []struct{ ID, Name string } `json:"machines"`
+		}
+		if json.Unmarshal(known, &list) != nil {
+			return nil, errors.New("Network returned an invalid machine list")
+		}
+		found := ""
+		for _, row := range list.Machines {
+			if strings.EqualFold(row.Name, machine) {
+				if found != "" {
+					return nil, errors.New("machine name is ambiguous; use its id")
+				}
+				found = row.ID
+			}
+		}
+		if found == "" {
+			return nil, errors.New("machine name not found")
+		}
+		machine = found
+	}
+	var duration any = seconds
+	if seconds == 0 {
+		duration = nil
+	}
+	return c.do(ctx, http.MethodPost, "/api/v1/link/self/access-requests", map[string]any{"target": machine, "scopes": scopes, "duration_seconds": duration, "reason": reason, "from_agent": agent})
 }
 
 func ValidScope(s string) bool { return scopes[s] }
@@ -116,14 +145,20 @@ func (c *Client) List(ctx context.Context) (json.RawMessage, error) {
 func (c *Client) Grants(ctx context.Context) (json.RawMessage, error) {
 	return c.do(ctx, http.MethodGet, "/api/v1/link/self/access-grants", nil)
 }
+func (c *Client) GrantToken(ctx context.Context, id string) (json.RawMessage, error) {
+	if !routeID.MatchString(id) {
+		return nil, errors.New("invalid grant id")
+	}
+	return c.do(ctx, http.MethodPost, "/api/v1/link/self/access-grants/"+id+"/token", map[string]any{})
+}
 func (c *Client) Machines(ctx context.Context) (json.RawMessage, error) {
-	return c.do(ctx, http.MethodGet, "/api/v1/link/self/machines", nil)
+	return c.do(ctx, http.MethodGet, "/api/v1/link/self/send/targets", nil)
 }
 func (c *Client) Answer(ctx context.Context, id string, approve bool, scopes []string, seconds int64) (json.RawMessage, error) {
 	if !routeID.MatchString(id) {
 		return nil, errors.New("invalid request id")
 	}
-	body := map[string]any{"approved": approve}
+	body := map[string]any{"approve": approve}
 	if len(scopes) > 0 {
 		for _, s := range scopes {
 			if !ValidScope(s) {
@@ -163,10 +198,4 @@ func (c *Client) TaskStatus(ctx context.Context, id string) (json.RawMessage, er
 		return nil, errors.New("invalid task id")
 	}
 	return c.do(ctx, http.MethodGet, "/api/v1/agents/tasks/"+id, nil)
-}
-func (c *Client) TaskResult(ctx context.Context, id string, result any) (json.RawMessage, error) {
-	if !routeID.MatchString(id) {
-		return nil, errors.New("invalid task id")
-	}
-	return c.do(ctx, http.MethodPost, "/api/v1/agents/tasks/"+id+"/result", result)
 }

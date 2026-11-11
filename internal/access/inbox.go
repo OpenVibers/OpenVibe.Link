@@ -175,3 +175,11 @@ func NewRelayID() string {
 	}
 	return "mrl_" + hex.EncodeToString(b)
 }
+
+func NewThreadID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return ""
+	}
+	return "thr_" + hex.EncodeToString(b)
+}

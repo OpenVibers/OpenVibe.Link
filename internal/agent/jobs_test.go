@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
 	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
@@ -16,6 +17,31 @@ func jobID(n int) string { return fmt.Sprintf("job_01JAB2C3D4E5F6G7H8J9K%05d", n
 func testJob(id string) protocol.Job {
 	return protocol.Job{ID: id, Class: protocol.ClassFunction, Artifact: &protocol.Artifact{Name: "thumbnail", Version: "1.2.0"},
 		Args: json.RawMessage(`{"width":320}`), TTLMS: 60000, Limits: protocol.JobLimits{WallMS: 30000, CPUMS: 30000, MemBytes: 268435456}}
+}
+
+func TestRelayedWorkerJobBelongsOnlyToRequestingMachine(t *testing.T) {
+	n := &Agent{opt: Options{Creds: &credentials.Credentials{Principal: "lnk_receiver"}}, jobs: newJobs([]string{protocol.ClassFunction}),
+		remoteJobs: map[string]string{}, relaySources: map[string]relaySource{}}
+	first := testJob(jobID(950))
+	if err := n.jobRelayed(protocol.JobRequest{Job: first}, relaySource{to: "lnk_sender", scope: "worker", relay: "rly_one", bodyID: "mrl_one"}); err != nil {
+		t.Fatal(err)
+	}
+	if n.remoteJobs[first.ID] != "lnk_sender" {
+		t.Fatal("accepted job has no machine owner")
+	}
+	if err := n.jobRelayed(protocol.JobRequest{Job: first}, relaySource{to: "lnk_other", scope: "worker", relay: "rly_two", bodyID: "mrl_two"}); err == nil {
+		t.Fatal("another machine reused the job id")
+	}
+	botJob := testJob(jobID(951))
+	if _, accepted := n.jobs.request(protocol.JobRequest{Job: botJob}); !accepted {
+		t.Fatal("could not seed Bot job")
+	}
+	if err := n.jobRelayed(protocol.JobRequest{Job: botJob}, relaySource{to: "lnk_sender", scope: "worker", relay: "rly_three", bodyID: "mrl_three"}); err == nil {
+		t.Fatal("remote machine took a Bot job id")
+	}
+	if n.remoteJobs[botJob.ID] != "" {
+		t.Fatal("Bot job was assigned a machine owner")
+	}
 }
 
 func (e *env) jobReply(j protocol.Job) protocol.Message {

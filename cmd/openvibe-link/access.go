@@ -124,8 +124,14 @@ func cmdAccess(g *globals, args []string, opt accessArgs, out io.Writer) error {
 	}
 	if action == "request" {
 		seconds, _ := accessDuration(opt.For)
-		_, err = fmt.Fprintf(out, "Asked %s for: %s (%s). Waiting for their owner…\n", args[1], scopeWords(strings.Split(opt.Scope, ",")), accessTime(seconds))
-		return err
+		if _, err = fmt.Fprintf(out, "Asked %s for: %s (%s). Waiting for their owner…\n", args[1], scopeWords(strings.Split(opt.Scope, ",")), accessTime(seconds)); err != nil {
+			return err
+		}
+		id := responseID(value)
+		if id == "" {
+			return errors.New("Network did not return the request id")
+		}
+		return waitAccessAnswer(g, id, strings.Split(opt.Scope, ","), out)
 	}
 	if action == "approve" {
 		_, err = fmt.Fprintln(out, "Allowed.")
@@ -169,6 +175,9 @@ func scopeWords(scopes []string) string {
 	if len(parts) == 1 {
 		return parts[0]
 	}
+	for i := 1; i < len(parts); i++ {
+		parts[i] = strings.ToLower(parts[i][:1]) + parts[i][1:]
+	}
 	return strings.Join(parts[:len(parts)-1], ", ") + " and " + parts[len(parts)-1]
 }
 
@@ -177,6 +186,9 @@ func accessTime(seconds int64) string {
 		return "until you take it back"
 	}
 	if seconds%86400 == 0 {
+		if seconds == 86400 {
+			return "1 day"
+		}
 		return fmt.Sprintf("%d days", seconds/86400)
 	}
 	if seconds%3600 == 0 {
@@ -186,6 +198,9 @@ func accessTime(seconds int64) string {
 		return fmt.Sprintf("%d hours", seconds/3600)
 	}
 	if seconds%60 == 0 {
+		if seconds == 60 {
+			return "1 minute"
+		}
 		return fmt.Sprintf("%d minutes", seconds/60)
 	}
 	return (time.Duration(seconds) * time.Second).String()
@@ -254,6 +269,18 @@ func printAccessList(out io.Writer, value any) error {
 func formatAccessRow(row map[string]any) string {
 	from, _ := row["from_principal"].(string)
 	to, _ := row["to_principal"].(string)
+	fromName, _ := row["from_machine_name"].(string)
+	fromOwner, _ := row["from_owner_name"].(string)
+	toName, _ := row["to_machine_name"].(string)
+	if fromName != "" {
+		from = fromName
+		if fromOwner != "" {
+			from = fromOwner + "'s " + fromName
+		}
+	}
+	if toName != "" {
+		to = toName
+	}
 	name := from + " → " + to
 	var scopes []string
 	if list, _ := row["scopes"].([]any); list != nil {
@@ -269,6 +296,121 @@ func formatAccessRow(row map[string]any) string {
 		when = " · until " + expiry
 	}
 	return name + " · " + scopeWords(scopes) + when + " · " + id
+}
+
+func responseID(value any) string {
+	root, _ := value.(map[string]any)
+	for _, key := range []string{"id", "request_id", "grant_id"} {
+		if id, _ := root[key].(string); id != "" {
+			return id
+		}
+	}
+	for _, key := range []string{"request", "grant"} {
+		if row, _ := root[key].(map[string]any); row != nil {
+			for _, idKey := range []string{"id", "request_id", "grant_id"} {
+				if id, _ := row[idKey].(string); id != "" {
+					return id
+				}
+			}
+		}
+	}
+	return ""
+}
+
+type accessListRow struct {
+	ID          string   `json:"id"`
+	RequestID   string   `json:"request_id"`
+	Status      string   `json:"status"`
+	Scopes      []string `json:"scopes"`
+	ExpiresAt   any      `json:"expires_at"`
+	PendingTill string   `json:"pending_until"`
+	RequestedAt string   `json:"requested_at"`
+	AskedAt     string   `json:"asked_at"`
+}
+
+type accessListAnswer struct {
+	Requests struct {
+		Requests []accessListRow `json:"requests"`
+	} `json:"requests"`
+	Grants struct {
+		Grants []accessListRow `json:"grants"`
+	} `json:"grants"`
+}
+
+// waitAccessAnswer follows one request until its owner answers it, as the
+// design's `access request` output promises. A person may take up to ten
+// minutes; a script can pass --json to return at once.
+func waitAccessAnswer(g *globals, id string, scopes []string, out io.Writer) error {
+	deadline := time.Now().Add(10 * time.Minute)
+	for {
+		raw, err := localctl.Call(g.paths.SocketPath(), localctl.Request{Cmd: localctl.CmdAccess, ID: "list"}, 20*time.Second)
+		if err != nil {
+			return err
+		}
+		var answer accessListAnswer
+		if len(raw.Data) > 0 && json.Unmarshal(raw.Data, &answer) == nil {
+			for _, request := range answer.Requests.Requests {
+				if request.ID != id {
+					continue
+				}
+				switch request.Status {
+				case "pending":
+				case "denied":
+					_, err = fmt.Fprintln(out, "Denied.")
+					return err
+				case "expired":
+					_, err = fmt.Fprintln(out, "No answer in 10 minutes; ask again later.")
+					return err
+				case "approved":
+					// The grant below carries the answer's scopes and time.
+				}
+			}
+			for _, grant := range answer.Grants.Grants {
+				if grant.RequestID != id {
+					continue
+				}
+				if grant.Scopes != nil && !sameScopes(grant.Scopes, scopes) {
+					_, err = fmt.Fprintf(out, "Allowed, narrowed to: %s.\n", scopeWords(grant.Scopes))
+					return err
+				}
+				switch expiry := grant.ExpiresAt.(type) {
+				case nil:
+					_, err = fmt.Fprintln(out, "Allowed until you take it back.")
+				case string:
+					at, parseErr := time.Parse(time.RFC3339, expiry)
+					if parseErr != nil {
+						_, err = fmt.Fprintln(out, "Allowed.")
+					} else {
+						_, err = fmt.Fprintf(out, "Allowed until %s.\n", at.Local().Format("15:04"))
+					}
+				default:
+					_, err = fmt.Fprintln(out, "Allowed.")
+				}
+				return err
+			}
+		}
+		if !time.Now().Before(deadline) {
+			_, err = fmt.Fprintln(out, "No answer in 10 minutes; ask again later.")
+			return err
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
+
+func sameScopes(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, s := range a {
+		seen[s] = true
+	}
+	for _, s := range b {
+		if !seen[s] {
+			return false
+		}
+	}
+	return true
 }
 
 func validScope(s string) bool {

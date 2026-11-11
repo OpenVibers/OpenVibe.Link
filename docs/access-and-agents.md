@@ -12,13 +12,13 @@ openvibe-link access deny req_…
 openvibe-link access revoke gra_…
 ```
 
-`--for` defaults to 1 hour and accepts a Go duration through 30 days, or `1d` through `30d`. `forever` is accepted only for `agent` and `send`; Network also requires both machines to have the same owner. The target can narrow scopes and shorten duration when approving. `access list` groups waiting requests, allowed grants and ended access. `--json` returns the same data for scripts without bearer grant tokens.
+`--for` defaults to 1 hour and accepts a Go duration through 30 days, or `1d` through `30d`. `forever` is accepted only for `agent` and `send`; Network also requires both machines to have the same owner. The target can narrow scopes and shorten duration when approving, never widen them. `access request` waits up to ten minutes and then prints `Allowed until 12:40.`, `Allowed, narrowed to: …`, `Denied.` or `No answer in 10 minutes; ask again later.`; `--json` returns at once with the request id for a script. `access list` groups waiting requests, allowed grants and ended access. `--json` returns the same data for scripts without bearer grant tokens.
 
 The scopes are `agent` (message local agents), `send` (offer Locker-sealed files), `screen` (capture or watch the screen), `desk` (use a private desk), `computer` (run only the target's enabled computer actions), and `worker` (run sandbox jobs). A computer grant never raises the target's own `observe`, `ask`, `trusted`, or `full` level. At `ask`, each acting command still needs the target owner's local answer. The target's capability switches and stop latch still apply.
 
 The tray shows a machine request with **Allow** and **Deny** actions. `openvibe-link approvals` lists it beside computer requests, and `openvibe-link approve <nonce>` or `deny <nonce>` uses the same local approval socket. Network settles an answer once, even if two signed-in surfaces present it at once.
 
-Each relayed use carries Network's signed grant JWT. Bot checks the sending device, target, scope, and current grant before forwarding. The target Link independently verifies Network's published signing key, signature, issuer, machine audience, sender, scope, expiration, and current Network grant state. It records the use in local activity. The direct LAN send path requires the same signed grant and live check in addition to the owner's LAN HMAC. A stopped, expired, revoked, or unavailable grant fails closed.
+Each relayed use carries Network's signed grant JWT. Link opens a Bot relay with `relay.open`; Bot checks the sending device, target and scope and sends `relay.opened` to both machines. The target Link independently verifies Network's published signing key, signature, issuer, machine audience, sender, scope, expiration, and current Network grant state on the opening and again as the relay runs. `relay.closed` or `access.revoked` ends a still-unexpired grant at once. It records the use in local activity. The direct LAN send path requires the same signed grant and live check in addition to the owner's LAN HMAC. A stopped, expired, revoked, or unavailable grant fails closed.
 
 ## Agent messages
 

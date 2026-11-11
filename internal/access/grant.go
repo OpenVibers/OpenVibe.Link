@@ -70,8 +70,21 @@ func (v *Verifier) Revoke(id string, until time.Time) {
 // Verify checks every use, including the requested scope and the sending
 // machine. A malformed token or a key fetch failure never opens access.
 func (v *Verifier) Verify(ctx context.Context, token, sender, scope string) (Claims, error) {
+	if !scopes[scope] {
+		return Claims{}, ErrGrant
+	}
+	return v.verify(ctx, token, sender, scope)
+}
+
+// VerifyAny checks a grant token without selecting one scope: Bot's relay.opened
+// names the grant's scopes, and each later relay.frame selects one.
+func (v *Verifier) VerifyAny(ctx context.Context, token, sender string) (Claims, error) {
+	return v.verify(ctx, token, sender, "")
+}
+
+func (v *Verifier) verify(ctx context.Context, token, sender, scope string) (Claims, error) {
 	var c Claims
-	if !scopes[scope] || token == "" || sender == "" || sender == v.Machine || v.Machine == "" {
+	if token == "" || sender == "" || sender == v.Machine || v.Machine == "" {
 		return c, ErrGrant
 	}
 	parts := strings.Split(token, ".")
@@ -111,7 +124,7 @@ func (v *Verifier) Verify(ctx context.Context, token, sender, scope string) (Cla
 		(c.Issuer != v.Network && c.Issuer != strings.TrimPrefix(v.Network, "https://")) {
 		return Claims{}, ErrGrant
 	}
-	found := false
+	found := scope == ""
 	for _, s := range c.Scopes {
 		if !scopes[s] {
 			return Claims{}, ErrGrant
@@ -141,8 +154,8 @@ func (v *Verifier) key(ctx context.Context, kid string) (*rsa.PublicKey, error) 
 	}
 	v.mu.Unlock()
 	u, parseErr := url.Parse(v.Network)
-	if parseErr!=nil || u.Host=="" || u.User!=nil || u.RawQuery!="" || u.Fragment!="" || (u.Path!="" && u.Path!="/") ||
-		(u.Scheme!="https" && !(u.Scheme=="http" && (u.Hostname()=="127.0.0.1" || u.Hostname()=="localhost" || u.Hostname()=="::1"))) {
+	if parseErr != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") ||
+		(u.Scheme != "https" && !(u.Scheme == "http" && (u.Hostname() == "127.0.0.1" || u.Hostname() == "localhost" || u.Hostname() == "::1"))) {
 		return nil, ErrGrant
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.Network+"/api/.well-known/jwks", nil)

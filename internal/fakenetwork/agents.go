@@ -40,6 +40,20 @@ func (s *Server) registerAgentRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/agents/", s.agentRoute)
 }
 
+// AgentResult is Bot's report of an agent.task_result from the receiving machine.
+func (s *Server) AgentResult(taskID, status string, result json.RawMessage) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	task := s.agentTasks[taskID]
+	if task == nil {
+		return
+	}
+	task.Status = status
+	if len(result) > 0 {
+		task.Result = result
+	}
+}
+
 func (s *Server) agentRegister(w http.ResponseWriter, r *http.Request) {
 	principal := s.accessPrincipal(r)
 	if principal == "" || r.Method != http.MethodPost {
@@ -61,12 +75,13 @@ func (s *Server) agentRegister(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	body.ID = "agt_" + random()[:16]
-	body.Owner = fakeOwner
-	s.agents[body.ID] = &body
+	created := body
+	created.ID = "agt_" + random()[:16]
+	created.Owner = fakeOwner
+	s.agents[created.ID] = &created
 	s.mu.Unlock()
 	w.WriteHeader(201)
-	_ = json.NewEncoder(w).Encode(body)
+	_ = json.NewEncoder(w).Encode(created)
 }
 
 func (s *Server) agentList(w http.ResponseWriter, r *http.Request) {
@@ -95,7 +110,7 @@ func (s *Server) agentRoute(w http.ResponseWriter, r *http.Request) {
 			From, OnBehalfOf, Thread string
 			Message                  json.RawMessage
 		}
-		if json.NewDecoder(r.Body).Decode(&body) != nil || body.From == "" || body.Thread == "" || len(body.Message) == 0 {
+		if json.NewDecoder(r.Body).Decode(&body) != nil || body.From == "" || !strings.HasPrefix(body.Thread, "thr_") || len(body.Message) == 0 {
 			problem(w, 400, "agents.invalid_task")
 			return
 		}
@@ -116,7 +131,7 @@ func (s *Server) agentRoute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.WriteHeader(201)
-		_ = json.NewEncoder(w).Encode(task)
+		_ = json.NewEncoder(w).Encode(map[string]any{"task": task, "delivery": map[string]any{"delivered": true}})
 		return
 	}
 	if len(parts) >= 2 && parts[0] == "tasks" {
@@ -130,7 +145,7 @@ func (s *Server) agentRoute(w http.ResponseWriter, r *http.Request) {
 		if len(parts) == 2 && r.Method == http.MethodGet {
 			copy := *task
 			s.mu.Unlock()
-			_ = json.NewEncoder(w).Encode(copy)
+			_ = json.NewEncoder(w).Encode(map[string]any{"task": copy})
 			return
 		}
 		if len(parts) == 3 && parts[2] == "result" && r.Method == http.MethodPost && principal == task.toMachine {
@@ -147,7 +162,7 @@ func (s *Server) agentRoute(w http.ResponseWriter, r *http.Request) {
 			task.Result = body.Result
 			copy := *task
 			s.mu.Unlock()
-			_ = json.NewEncoder(w).Encode(copy)
+			_ = json.NewEncoder(w).Encode(map[string]any{"task": copy})
 			return
 		}
 		s.mu.Unlock()

@@ -29,8 +29,8 @@ type fakeAccessRequest struct {
 	Scopes          []string `json:"scopes"`
 	Reason          string   `json:"reason,omitempty"`
 	Status          string   `json:"status"`
-	RequestedAt     string   `json:"requested_at"`
-	ExpiresAt       string   `json:"expires_at"`
+	RequestedAt     string   `json:"asked_at"`
+	ExpiresAt       string   `json:"pending_until"`
 	DurationSeconds int64    `json:"duration_seconds"`
 }
 
@@ -74,7 +74,7 @@ func (s *Server) registerAccessRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/link/self/access-requests/", s.accessRequestAction)
 	mux.HandleFunc("/api/v1/link/self/access-grants", s.accessGrants)
 	mux.HandleFunc("/api/v1/link/self/access-grants/", s.accessGrantAction)
-	mux.HandleFunc("/api/v1/link/self/machines", s.accessMachines)
+	mux.HandleFunc("/api/v1/link/self/send/targets", s.accessMachines)
 }
 
 func (s *Server) accessPrincipal(r *http.Request) string {
@@ -124,13 +124,13 @@ func (s *Server) accessRequests(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"requests": list})
 	case http.MethodPost:
 		var body struct {
-			Machine   string   `json:"machine"`
+			Target    string   `json:"target"`
 			Scopes    []string `json:"scopes"`
 			Duration  int64    `json:"duration_seconds"`
 			Reason    string   `json:"reason"`
 			FromAgent string   `json:"from_agent"`
 		}
-		if json.NewDecoder(r.Body).Decode(&body) != nil || body.Machine == principal || body.Duration < 0 || body.Duration > 30*86400 || len(body.Scopes) == 0 {
+		if json.NewDecoder(r.Body).Decode(&body) != nil || body.Target == principal || body.Duration < 0 || body.Duration > 30*86400 || len(body.Scopes) == 0 {
 			problem(w, 400, "access.invalid_request")
 			return
 		}
@@ -145,21 +145,21 @@ func (s *Server) accessRequests(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		s.mu.Lock()
-		_, ok := s.machines[body.Machine]
+		_, ok := s.machines[body.Target]
 		if !ok {
 			s.mu.Unlock()
 			problem(w, 404, "access.machine_not_found")
 			return
 		}
 		now := time.Now().UTC()
-		req := &fakeAccessRequest{ID: "req_" + random()[:16], FromPrincipal: principal, ToPrincipal: body.Machine,
+		req := &fakeAccessRequest{ID: "req_" + random()[:16], FromPrincipal: principal, ToPrincipal: body.Target,
 			FromOwner: fakeOwner, ToOwner: fakeOwner, FromAgent: body.FromAgent, Scopes: body.Scopes, Reason: body.Reason, Status: "pending",
 			FromMachineName: "laptop", FromOwnerName: "Alex",
 			RequestedAt: now.Format(time.RFC3339), ExpiresAt: now.Add(24 * time.Hour).Format(time.RFC3339), DurationSeconds: body.Duration}
 		s.requests[req.ID] = req
 		s.mu.Unlock()
 		w.WriteHeader(201)
-		_ = json.NewEncoder(w).Encode(req)
+		_ = json.NewEncoder(w).Encode(map[string]any{"request": req})
 	default:
 		w.WriteHeader(405)
 	}
@@ -177,7 +177,7 @@ func (s *Server) accessRequestAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Approved bool     `json:"approved"`
+		Approved bool     `json:"approve"`
 		Scopes   []string `json:"scopes"`
 		Duration int64    `json:"duration_seconds"`
 	}
@@ -224,10 +224,10 @@ func (s *Server) accessRequestAction(w http.ResponseWriter, r *http.Request) {
 		value := now.Add(time.Duration(body.Duration) * time.Second).Format(time.RFC3339)
 		expiry = &value
 	}
-	grant := &fakeAccessGrant{ID: "gra_" + random()[:16], RequestID: req.ID, FromPrincipal: req.FromPrincipal, ToPrincipal: req.ToPrincipal,
+	grant := &fakeAccessGrant{ID: "grt_" + random()[:16], RequestID: req.ID, FromPrincipal: req.FromPrincipal, ToPrincipal: req.ToPrincipal,
 		Scopes: body.Scopes, ApprovedBy: fakeOwner, CreatedAt: now.Format(time.RFC3339), ExpiresAt: expiry}
 	s.grants[grant.ID] = grant
-	_ = json.NewEncoder(w).Encode(map[string]any{"id": req.ID, "status": req.Status, "grant_id": grant.ID})
+	_ = json.NewEncoder(w).Encode(map[string]any{"request": req, "grant": grant})
 }
 
 func (s *Server) accessGrants(w http.ResponseWriter, r *http.Request) {
@@ -249,9 +249,6 @@ func (s *Server) accessGrants(w http.ResponseWriter, r *http.Request) {
 		raw, _ := json.Marshal(g)
 		var row map[string]any
 		_ = json.Unmarshal(raw, &row)
-		if g.FromPrincipal == principal && g.RevokedAt == nil {
-			row["grant_token"] = s.grantToken(g)
-		}
 		list = append(list, row)
 	}
 	s.mu.Unlock()
@@ -287,8 +284,22 @@ func (s *Server) accessGrantAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v1/link/self/access-grants/"), "/")
-	if r.Method != http.MethodPost || len(parts) != 2 || parts[1] != "revoke" {
+	if r.Method != http.MethodPost || len(parts) != 2 || (parts[1] != "revoke" && parts[1] != "token") {
 		w.WriteHeader(404)
+		return
+	}
+	if parts[1] == "token" {
+		s.mu.Lock()
+		g := s.grants[parts[0]]
+		if g == nil || g.FromPrincipal != principal || !s.GrantActiveLocked(g) {
+			s.mu.Unlock()
+			problem(w, 403, "access.grant_not_found")
+			return
+		}
+		token := s.grantToken(g)
+		copy := *g
+		s.mu.Unlock()
+		_ = json.NewEncoder(w).Encode(map[string]any{"grant": copy, "grant_token": token})
 		return
 	}
 	s.mu.Lock()
@@ -306,6 +317,19 @@ func (s *Server) accessGrantAction(w http.ResponseWriter, r *http.Request) {
 		s.bot.RevokeGrant(id, to)
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "status": "revoked"})
+}
+
+func (s *Server) GrantActiveLocked(g *fakeAccessGrant) bool {
+	if g.RevokedAt != nil {
+		return false
+	}
+	if g.ExpiresAt != nil {
+		at, err := time.Parse(time.RFC3339, *g.ExpiresAt)
+		if err != nil || !at.After(time.Now()) {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) accessMachines(w http.ResponseWriter, r *http.Request) {

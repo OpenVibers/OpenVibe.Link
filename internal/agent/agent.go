@@ -163,9 +163,12 @@ type Agent struct {
 	grantVerifier *access.Verifier
 	accessClient  *access.Client
 	localAgents   map[string]localAgent
-	relayWaiting  map[string]chan protocol.MachineReply
-	relayTargets  map[string]string
+	relayWaiting  map[string]chan relayReply
+	relayOpening  map[string]chan relayOpened
+	relaySessions map[string]*machineRelay
 	relaySources  map[string]relaySource
+	agentResults  map[string]chan string
+	remoteJobs    map[string]string
 	grantedSend   *send.LAN
 }
 
@@ -211,7 +214,7 @@ func New(opt Options) (*Agent, error) {
 	panelClipboard, panelAutoAccept := loadPanelSettings(opt.Paths.StateDir)
 	n := &Agent{opt: opt, log: opt.Log, latch: latch, dedup: safety.NewDedup(4096, 10*time.Minute),
 		jobs: newJobs(nil), telemetry: map[string]map[string]any{}, telemMS: 500, approvals: map[string]Approval{}, inputs: map[string]bool{},
-		panelOff: panelOff, panelFirst: panelFirst, panelClipboard: panelClipboard, panelAutoAccept: panelAutoAccept, localAgents: map[string]localAgent{}, relayWaiting: map[string]chan protocol.MachineReply{}, relayTargets: map[string]string{}, relaySources: map[string]relaySource{}}
+		panelOff: panelOff, panelFirst: panelFirst, panelClipboard: panelClipboard, panelAutoAccept: panelAutoAccept, localAgents: loadLocalAgents(opt.Paths.StateDir), relayWaiting: map[string]chan relayReply{}, relayOpening: map[string]chan relayOpened{}, relaySessions: map[string]*machineRelay{}, relaySources: map[string]relaySource{}, agentResults: map[string]chan string{}, remoteJobs: map[string]string{}}
 	home, _ := os.UserHomeDir()
 	n.codes = loadCodesTasks(opt.Paths.StateDir, home, opt.Log)
 	n.codesAgents.fn = opt.CodesAgents
@@ -466,12 +469,25 @@ func (n *Agent) Frame(f protocol.Frame) {
 		if err := n.receiveAgentTask(m); err != nil {
 			n.log.Warn("agent task refused", "err", err)
 		}
+	case protocol.AgentTaskResultAck:
+		n.agentResultAck(m.TaskID, "")
 	case protocol.AccessRevoked:
 		n.revokeAccess(m)
-	case protocol.MachineRelay:
-		go n.receiveMachineRelay(m)
-	case protocol.MachineReply:
-		n.receiveMachineReply(m)
+	case protocol.RelayOpened:
+		// Store the session before the next frame is read: relay.frame may follow
+		// on the same socket, and its goroutine must find the session.
+		n.receiveRelayOpened(m)
+	case protocol.RelayFrame:
+		go n.receiveRelayFrame(m)
+	case protocol.RelayClosed:
+		n.receiveRelayClosed(m)
+	case protocol.Error:
+		if strings.HasPrefix(m.Code, "bot.relay_") || strings.HasPrefix(m.Code, "bot.agent_task_") {
+			n.failRelayWaiters(m.Code + ": " + m.Detail)
+		}
+		if strings.HasPrefix(m.Code, "bot.agent_task_") {
+			n.failAgentResults(m.Code + ": " + m.Detail)
+		}
 	}
 }
 
