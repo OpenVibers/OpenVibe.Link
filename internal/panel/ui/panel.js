@@ -32,10 +32,11 @@
         $('[data-lk-agents]').replaceChildren.apply($('[data-lk-agents]'), agents.map(function (a) {
             var li = el('li', 'lk-agent'); li.setAttribute('data-state', a.state || 'missing');
             li.append(document.createTextNode(a.name || a.id), el('small', '', AGENT_STATE[a.state] || a.state || ''));
-            if (a.state === 'signin' && a.hint) {
-                var code = el('code', '', a.hint); var copy = el('button', '', 'Copy'); copy.type = 'button';
-                copy.setAttribute('aria-label', 'Copy ' + a.hint);
-                copy.addEventListener('click', function () { if (navigator.clipboard) navigator.clipboard.writeText(a.hint).then(function () { copy.textContent = 'Copied'; }); });
+            var setup = (a.state === 'signin' && a.hint) || (a.state === 'missing' && a.install) || '';
+            if (setup) {
+                var code = el('code', '', setup); var copy = el('button', '', 'Copy'); copy.type = 'button';
+                copy.setAttribute('aria-label', 'Copy ' + setup);
+                copy.addEventListener('click', function () { if (navigator.clipboard) navigator.clipboard.writeText(setup).then(function () { copy.textContent = 'Copied'; }); });
                 li.append(code, copy);
             }
             return li;

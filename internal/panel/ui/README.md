@@ -57,7 +57,8 @@ Every key is optional. A section with nothing in it is left out; the window neve
 
 - `machine.id` is the machine's own id after pairing, so "New task on this computer" can preselect it.
 - `running[].kind` is `agent`, `desk`, `share` or `model`.
-- `codes.agents[].state` is `ready`, `signin` (then `hint` is the CLI's own sign-in command) or `missing`.
+- `codes.agents[].state` is `ready`, `signin` (then `hint` is the CLI's own sign-in command) or `missing`
+  (then `install` is the command that installs it, when Link knows one). The window shows the command to copy.
 - `codes.tasks[]` are the Codes jobs this worker ran today: `state` is `running`, `waiting`, `done`, `failed` or
   `stopped`; `folder` shows the home directory as `~`; `url` is only ever `https://openvibe.codes/tasks/<id>`.
 - `machine.needs_you` counts what waits for the person: it puts a dot on the ring.

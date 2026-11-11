@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -44,24 +45,31 @@ const (
 
 // codesAgentSpec is one coding-agent CLI on the machine, and how OpenVibe.Codes finds it: the binary on PATH, the
 // login file its CLI writes, and the command that signs it in. A CLI with no login file (dsh reads its provider
-// settings from the machine) is ready once its binary is there.
+// settings from the machine) is ready once its binary is there. Install is the command that installs the CLI, shown
+// when it is missing (InstallWindows on Windows); empty when Link knows no installer for it.
 type codesAgentSpec struct {
-	ID    string
-	Name  string
-	Bin   string
-	Login string
-	Hint  string
+	ID             string
+	Name           string
+	Bin            string
+	Login          string
+	Hint           string
+	Install        string
+	InstallWindows string
 }
 
 // codesAgentSpecs are the CLIs the desktop's Codes module drives (domains plan §13.1).
 var codesAgentSpecs = []codesAgentSpec{
-	{"claude-code", "Claude Code", "claude", ".claude/.credentials.json", "claude auth login"},
-	{"codex", "Codex", "codex", ".codex/auth.json", "codex login"},
-	{"opencode", "OpenCode", "opencode", ".local/share/opencode/auth.json", "opencode auth login"},
+	{ID: "claude-code", Name: "Claude Code", Bin: "claude", Login: ".claude/.credentials.json", Hint: "claude auth login"},
+	{ID: "codex", Name: "Codex", Bin: "codex", Login: ".codex/auth.json", Hint: "codex login"},
+	{ID: "opencode", Name: "OpenCode", Bin: "opencode", Login: ".local/share/opencode/auth.json", Hint: "opencode auth login"},
 	// Gemini CLI signs in from inside the CLI with /auth; `gemini` is the command that starts it.
-	{"gemini", "Gemini CLI", "gemini", ".gemini/oauth_creds.json", "gemini"},
+	{ID: "gemini", Name: "Gemini CLI", Bin: "gemini", Login: ".gemini/oauth_creds.json", Hint: "gemini"},
 	// dsh keeps its model settings in its profile, not in a plan login: installed is as much as is known here.
-	{"dsh", "DeepSeek Harness", "dsh", "", ""},
+	{ID: "dsh", Name: "DeepSeek Harness", Bin: "dsh"},
+	// Muse Code keeps the person's own plan session in auth.json under providers.meta (Meta's installer and login;
+	// Meta's quickstart, checked 2026-11-10). A Codes or Actor job on this machine runs it with contributor mode off.
+	{ID: "muse", Name: "Muse Code", Bin: "muse", Login: ".config/muse/auth.json", Hint: "muse login",
+		Install: "curl -fsSL https://dev.meta.ai/install.sh | sh", InstallWindows: "irm https://dev.meta.ai/install.ps1 | iex"},
 }
 
 // codesProbe is what detection needs from the machine, so a test can fake it.
@@ -105,6 +113,7 @@ func detectCodesAgents(p codesProbe) []panel.CodesAgent {
 			}
 		}
 		if bin == "" {
+			a.Install = codesInstall(spec)
 			out = append(out, a)
 			continue
 		}
@@ -143,7 +152,22 @@ func codesSignedIn(raw []byte) bool {
 	if nested, ok := login["claudeAiOauth"].(map[string]any); ok && usableSession(nested) {
 		return true
 	}
+	// Muse Code nests one session per provider: { "providers": { "meta": { "access_token": … } } }. The plan that
+	// runs a job is Meta's, so a third-party provider's key does not count as signed in.
+	if providers, ok := login["providers"].(map[string]any); ok {
+		if meta, ok := providers["meta"].(map[string]any); ok && usableSession(meta) {
+			return true
+		}
+	}
 	return false
+}
+
+// codesInstall is the command that installs a missing CLI on this OS, or empty when Link knows none.
+func codesInstall(spec codesAgentSpec) string {
+	if runtime.GOOS == "windows" {
+		return spec.InstallWindows
+	}
+	return spec.Install
 }
 
 func usableSession(login map[string]any) bool {
@@ -205,7 +229,7 @@ func openCodeAuth(bin string) (signedIn, known bool) {
 	return false, true
 }
 
-// codesAgentsCache keeps the last probe, so a window polled every three seconds does not run five binaries each time.
+// codesAgentsCache keeps the last probe, so a window polled every three seconds does not run every binary each time.
 type codesAgentsCache struct {
 	mu     sync.Mutex
 	at     time.Time

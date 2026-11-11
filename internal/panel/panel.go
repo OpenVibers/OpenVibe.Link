@@ -105,13 +105,15 @@ type Activity struct {
 	Text string    `json:"text"`
 }
 
-// CodesAgent is one coding-agent CLI on this computer: ready, needs signing in (Hint is the command), or missing.
+// CodesAgent is one coding-agent CLI on this computer: ready, needs signing in (Hint is the command), or missing
+// (Install is the command that installs it, when Link knows one).
 type CodesAgent struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	State   string `json:"state"`
 	Version string `json:"version,omitempty"`
 	Hint    string `json:"hint,omitempty"`
+	Install string `json:"install,omitempty"`
 }
 
 // CodesTask is one Codes task that runs, or ran, on this computer.

@@ -67,6 +67,63 @@ func TestCodesLoginFileWithoutASessionIsSignIn(t *testing.T) {
 		!codesSignedIn([]byte(`{"claudeAiOauth":{"accessToken":"x"}}`)) {
 		t.Fatal("a usable login was not recognised")
 	}
+	// Muse Code nests its plan session under providers.meta; an empty providers map is no session.
+	if !codesSignedIn([]byte(`{"schema_version":1,"providers":{"meta":{"access_token":"not-a-real-token","subs_active":true}}}`)) {
+		t.Fatal("a Muse login was not recognised")
+	}
+	if codesSignedIn([]byte(`{"schema_version":1,"providers":{"meta":{}}}`)) || codesSignedIn([]byte(`{"schema_version":1,"providers":{}}`)) {
+		t.Fatal("an empty Muse providers map was taken as signed in")
+	}
+	if codesSignedIn([]byte(`{"schema_version":1,"providers":{"openai":{"api_key":"sk-not-meta"}}}`)) {
+		t.Fatal("a third-party provider's key was taken as a Muse plan sign-in")
+	}
+}
+
+// Muse Code in the window: ready with its version when its binary and login are there, the login command when it is
+// installed but signed out, and the installer when it is missing.
+func TestDetectCodesAgentsSeesMuseCode(t *testing.T) {
+	home := t.TempDir()
+	login := filepath.Join(home, ".config", "muse", "auth.json")
+	if err := os.MkdirAll(filepath.Dir(login), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(login, []byte(`{"schema_version":1,"providers":{"meta":{"access_token":"not-a-real-token"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	probe := codesProbe{
+		Home:     home,
+		LookPath: func(bin string) (string, error) { return "/usr/bin/" + bin, nil },
+		ReadFile: os.ReadFile,
+		Version:  func(string) string { return "1.4.15" },
+	}
+	got := map[string]panel.CodesAgent{}
+	for _, a := range detectCodesAgents(probe) {
+		got[a.ID] = a
+	}
+	if a := got["muse"]; a.Name != "Muse Code" || a.State != "ready" || a.Version != "1.4.15" || a.Hint != "" || a.Install != "" {
+		t.Fatalf("muse ready: %+v", a)
+	}
+	if err := os.WriteFile(login, []byte(`{"schema_version":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range detectCodesAgents(probe) {
+		got[a.ID] = a
+	}
+	if a := got["muse"]; a.State != "signin" || a.Hint != "muse login" || a.Install != "" {
+		t.Fatalf("muse signin: %+v", a)
+	}
+	probe.LookPath = func(bin string) (string, error) {
+		if bin == "muse" {
+			return "", errors.New("not on PATH")
+		}
+		return "/usr/bin/" + bin, nil
+	}
+	for _, a := range detectCodesAgents(probe) {
+		got[a.ID] = a
+	}
+	if a := got["muse"]; a.State != "missing" || a.Hint != "" || !strings.Contains(a.Install, "dev.meta.ai") {
+		t.Fatalf("muse missing: %+v", a)
+	}
 }
 
 func TestCodesFolderUsesTildeAndTheTitleIsTheFirstLine(t *testing.T) {
