@@ -152,12 +152,11 @@ func codesSignedIn(raw []byte) bool {
 	if nested, ok := login["claudeAiOauth"].(map[string]any); ok && usableSession(nested) {
 		return true
 	}
-	// Muse Code nests one session per provider: { "providers": { "meta": { "access_token": … } } }.
+	// Muse Code nests one session per provider: { "providers": { "meta": { "access_token": … } } }. The plan that
+	// runs a job is Meta's, so a third-party provider's key does not count as signed in.
 	if providers, ok := login["providers"].(map[string]any); ok {
-		for _, p := range providers {
-			if nested, ok := p.(map[string]any); ok && usableSession(nested) {
-				return true
-			}
+		if meta, ok := providers["meta"].(map[string]any); ok && usableSession(meta) {
+			return true
 		}
 	}
 	return false

@@ -74,6 +74,9 @@ func TestCodesLoginFileWithoutASessionIsSignIn(t *testing.T) {
 	if codesSignedIn([]byte(`{"schema_version":1,"providers":{"meta":{}}}`)) || codesSignedIn([]byte(`{"schema_version":1,"providers":{}}`)) {
 		t.Fatal("an empty Muse providers map was taken as signed in")
 	}
+	if codesSignedIn([]byte(`{"schema_version":1,"providers":{"openai":{"api_key":"sk-not-meta"}}}`)) {
+		t.Fatal("a third-party provider's key was taken as a Muse plan sign-in")
+	}
 }
 
 // Muse Code in the window: ready with its version when its binary and login are there, the login command when it is
