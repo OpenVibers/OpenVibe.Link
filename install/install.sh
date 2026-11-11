@@ -38,7 +38,7 @@
 #                    runs as root, which run_as and the egress need), and the OpenVibe.Codes job runner is added when
 #                    Node.js 20+ is installed system-wide. Linux only. docs/worker.md has the details.
 #   --plan-logins    with --worker (implied): name the coding tools' own login files that are already signed in on this
-#                    computer (Claude Code, Codex, OpenCode, Command Code) as the worker's plan logins, so a Codes job
+#                    computer (Claude Code, Codex, OpenCode, Command Code, Muse Code) as the worker's plan logins, so a Codes job
 #                    uses the plan you signed in for. A tool that is not installed or not signed in is skipped with a
 #                    line saying how to sign it in. The installer never reads, copies or prints a login's content, and
 #                    sets the Link service's HOME to your home (the logins must sit under it). Linux only.
@@ -263,6 +263,7 @@ claude-code|claude|.claude/.credentials.json|claude
 codex|codex|.codex/auth.json|codex login
 opencode|opencode|.local/share/opencode/auth.json|opencode auth login
 command-code|cmd|.commandcode/auth.json|cmd login
+muse|muse|.config/muse/auth.json|muse login
 EOF
 }
 
@@ -1173,16 +1174,17 @@ if [ "$WORKER" = 1 ]; then
 			say "plan logins: $_named named for your jobs; each job sees them read-only, only while it runs"
 		else
 			say "plan logins: none named yet: sign in to the coding tools you use with their own login, then run this installer"
-			say "  again with --plan-logins (Claude Code: claude; Codex: codex login; OpenCode: opencode auth login; Command Code: cmd login)"
+			say "  again with --plan-logins (Claude Code: claude; Codex: codex login; OpenCode: opencode auth login; Command Code: cmd login; Muse Code: muse login)"
 		fi
-		if [ "$_named" -lt 4 ]; then
+		if [ "$_named" -lt 5 ]; then
 			say "  the line above each skipped tool has its own login command; run it, then run this installer again with --plan-logins"
 		fi
 	fi
 	say "the job worker is on: jobs run as openvibe-job in the worker's sandbox, with public egress"
 	say "add your agent keys (DEEPSEEK_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, and GITHUB_TOKEN to push branches) to"
 	say "  worker.functions[openvibe-codes].env in $CONF/config.json, and install agent CLIs system-wide"
-	say "  (sudo npm install -g @anthropic-ai/claude-code @openai/codex), then: sudo systemctl restart openvibe-link"
+	say "  (sudo npm install -g @anthropic-ai/claude-code @openai/codex; Muse Code: curl -fsSL https://dev.meta.ai/install.sh | sh,"
+	say "  then muse login), then: sudo systemctl restart openvibe-link"
 fi
 
 # ---- the Adeept kit's stock server: never run it (fixed admin:123456 login on 0.0.0.0:8888, MJPEG on :5000) ----

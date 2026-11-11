@@ -130,6 +130,12 @@
         "name": "DeepSeek Harness",
         "state": "ready",
         "version": "0.2.1"
+      },
+      {
+        "id": "muse",
+        "name": "Muse Code",
+        "state": "missing",
+        "install": "curl -fsSL https://dev.meta.ai/install.sh | sh"
       }
     ],
     "tasks": [

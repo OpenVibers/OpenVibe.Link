@@ -37,6 +37,13 @@ line, as git's credential store writes them), install any agent CLIs system-wide
 openvibe.codes/run then clones the repository inside the job's sandbox, runs the agents there, and hands back the
 summary, the changed files and the patch; it never pushes to the branch it started from.
 
+Muse Code runs in the same sandbox, on the person's own Muse sign-in: install it
+(`curl -fsSL https://dev.meta.ai/install.sh | sh`, then `muse login` with the person's own plan), and name its login
+file (`~/.config/muse/auth.json`) with the installer's `--plan-logins`, so a job sees it read-only while it runs.
+A job runs Muse with contributor mode off: Meta does not train on the run. (A `META_API_KEY` in the runner's `env`
+would bill the run to that key ahead of the plan: leave it unset for plan billing.) Link's window (the Codes section)
+shows whether Muse Code is installed and signed in on this computer, with the command that sets it up.
+
 Inside the sandbox nothing of yours is reachable (no home folder, no git sign-in), so a private repository clones only
 with a token from this `env`. Codes CLI 0.6.1 and later sends it to git as an `Authorization` header for that host
 alone, through `GIT_CONFIG_*` variables: it is never on a command line, in the clone's remote URL or in its
@@ -411,8 +418,8 @@ never change it), at the same path it has under the owner's home. The copy goes 
 own directory and disappears when the job ends. Its content is never logged, never uploaded and never part of a result.
 
 The installer's `--plan-logins` does this on Linux: it names the files that are already there
-(`~/.claude/.credentials.json`, `~/.codex/auth.json`, `~/.local/share/opencode/auth.json` and
-`~/.commandcode/auth.json`), skips a tool whose login file is missing or empty with a line giving that tool's own login
+(`~/.claude/.credentials.json`, `~/.codex/auth.json`, `~/.local/share/opencode/auth.json`,
+`~/.commandcode/auth.json` and `~/.config/muse/auth.json`), skips a tool whose login file is missing or empty with a line giving that tool's own login
 command, and sets the service's `HOME` to your home. It only looks at whether each file is there: its content is
 never read, copied or printed. Sign a tool in with its own login, then run the installer again with `--plan-logins` to
 name the new file.
