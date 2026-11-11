@@ -293,7 +293,11 @@ func formatAccessRow(row map[string]any) string {
 	id, _ := row["id"].(string)
 	when := ""
 	if expiry, _ := row["expires_at"].(string); expiry != "" {
-		when = " · until " + expiry
+		when = " · " + accessLeft(expiry)
+	} else if pending, _ := row["pending_until"].(string); pending != "" {
+		when = " · waiting"
+	} else if value, ok := row["expires_at"]; ok && value == nil {
+		when = " · until you take it back"
 	}
 	return name + " · " + scopeWords(scopes) + when + " · " + id
 }
@@ -411,6 +415,32 @@ func sameScopes(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func accessLeft(expiry string) string {
+	at, err := time.Parse(time.RFC3339, expiry)
+	if err != nil {
+		return "until " + expiry
+	}
+	left := time.Until(at)
+	if left <= 0 {
+		return "ended"
+	}
+	if left < time.Minute {
+		left = time.Minute
+	}
+	left = left.Round(time.Minute)
+	days := int(left / (24 * time.Hour))
+	hours := int((left % (24 * time.Hour)) / time.Hour)
+	minutes := int((left % time.Hour) / time.Minute)
+	switch {
+	case days > 0:
+		return fmt.Sprintf("%dd %dh left", days, hours)
+	case hours > 0:
+		return fmt.Sprintf("%dh %dm left", hours, minutes)
+	default:
+		return fmt.Sprintf("%dm left", minutes)
+	}
 }
 
 func validScope(s string) bool {

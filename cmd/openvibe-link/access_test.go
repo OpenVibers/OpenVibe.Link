@@ -12,14 +12,14 @@ import (
 func TestAccessListShowsDesignStates(t *testing.T) {
 	value := map[string]any{
 		"requests": map[string]any{"requests": []any{map[string]any{"id": "req_123", "from_principal": "lnk_a", "to_principal": "lnk_b", "status": "pending", "scopes": []any{"screen", "desk"}}}},
-		"grants":   map[string]any{"grants": []any{map[string]any{"id": "gra_123", "from_principal": "lnk_a", "to_principal": "lnk_b", "scopes": []any{"send"}}}},
+		"grants":   map[string]any{"grants": []any{map[string]any{"id": "gra_123", "from_principal": "lnk_a", "to_principal": "lnk_b", "scopes": []any{"send"}, "expires_at": nil}}},
 	}
 	var out bytes.Buffer
 	if err := printAccessList(&out, value); err != nil {
 		t.Fatal(err)
 	}
 	got := out.String()
-	for _, part := range []string{"Waiting\n", "Watch the screen and use a private desk", "Allowed\n", "Send you files", "Ended\n  None"} {
+	for _, part := range []string{"Waiting\n", "Watch the screen and use a private desk", "Allowed\n", "Send you files", "until you take it back", "Ended\n  None"} {
 		if !strings.Contains(got, part) {
 			t.Fatalf("missing %q in %q", part, got)
 		}
