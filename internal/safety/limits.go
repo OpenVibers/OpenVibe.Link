@@ -159,6 +159,14 @@ func (l Limits) Clamp(kind string, value json.RawMessage) (json.RawMessage, erro
 			}
 			v[key] = f
 		}
+	case protocol.KindHeadlight:
+		// Explicit, never a toggle: exactly {"on": true|false}.
+		if len(v) != 1 {
+			return nil, badValue("headlight takes only {on: true|false}")
+		}
+		if _, ok := v["on"].(bool); !ok {
+			return nil, badValue("headlight on must be true or false")
+		}
 	}
 	out, err := json.Marshal(v)
 	if err != nil {

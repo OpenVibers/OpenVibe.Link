@@ -515,7 +515,8 @@ func (s *Server) device(w http.ResponseWriter, r *http.Request) {
 			_ = c.SendRaw(b)
 		}
 	} else {
-		_ = c.Send(protocol.Hello{SessionID: "sess_" + token()[:12], DeviceID: dev, RobotIDs: []string{c.RobotID},
+		c.SessionID = "sess_" + token()[:12]
+		_ = c.Send(protocol.Hello{SessionID: c.SessionID, DeviceID: dev, RobotIDs: []string{c.RobotID},
 			ServerTime: time.Now().UTC().Format(time.RFC3339Nano)})
 		_ = c.Send(cfg)
 	}
@@ -538,18 +539,19 @@ func (s *Server) NextConn(timeout time.Duration) (*Conn, error) {
 
 // Conn is one device connection as the server sees it.
 type Conn struct {
-	DeviceID string
-	RobotID  string
-	srv      *Server
-	ws       *websocket.Conn
-	wmu      sync.Mutex
-	seq      uint64
-	recv     chan protocol.Frame
-	done     chan struct{}
-	autoAck  atomic.Bool
-	muted    atomic.Bool
-	frames   []protocol.Frame
-	fmu      sync.Mutex
+	DeviceID  string
+	RobotID   string
+	SessionID string // the hello session this fake Bot minted, for provenance tests
+	srv       *Server
+	ws        *websocket.Conn
+	wmu       sync.Mutex
+	seq       uint64
+	recv      chan protocol.Frame
+	done      chan struct{}
+	autoAck   atomic.Bool
+	muted     atomic.Bool
+	frames    []protocol.Frame
+	fmu       sync.Mutex
 }
 
 // Send writes one frame to the device.
@@ -617,6 +619,26 @@ func (c *Conn) sendAt(ts int64, m protocol.Message) error {
 	c.wmu.Lock()
 	defer c.wmu.Unlock()
 	c.seq++
+	// A command that carries Bot's provenance (a headlight) is stamped like Bot does when it is sent: the
+	// connection's session, this frame's seq and ts, and the original expiry in ExpiresAtMS (300 ms later unless
+	// the test set one). Tests can therefore set an empty CommandProvenance and still exercise the real frame.
+	if cmd, ok := m.(protocol.Command); ok && cmd.Provenance != nil {
+		p := *cmd.Provenance
+		if p.Session == "" {
+			p.Session = c.SessionID
+		}
+		if p.Seq == 0 {
+			p.Seq = c.seq
+		}
+		if p.IssuedAtMS == 0 {
+			p.IssuedAtMS = ts
+		}
+		if p.ExpiresAtMS == 0 {
+			p.ExpiresAtMS = ts + 300
+		}
+		cmd.Provenance = &p
+		m = cmd
+	}
 	b, err := protocol.Encode(c.seq, ts, m)
 	if err != nil {
 		return err

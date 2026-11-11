@@ -40,12 +40,64 @@ The driver is a Link plugin ([plugins.md](plugins.md)): JSON lines over stdin an
 |---|---|---|
 | `drive` | `{"throttle": -1..1, "steer": -1..1}` | tracks: left = throttle + steer, right = throttle − steer (steer > 0 turns right), normalised so neither exceeds 1 |
 | `actuator` | `{"name": "head", "value": -1..1}` | head tilt, -1 fully down, 1 fully up |
+| `headlight` | `{"on": true}` / `{"on": false}` | the headlights, explicit on or off; not motion, never a toggle |
 | `halt` | — | stop everything now; it always passes, even while stopped |
 
 Every `drive` has a `deadline_ms`. The tracks must stop when it passes without a newer command (the panel re-sends a
 held control every 150 ms). With the Python runtime (`openvibe_plugin`, [plugins/sdk](../plugins/sdk)) set
 `motion_kinds = {"drive"}`, and it enforces the deadline, the 1 s heartbeat, stdin closing, `stop`, `estop` and
 `halt` for you.
+
+## Headlights
+
+The owner and the People Operators the owner allows get one labelled Headlights button beside the head slider on the
+LOOI panel (the full panel and the channel's Robot tab; never the overlay or the one-row controls, and never an
+anonymous viewer or a plain watcher). A press sends Bot `{"kind":"headlight","value":{"on":true|false}}`; Bot's gate
+decides the role and stamps the trusted fields, and the browser never sends a subject, role, deadline or provenance.
+
+What the driver receives from OpenVibe Link (the note's exact non-motion envelope; `deadline_ms` and
+`expires_at_mono_ns` are filled by the Link at write time):
+
+```json
+{
+  "op": "command",
+  "id": "cmd_…",
+  "kind": "headlight",
+  "value": {"on": true},
+  "deadline_ms": 250,
+  "expires_at_mono_ns": 123456789012345,
+  "operator": {"subject": "usr_…", "role": "owner"},
+  "turn_epoch": 1738065600100,
+  "provenance": {
+    "session": "sess_…",
+    "seq": 7,
+    "issued_at_ms": 1738065600000,
+    "expires_at_ms": 1738065600300,
+    "clock_uncertainty_ms": 12
+  }
+}
+```
+
+- The numbers are the contract: 300 ms original lifetime, a deadline of at most 250 ms, and at least 200 ms of the
+  original lifetime left when the Link reads the line (Link nacks `expired` otherwise). It is not a motion kind and
+  must never renew a drive/head deadline.
+- At most two are accepted per rolling second on the machine, shared with the owner's local control; Link/plugin
+  must not retry automatically.
+- An accepted command is an `ack` with `data` `{"stage":"headlight_pending","admitted":true}`: accepted, **not
+  confirmed**. A busy or rate refusal is an `ack` with `data` `{"stage":"headlight_refused","admitted":false}`: the
+  panel says "Busy, try again in a moment." and keeps its displayed state. A `nack` is a rejection and the panel
+  says "The robot refused: <reason>".
+- Telemetry: `sensors.p7_headlight` {`commanded`: `true`/`false`/`null`, `pending`: boolean,
+  `physical_state_verified`: `false`}. `commanded` is what was asked, not what the robot did; the panel labels null
+  Unknown, shows Turning on…/Turning off… while pending, and keeps "Not confirmed on the robot" beside the state.
+- Access is Bot's, not the driver's: the owner, and People Operators when the owner's allow list gives them
+  headlights. Remote light also needs the driver's own preconditions (its Go Live enrollment, ARMED, STOP clear and
+  no pending neutral/head work). It grants no motion and nothing while the robot is stopped.
+
+The Node and panel route is exercised in Link's tests with a fake Bot and a fake headlight driver; the real
+Bluetooth frames and the physical state are still unverified on a robot. The community information FED2 03=ON /
+00=OFF is not verified by this contract. Test on the robot: the physical light changes, STOP/busy leave it as it was,
+and a lost Link never leaves it on.
 
 The deadline is the original one on every OS, Windows included (Link 0.30): the Link passes the instant a command
 expires on the clock it shares with the driver, so time the line spends in the pipe counts against it. For live motion,

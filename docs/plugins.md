@@ -63,7 +63,16 @@ describes itself and waits for EOF without opening any hardware.
 | `voice_answer` | `id`, `state` (working, answered, refused), `text`, `url`  | (voice plugins) Vibe's answer to a `voice_ask` event the plugin raised: speak and show it |
 
 `value` has already been validated and clamped to the owner's limits by the core ([protocol.md](protocol.md#commands)).
-`deadline_ms` is relative to receipt and already capped. Since Link 0.18 the core counts it down to the moment it writes
+`deadline_ms` is relative to receipt and already capped.
+
+`provenance` is where a custom action came from, passed unchanged from Bot: `session`, `seq`, `issued_at_ms`,
+`expires_at_ms` and the core's measured `clock_uncertainty_ms` ([protocol.md](protocol.md#commands)). `headlight`
+carries it (300 ms original lifetime, ≤250 ms deadline) together with `expires_at_mono_ns`, the original expiry on the
+shared clock. A headlight is not motion: the runtime's `motion_kinds` must not include it and it must never renew a
+drive or head deadline. Its accepted answer is an `ack` with `data` `{"stage":"headlight_pending","admitted":true}`
+(accepted, not confirmed), a busy/rate refusal is an `ack` with `{"stage":"headlight_refused","admitted":false}`;
+`nack` is a rejection. Report `sensors.p7_headlight {commanded, pending, physical_state_verified}` in telemetry,
+never a physical claim: `physical_state_verified` is `false`. Since Link 0.18 the core counts it down to the moment it writes
 the line, and adds `expires_at_mono_ns`: the instant the command expires on the clock every process on the machine
 shares, `CLOCK_MONOTONIC` on Linux and macOS and, since 0.30, the raw `QueryPerformanceCounter` on Windows. `hello` names
 that clock in `shared_clock` (`clock_monotonic` or `qpc`, 0.30). A plugin that reads it when the line arrives takes off
