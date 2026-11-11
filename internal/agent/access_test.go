@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -66,7 +67,7 @@ func TestLocalAgentRegistrationIDsSurviveRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(filepath.Join(dir, "agent-directory.json"))
-	if err != nil || info.Mode().Perm() != 0600 {
+	if err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0600) {
 		t.Fatalf("directory file permissions: %v %v", info, err)
 	}
 	if got := loadLocalAgents(dir)["codex"]; got != items["codex"] {
