@@ -38,8 +38,9 @@ def not_public(ip):
 
 
 class EgressProxy:
-    def __init__(self, blocked, resolve=None, log=None):
+    def __init__(self, blocked, resolve=None, log=None, allow_origin=None):
         self.blocked = blocked                      # (ip, port) -> True to refuse
+        self.allow_origin = allow_origin            # (scheme, host, port) -> True for this browser task
         self.resolve = resolve or (lambda host, port: [ai[4][0] for ai in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)])
         self.log = log or (lambda *a: None)
         self.sock = None
@@ -110,6 +111,12 @@ class EgressProxy:
                 host, port = self._split(hostport, 80)
             if host is None:
                 return self._answer(client, 400, "Bad Request")
+            scheme = "https" if method == "CONNECT" else "http"
+            if self.allow_origin is not None and not self.allow_origin(scheme, host, port):
+                with self.mu:
+                    self.refused += 1
+                self.log("egress refused outside task origins %s:%d", host, port)
+                return self._answer(client, 403, "Outside the task's origins")
             upstream = self._connect(host, port)
             if upstream is None:
                 return self._answer(client, 403, "Forbidden by the agent's network guard")

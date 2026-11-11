@@ -116,6 +116,7 @@ import urllib.parse
 from openvibe_plugin import Deferred, Fault, Plugin
 
 from .browser import KEY_CODES, Browser, BrowserError, find_binary
+from .origins import OriginError, allowed as origins_allow, parse_origins
 from .curtain import (Curtain, EnvPrintDetector, Hotkey, PasswordFieldDetector, SecretFileDetector, SiteDetector,
                       _active_window, install_sigusr1)
 from .desk import MAX_DESKS_CAP, BrowserDesk, Desks, PrivateDesk, default_max_desks
@@ -1141,11 +1142,14 @@ class Computer(Plugin):
             return dict(out, profile_saved=saved) if saved is not None else out
         return self._act(cmd, level, stop, "stop %s (and close what runs on it)" % what, threaded=False)
 
-    def _desk_browser(self, desk, binary=None, env=None):
+    def _desk_browser(self, desk, binary=None, env=None, origins=None):
         """The agent's browser on a desk, started on first use: shown on a whole desk's display, headless on a browser
         desk (its window the desk's size: its page is the desk's screen). Its own profile, downloads and temp folder."""
         with self.browser_mu:
             b = self.desk_browsers.get(desk)
+            if b is not None and b.alive() and origins is not None and b.allowed_origins != tuple(origins):
+                b.close()   # a task may not inherit an earlier browser's unrestricted connections
+                b = None
             if b is not None and b.alive():
                 self._set_downloads(b, desk)
                 return b
@@ -1167,6 +1171,7 @@ class Computer(Plugin):
                     b.after_start = lambda: self._put_cookies(desk, b, kept)
                 b.download_dir = self._desk_downloads(desk)
                 b.allow_downloads = self.effective_level() == "full" and b.download_dir is not None
+            self._set_task_origins(b, origins)
             with self.mu:
                 if self._generation_changed():
                     b.close()
@@ -1954,6 +1959,22 @@ class Computer(Plugin):
             return list(SANDBOX_CHROME_ARGS)
         return [] if self.browser_egress == "open" else self.egress.args()
 
+    def _set_task_origins(self, browser, origins):
+        """Give a restricted browser its own proxy before Chrome starts. A shared-host sandbox has separate
+        network plumbing and refuses bounded tasks until it can enforce the same list inside its namespace."""
+        if origins is None:
+            return
+        if self._shared():
+            raise Fault("unsupported", "this shared desk cannot enforce a task origin list")
+        allowed = frozenset(origins)
+        proxy = EgressProxy(blocked=self._egress_blocked,
+                            allow_origin=lambda scheme, host, port: (scheme, host.lower(), port) in allowed,
+                            log=lambda *a: self.log(*a))
+        browser.extra_args = [arg for arg in browser.extra_args if not arg.startswith((
+            "--proxy-server=", "--proxy-bypass-list=", "--force-webrtc-ip-handling-policy="))] + proxy.args()
+        browser.task_egress = proxy
+        browser.allowed_origins = tuple(origins)
+
     def _close_browser(self):
         # Never waits for an action in flight: closing kills the process, and the action fails at once.
         b, self.browser = self.browser, None
@@ -1976,7 +1997,16 @@ class Computer(Plugin):
         except ValueError:
             return False
 
-    def _browser_url(self, raw, level):
+    @staticmethod
+    def _clean_origins(raw):
+        """The task's origin allowlist, or None when the task names none (legacy: unrestricted). An explicit
+        empty list allows nothing; anything else-shaped is refused, never guessed."""
+        try:
+            return parse_origins(raw)
+        except OriginError as e:
+            raise Fault("bad_value", str(e))
+
+    def _browser_url(self, raw, level, origins=None):
         if not isinstance(raw, str) or not raw or len(raw) > MAX_URL or any(c in raw for c in "\x00\r\n"):
             raise Fault("bad_value", "url is an http or https address")
         u = urllib.parse.urlsplit(raw)
@@ -1984,6 +2014,8 @@ class Computer(Plugin):
             raise Fault("bad_value", "url is an http or https address")
         if level != "full" and self._local_host(u.hostname.strip("[]")):
             raise Fault("not_allowed", "%s is on this machine's own network: only at level full" % u.hostname)
+        if origins is not None and not origins_allow(raw, origins):
+            raise Fault("not_allowed", "%s is outside the task's origins" % u.hostname)
         return raw
 
     def _browser_op(self, v, level, env=None, desk=None):
@@ -2002,8 +2034,13 @@ class Computer(Plugin):
             if action == "profile_sign_out" and (not isinstance(v.get("site"), str) or not re.fullmatch(r"[a-z0-9.-]{1,253}", v["site"])):
                 raise Fault("bad_value", "Invalid site")
         selector, text, key, url = v.get("selector"), v.get("text"), v.get("key"), None
+        # The task's origins, when it names them: navigation outside is refused (open and link clicks up
+        # front; anything else that lands outside is flagged on the result). Absent means legacy unrestricted.
+        if "origins" in v and v["origins"] is None:
+            raise Fault("bad_value", "origins is a list, not null")
+        origins = self._clean_origins(v.get("origins"))
         if action == "open":
-            url = self._browser_url(v.get("url"), level)
+            url = self._browser_url(v.get("url"), level, origins)
         if action in ("click", "fill") and selector is not None and (not isinstance(selector, str) or not selector or len(selector) > MAX_SELECTOR):
             raise Fault("bad_value", "selector is a CSS selector of at most %d characters" % MAX_SELECTOR)
         if action == "click" and selector is None and (not isinstance(text, str) or not text.strip() or len(text) > 200):
@@ -2028,10 +2065,13 @@ class Computer(Plugin):
 
         def browser():
             if env:   # on a desk: its own browser (shown on a whole desk, headless on a browser desk)
-                return self._desk_browser(desk, binary, env)
+                return self._desk_browser(desk, binary, env, origins)
             with self.browser_mu:
+                if self.browser is not None and self.browser.alive() and origins is not None and self.browser.allowed_origins != tuple(origins):
+                    self._close_browser()
                 if self.browser is None or not self.browser.alive():
                     b = self.browser_factory(binary, self.browser_profile, self.browser_headless)
+                    self._set_task_origins(b, origins)
                     b.allow_downloads = self.effective_level() == "full"
                     with self.mu:
                         if self._generation_changed():
@@ -2053,6 +2093,10 @@ class Computer(Plugin):
             b = browser()
             try:
                 with lock():   # one action at a time in each browser; two desks' browsers act in parallel
+                    if origins is not None and action == "click":
+                        href = b.click_href(selector=selector, text=None if selector else text)
+                        if href and not origins_allow(href, origins):
+                            raise Fault("not_allowed", "the link is outside the task's origins")
                     if action == "open":
                         out = b.open(url)
                     elif action == "read":
@@ -2087,6 +2131,9 @@ class Computer(Plugin):
                         out = b.back()
                     if isinstance(out, dict):
                         self._desk_stream_saw_url(out.get("url"))
+                        current = out.get("url")
+                        if origins is not None and isinstance(current, str) and current not in ("", "about:blank") and not origins_allow(current, origins):
+                            raise Fault("not_allowed", "the browser left the task's origins")
                     return out
             except BrowserError as e:
                 raise Fault(e.code, e.message)

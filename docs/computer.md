@@ -107,7 +107,7 @@ latch, never this computer.
 | `probe`  | `target`: `http(s)://…` (one GET, no redirect followed) or `tcp://host:port`; `timeout_s` | `status`, `content_type`, `etag`, `last_modified`, `body` (≤ 64 KB), `ms`; or `open`, `ms` |
 | `screen` | `max_width` (default 1280)                                                                    | `format` (`jpeg` with Pillow, else `png` ≤ 300 KB), `width`, `height`, `content_b64` |
 | `input`  | `action`: `move`, `click`, `double_click`, `right_click` (`x`, `y`), `scroll` (`dy` clicks, ±20), `type` (`text`, ≤ 2000), `key` (`keys`: one key or chord, `ctrl+s`, `Return`); `width`, `height`: the picture `x`, `y` are measured in | `done`, `action`, and the real `x`, `y` it used |
-| `browser` | `action`: `open` (`url`, http or https), `click` (`selector`, or the `text` a button or link shows), `fill` (`selector`, `text` ≤ 2000), `press` (`key`: Enter, Tab, Escape, Backspace, Delete, arrows, PageUp, PageDown, Home, End, Space), `back`, `read`, `screenshot` (`max_width`), `close` | a page: `url`, `title`, `text` (its visible text, ≤ 20,000 characters), `truncated`, `links` (the first 60); `screenshot`: `format`, `width`, `height`, `content_b64`; `fill`: `done`, `chars` |
+| `browser` | `action`: `open` (`url`, http or https), `click` (`selector`, or the `text` a button or link shows), `fill` (`selector`, `text` ≤ 2000), `press` (`key`: Enter, Tab, Escape, Backspace, Delete, arrows, PageUp, PageDown, Home, End, Space), `back`, `read`, `screenshot` (`max_width`), `close` | a page: `url`, `title`, `text` (visible text, capped at 20,000 serialized bytes), `truncated`, `links` (up to 60); `screenshot`: `format`, `width`, `height`, `content_b64`; `fill`: `done`, `chars` |
 
 A program runs in its own process group with the Link account's rights, at most 2 at a time, and is killed at
 `timeout_s` (the owner's `timeout_s` is the cap). A write with `overwrite` replaces the file atomically. Screens come
@@ -156,6 +156,15 @@ text and keys are passed to the tool as arguments, never through a shell, and `k
     pass the check with one address and connect to another.
   - **Nothing around it.** Loopback goes through the guard too, WebRTC sends no UDP around it, and QUIC is off.
   - `browser_egress: "open"` turns the guard off, for a machine whose agent must reach a local service.
+- **Task origins.** A browser command may carry `origins`, a list of exact `http(s)://host[:port]` origins. When present,
+  the browser gets a proxy of its own: navigation, page resources, HTTPS tunnels and WebSocket connections to other
+  origins are refused, even if `browser_egress` is `open`. The list has at most 32 origins; an empty list permits no
+  network address. Shared desk hosts currently refuse an origin-bounded browser command because their sandbox has
+  different network plumbing. A task must send the same list on every command; omitting it is legacy unrestricted
+  access on a new browser.
+- **Page text boundary.** Page text and the lines reported by an action receipt carry a random nonce and the page's
+  origin in their markers. The source text is capped before those markers; `truncated` says when content was cut.
+  The complete page answer, including links and elements, is capped at 48 KiB of serialized JSON.
 - **Elements and receipts** (Link v0.21.0, the Desks plan's step D3). `open` and `read` list the page's interactive
   elements, one compact line each: `e7 button "Sign in"`, `e8 textbox "Email" (email)`, `e9 checkbox "Remember me"
   checked`. That is at most 120 visible links, buttons, fields, boxes and menus, named by their label, text or

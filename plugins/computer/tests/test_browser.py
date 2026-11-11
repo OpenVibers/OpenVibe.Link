@@ -436,7 +436,9 @@ class RealBrowserTest(unittest.TestCase):
         self.assertTrue(any(" checkbox " in l and l.endswith(" checked") for l in app["elements"]), "a checkbox says it is checked")
         self.assertFalse(any("Hidden" in l for l in app["elements"]), "a hidden element is not offered")
         done = b.click(selector='[data-ov-ref="%s"]' % refs["Add a row"])
-        self.assertEqual(done["receipt"], {"url_changed": False, "appeared": ["Row added"], "gone": 1})
+        from openvibe_computer.fence import parse_fenced
+        self.assertEqual({**done["receipt"], "appeared": [parse_fenced(x) for x in done["receipt"]["appeared"]]},
+                         {"url_changed": False, "appeared": ["Row added"], "gone": 1})
         again = b.read()
         self.assertIn('%s button "Add a row"' % refs["Add a row"], again["elements"], "the same element keeps its ref")
         away = b.click(selector='[data-ov-ref="%s"]' % refs["Second page"])
@@ -518,7 +520,8 @@ class RealBrowserTest(unittest.TestCase):
         r = b._eval("(() => { const r = document.getElementById('go').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()")
         x, y = round(r[0] * shot["width"] / 1000), round(r[1] * shot["height"] / 600)
         clicked = cmd("input", {"action": "click", "x": x, "y": y, "width": shot["width"], "height": shot["height"]})
-        self.assertEqual(clicked["receipt"]["appeared"], ["Row added"], clicked)
+        from openvibe_computer.fence import parse_fenced
+        self.assertEqual([parse_fenced(x) for x in clicked["receipt"]["appeared"]], ["Row added"], clicked)
         # Type into the field it focused, select all, delete.
         b._eval("document.querySelector('input[type=email]').focus()")
         cmd("input", {"action": "type", "text": "a@b.co"})
