@@ -484,6 +484,9 @@ func (n *Agent) machineUse(raw json.RawMessage) localctl.Response {
 	if err != nil {
 		return localctl.Response{Error: "could not encode the relay body"}
 	}
+	if len(bodyJSON) > 256<<10 {
+		return localctl.Response{Error: "the relay body is larger than 256 KiB; send files on the LAN or use a smaller item"}
+	}
 	// Bot opens one relay per operation: relay.open, relay.opened to both
 	// machines, then relay.frame each way. The receiving Link verifies the same
 	// token and checks the scope again.

@@ -142,9 +142,13 @@ func TestTwoLinksRequestApproveUseRevoke(t *testing.T) {
 	t.Logf("A's next use was refused: %v", err)
 	if listed, listErr := call(ap, localctl.Request{Cmd: localctl.CmdMCP, ID: "agents_list", Agent: "codex", Data: json.RawMessage(`{}`)}); listErr != nil || !strings.Contains(string(listed), "Codex") {
 		t.Fatalf("agents_list: %s %v", listed, listErr)
+	} else {
+		t.Logf("agents_list: %s", listed)
 	}
 	if listed, listErr := call(ap, localctl.Request{Cmd: localctl.CmdMCP, ID: "machines_list", Agent: "codex", Data: json.RawMessage(`{}`)}); listErr != nil || !strings.Contains(string(listed), other) {
 		t.Fatalf("machines_list: %s %v", listed, listErr)
+	} else {
+		t.Logf("machines_list: %s", listed)
 	}
 	b.mu.Lock()
 	remoteAgent := b.localAgents["codex"].ID
@@ -152,9 +156,10 @@ func TestTwoLinksRequestApproveUseRevoke(t *testing.T) {
 	if remoteAgent == "" {
 		t.Fatal("local CLI did not register")
 	}
-	_, err = call(ap, localctl.Request{Cmd: localctl.CmdMCP, ID: "agent_tell", Agent: "codex", Data: json.RawMessage(`{"agent":"` + remoteAgent + `","text":"hello"}`)})
-	if err != nil {
-		t.Fatal(err)
+	if told, tellErr := call(ap, localctl.Request{Cmd: localctl.CmdMCP, ID: "agent_tell", Agent: "codex", Data: json.RawMessage(`{"agent":"` + remoteAgent + `","text":"hello"}`)}); tellErr != nil {
+		t.Fatal(tellErr)
+	} else {
+		t.Logf("agent_tell: %s", told)
 	}
 	var inbox json.RawMessage
 	for until := time.Now().Add(2 * time.Second); time.Now().Before(until); time.Sleep(20 * time.Millisecond) {
@@ -166,6 +171,7 @@ func TestTwoLinksRequestApproveUseRevoke(t *testing.T) {
 	if !strings.Contains(string(inbox), "hello") {
 		t.Fatalf("agent task not in inbox: %s %v", inbox, err)
 	}
+	t.Logf("agent_inbox: %s", inbox)
 	var found struct {
 		Tasks []struct {
 			Task struct {
@@ -176,19 +182,25 @@ func TestTwoLinksRequestApproveUseRevoke(t *testing.T) {
 	if json.Unmarshal(inbox, &found) != nil || len(found.Tasks) != 1 {
 		t.Fatalf("inbox: %s", inbox)
 	}
-	if _, err = call(bp, localctl.Request{Cmd: localctl.CmdMCP, ID: "agent_reply", Agent: "codex", Data: json.RawMessage(`{"task":"` + found.Tasks[0].Task.ID + `","text":"received"}`)}); err != nil {
-		t.Fatal(err)
+	if replied, replyErr := call(bp, localctl.Request{Cmd: localctl.CmdMCP, ID: "agent_reply", Agent: "codex", Data: json.RawMessage(`{"task":"` + found.Tasks[0].Task.ID + `","text":"received"}`)}); replyErr != nil {
+		t.Fatal(replyErr)
+	} else {
+		t.Logf("agent_reply: %s", replied)
 	}
 	if _, err = call(bp, localctl.Request{Cmd: localctl.CmdMCP, ID: "agent_inbox", Agent: "unregistered", Data: json.RawMessage(`{}`)}); err == nil {
 		t.Fatal("unregistered CLI read inbox")
 	}
-	askDone := make(chan error, 1)
+	type askResult struct {
+		answer json.RawMessage
+		err    error
+	}
+	askDone := make(chan askResult, 1)
 	go func() {
 		answer, askErr := call(ap, localctl.Request{Cmd: localctl.CmdMCP, ID: "agent_ask", Agent: "codex", Data: json.RawMessage(`{"agent":"` + remoteAgent + `","text":"status?","wait_seconds":4}`)})
 		if askErr == nil && !strings.Contains(string(answer), "all clear") {
 			askErr = errors.New("agent_ask did not return the reply")
 		}
-		askDone <- askErr
+		askDone <- askResult{answer, askErr}
 	}()
 	var nextID string
 	for until := time.Now().Add(3 * time.Second); time.Now().Before(until); time.Sleep(20 * time.Millisecond) {
@@ -222,13 +234,16 @@ func TestTwoLinksRequestApproveUseRevoke(t *testing.T) {
 	if _, err = call(bp, localctl.Request{Cmd: localctl.CmdMCP, ID: "agent_reply", Agent: "codex", Data: json.RawMessage(`{"task":"` + nextID + `","text":"all clear"}`)}); err != nil {
 		t.Fatal(err)
 	}
-	if err = <-askDone; err != nil {
-		t.Fatal(err)
+	if asked := <-askDone; asked.err != nil {
+		t.Fatal(asked.err)
+	} else {
+		t.Logf("agent_ask: %s", asked.answer)
 	}
 	requestedByAgent, err := call(ap, localctl.Request{Cmd: localctl.CmdMCP, ID: "machine_request_access", Agent: "codex", Data: json.RawMessage(`{"machine":"` + other + `","scopes":["worker"],"for_seconds":3600}`)})
 	if err != nil || !strings.Contains(string(requestedByAgent), `"from_agent"`) {
 		t.Fatalf("machine_request_access: %s %v", requestedByAgent, err)
 	}
+	t.Logf("machine_request_access: %s", requestedByAgent)
 	t.Log("request -> target tray approval -> granted send use -> revoke -> use refused")
 	t.Log("agents_list -> agent_tell -> agent_inbox -> agent_reply -> agent_ask; machine_request_access; unregistered inbox refused")
 }
