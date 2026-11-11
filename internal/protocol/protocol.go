@@ -374,7 +374,8 @@ type Command struct {
 	Ref   string          `json:"ref,omitempty"`
 	Kind  string          `json:"kind"`
 	Value json.RawMessage `json:"value,omitempty"`
-	// DeadlineMS is an absolute instant in epoch milliseconds on the server's clock, present on motion kinds only.
+	// DeadlineMS is an absolute instant in epoch milliseconds on the server's clock, present on motion kinds and the
+	// non-motion headlight custom action.
 	DeadlineMS int64     `json:"deadline_ms,omitempty"`
 	Operator   *Operator `json:"operator,omitempty"`
 	// TurnEpoch is the robot's control epoch when Bot decided the command (contracts 0.213.0, Bot#155): it rises when a
