@@ -184,7 +184,7 @@ class RealEgressTest(unittest.TestCase):
         self.addCleanup(no.shutdown)
         profile = tempfile.mkdtemp(prefix="ov-origins-")
         self.addCleanup(lambda: shutil.rmtree(profile, ignore_errors=True))
-        plugin = Computer(env={}, platform="linux", which=shutil.which)
+        plugin = Computer(env={}, platform=sys.platform, which=shutil.which)
         rt = Runtime(plugin, infile=io.StringIO(""), outfile=Out())
         rt.dispatch({"op": "hello", "config": {"level": "full", "roots": [tempfile.gettempdir()], "notify": False,
                                               "browser_egress": "open", "browser_profile": profile}})
