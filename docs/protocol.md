@@ -248,6 +248,24 @@ with `{"stage":"headlight_pending","admitted":true}` — accepted, **not confirm
 rejection. The driver reports `sensors.p7_headlight` {`commanded`: true|false|null, `pending`: bool,
 `physical_state_verified`: false} in telemetry; a panel shows the commanded state, never a physical reading.
 
+The frame Bot sends and the line the driver receives (the driver's copy has a relative `deadline_ms`, the original
+expiry on the shared clock, and Link's own clock bound):
+
+```json
+{ "v": 1, "seq": 10, "ts": 1738065600000, "type": "command", "id": "cmd_01J8Z4H…", "ref": "op_hl…",
+  "kind": "headlight", "value": { "on": true }, "deadline_ms": 1738065600250,
+  "operator": { "subject": "usr_01J8…", "role": "owner" }, "robot_id": "rob_…",
+  "provenance": { "session": "sess_…", "seq": 10, "issued_at_ms": 1738065600000,
+                  "expires_at_ms": 1738065600300, "clock_uncertainty_ms": 12 } }
+```
+```json
+{ "op": "command", "id": "cmd_01J8Z4H…", "kind": "headlight", "value": { "on": true },
+  "deadline_ms": 250, "expires_at_mono_ns": 123456789012345,
+  "operator": { "subject": "usr_01J8…", "role": "owner" }, "turn_epoch": 1738065600100,
+  "provenance": { "session": "sess_…", "seq": 10, "issued_at_ms": 1738065600000,
+                  "expires_at_ms": 1738065600300, "clock_uncertainty_ms": 12 } }
+```
+
 What the Link does with a command, in order:
 
 1. A repeated `id` is answered with the first result and never executed again (the cache lives for 10 minutes and
