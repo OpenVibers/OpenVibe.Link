@@ -189,6 +189,9 @@ type timed struct {
 	expires mono.Instant // on the machine's precise clock, the one the plugin shares
 	queued  mono.Instant
 	motion  bool // a guarded or motion kind: strict timing applies to it
+	// maxDeadlineMS caps deadline_ms below what is left of expires: a headlight is written with Bot's 250 ms
+	// deadline while expires_at_mono_ns carries its original 300 ms expiry, so the driver sees both.
+	maxDeadlineMS int
 }
 
 // render is the command's line as it is written now, or the fault it is refused with instead: expired when less than a
@@ -203,7 +206,11 @@ func (c *timed) render(strict bool) (b []byte, refused string) {
 	if strict && c.motion && !hasMono {
 		return nil, protocol.FaultTimingUnavailable
 	}
-	c.msg["deadline_ms"] = int64(left / time.Millisecond)
+	deadlineMS := int64(left / time.Millisecond)
+	if c.maxDeadlineMS > 0 && deadlineMS > int64(c.maxDeadlineMS) {
+		deadlineMS = int64(c.maxDeadlineMS)
+	}
+	c.msg["deadline_ms"] = deadlineMS
 	if hasMono {
 		// The instant itself: the core keeps it on the clock it shares with the plugin, so it is passed exactly.
 		c.msg["expires_at_mono_ns"] = int64(c.expires)
@@ -466,6 +473,13 @@ func (p *Plugin) BeginWith(ctx context.Context, id, kind string, value json.RawM
 	return p.begin(ctx, id, kind, value, 0, expires, op, turnEpoch, prov)
 }
 
+// BeginWithCap is BeginWith with a cap on the deadline_ms written to the plugin, below what is left of expires. A
+// headlight has Bot's 250 ms deadline and its original 300 ms expiry: the driver gets deadline_ms ≤ 250 and
+// expires_at_mono_ns at the original expiry, so neither queue time nor the writer's clock adds time.
+func (p *Plugin) BeginWithCap(ctx context.Context, id, kind string, value json.RawMessage, expires mono.Instant, maxDeadlineMS int, op *protocol.Operator, turnEpoch int64, prov *Provenance) func() Reply {
+	return p.begin(ctx, id, kind, value, maxDeadlineMS, expires, op, turnEpoch, prov)
+}
+
 // begin queues a command: with deadline_ms as given when expires is zero, else timed (BeginWith).
 func (p *Plugin) begin(ctx context.Context, id, kind string, value json.RawMessage, deadlineMS int, expires mono.Instant, op *protocol.Operator, turnEpoch int64, prov *Provenance) func() Reply {
 	now := func(r Reply) func() Reply { return func() Reply { return r } }
@@ -539,7 +553,7 @@ func (p *Plugin) begin(ctx context.Context, id, kind string, value json.RawMessa
 	}
 	queued := line{b: append(raw, '\n')}
 	if expires != 0 {
-		queued = line{cmd: &timed{id: id, msg: immutable, expires: expires, queued: mono.Now(), motion: p.motionKind(kind)}}
+		queued = line{cmd: &timed{id: id, msg: immutable, expires: expires, queued: mono.Now(), motion: p.motionKind(kind), maxDeadlineMS: deadlineMS}}
 	}
 	p.mu.Lock()
 	binding := &ApprovalRequest{Nonce: hex.EncodeToString(nonce[:]), Digest: sha256.Sum256(raw), id: id, expires: expiry, queue: p.queue, reply: ch}

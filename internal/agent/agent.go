@@ -140,7 +140,10 @@ type Agent struct {
 	// the mouse or keyboard and for InputGuard after, so an approved click cannot press another request's Approve.
 	inputs     map[string]bool
 	inputEnded time.Time
-	trayToldAt time.Time // when the computer plugin was last told the tray shows its approvals
+	// headlightAt: the last accepted headlight instants on this machine (at most HeadlightPerSecond), for the shared
+	// 2 requests/second budget. It is one budget for Bot's commands and the owner's local controls.
+	headlightAt []mono.Instant
+	trayToldAt  time.Time // when the computer plugin was last told the tray shows its approvals
 
 	// panel is Link's own window (nil until Run started it). panelOff are the capability switches turned off in it and
 	// panelFirst is its first-run answer, both kept in state/panel.json; activity is what "What happened here" lists,
@@ -163,6 +166,17 @@ var ErrQuit = errors.New("quit by its owner")
 
 // InputGuard is how long after an input command `approve` stays refused.
 const InputGuard = 2 * time.Second
+
+// Headlights (Maticus's 2026-11-11 handoff, docs/hardware-looi.md): Bot mints a headlight with an original 300 ms
+// lifetime and a deadline of at most 250 ms; by the time it reaches this machine at least 200 ms of that original
+// lifetime must be left, so the driver never gets a command that was already most of the way through its life.
+// At most two are accepted in any rolling second, shared by every source (Bot and the owner's local controls).
+const (
+	HeadlightLifetimeMS = 300
+	HeadlightDeadlineMS = 250
+	HeadlightReserveMS  = 200
+	HeadlightPerSecond  = 2
+)
 
 // trayTTL is how long the computer plugin trusts one "the tray shows your approvals"; the tray says it again
 // every poll and the core passes it on at most every trayRetell.
@@ -716,6 +730,10 @@ func (n *Agent) command(c protocol.Command, sentMS int64, seq uint64, received m
 		nack(protocol.FaultNotAllowed, c.Kind+" is not in this robot's allowed_commands")
 		return
 	}
+	if c.Kind == protocol.KindHeadlight {
+		n.headlight(c, entry, sentMS, seq, received, limits, nack)
+		return
+	}
 	if n.capabilityOff(c.Kind) {
 		nack(protocol.FaultNotAllowed, "turned off in Link: "+capabilityForKind[c.Kind]+" is off on this computer")
 		return
@@ -795,13 +813,118 @@ func (n *Agent) command(c protocol.Command, sentMS int64, seq uint64, received m
 		r := wait()
 		var msg protocol.Message
 		if r.OK {
-			msg = protocol.Ack{ID: c.ID, LatencyMS: mono.Since(received).Milliseconds()}
+			if c.Kind == protocol.KindHeadlight && len(r.Data) > 0 {
+				// The LOOI driver's accepted-not-confirmed answer: stage=headlight_pending, admitted=true (or
+				// headlight_refused, admitted=false when busy). It rides back to Bot in the ack's data.
+				msg = protocol.AckData{ID: c.ID, LatencyMS: mono.Since(received).Milliseconds(), Data: r.Data}
+			} else {
+				msg = protocol.Ack{ID: c.ID, LatencyMS: mono.Since(received).Milliseconds()}
+			}
 		} else {
 			msg = protocol.Nack{ID: c.ID, FaultCode: r.FaultCode, Message: r.Message}
 		}
 		n.dedup.Complete(entry, msg)
 		n.send(msg)
 	}()
+}
+
+// headlight passes one Bot-minted headlight to its driver. It is not a motion kind: it never renews a drive or
+// head deadline. Bot's provenance is checked against the frame (session, seq, ts) and the original lifetime and
+// deadline, at least 200 ms of the original 300 ms lifetime must be left when the frame is read, the shared
+// 2 requests/second budget is spent, and the plugin gets deadline_ms ≤ 250 with expires_at_mono_ns at the
+// original expiry on the shared clock. Its ack's data (stage headlight_pending/headlight_refused) is relayed to Bot.
+func (n *Agent) headlight(c protocol.Command, entry *safety.Entry, sentMS int64, seq uint64, received mono.Instant, limits safety.Limits, nack func(code, msg string)) {
+	pv := c.Provenance
+	if pv == nil {
+		nack(protocol.FaultBadValue, "headlight needs Bot's provenance")
+		return
+	}
+	if pv.Session == "" || pv.Session != n.session {
+		nack(protocol.FaultBadValue, "headlight provenance is for another link session")
+		return
+	}
+	if pv.Seq != seq || pv.IssuedAtMS != sentMS {
+		nack(protocol.FaultBadValue, "headlight provenance does not match its frame")
+		return
+	}
+	if pv.ExpiresAtMS-pv.IssuedAtMS != HeadlightLifetimeMS {
+		nack(protocol.FaultBadValue, fmt.Sprintf("headlight original lifetime is %d ms, not %d", pv.ExpiresAtMS-pv.IssuedAtMS, HeadlightLifetimeMS))
+		return
+	}
+	if c.DeadlineMS <= pv.IssuedAtMS || c.DeadlineMS > pv.IssuedAtMS+HeadlightDeadlineMS {
+		nack(protocol.FaultBadValue, fmt.Sprintf("headlight deadline is %d ms after issue, not 1..%d", c.DeadlineMS-pv.IssuedAtMS, HeadlightDeadlineMS))
+		return
+	}
+	left, unc, synced := n.timeLeft(c.DeadlineMS, sentMS, received)
+	if !synced {
+		nack(protocol.FaultNotReady, "the link's clock is not synchronized yet: no round trip has been measured on this connection")
+		return
+	}
+	if left < time.Millisecond {
+		nack(protocol.FaultExpired, fmt.Sprintf("the deadline passed %d ms before the command arrived (counting %d ms of clock uncertainty)", max(0, ceilMS(-left)), unc))
+		return
+	}
+	// The original expiry is what provenance.expires_at_ms says; what is left of it is the deadline's time left plus
+	// the gap between the two. At least HeadlightReserveMS of that original 300 ms must remain on receipt.
+	originalLeft := left + time.Duration(pv.ExpiresAtMS-c.DeadlineMS)*time.Millisecond
+	if originalLeft < HeadlightReserveMS*time.Millisecond {
+		nack(protocol.FaultExpired, fmt.Sprintf("only %d ms of the headlight's original %d ms lifetime was left on receipt (need at least %d)", max(0, originalLeft.Milliseconds()), HeadlightLifetimeMS, HeadlightReserveMS))
+		return
+	}
+	value, err := limits.Clamp(c.Kind, c.Value)
+	if err != nil {
+		var fe *safety.FaultError
+		if errors.As(err, &fe) {
+			nack(fe.Code, fe.Message)
+		} else {
+			nack(protocol.FaultBadValue, err.Error())
+		}
+		return
+	}
+	p := n.mgr.Route(c.Kind, c.Target, "")
+	if p == nil {
+		nack(protocol.FaultUnsupported, "no driver on this device handles "+c.Kind)
+		return
+	}
+	if !n.admitHeadlight(received) {
+		msg := protocol.AckData{ID: c.ID, LatencyMS: mono.Since(received).Milliseconds(),
+			Data: json.RawMessage(`{"stage":"headlight_refused","admitted":false}`)}
+		n.dedup.Complete(entry, msg)
+		n.send(msg)
+		return
+	}
+	prov := &plugins.Provenance{Session: pv.Session, Seq: pv.Seq, IssuedAtMS: pv.IssuedAtMS, ExpiresAtMS: pv.ExpiresAtMS, ClockUncertaintyMS: &unc}
+	wait := p.BeginWithCap(n.ctx, c.ID, c.Kind, value, received.Add(originalLeft), HeadlightDeadlineMS, c.Operator, c.TurnEpoch, prov)
+	go func() {
+		r := wait()
+		var msg protocol.Message
+		if r.OK {
+			if len(r.Data) > 0 {
+				msg = protocol.AckData{ID: c.ID, LatencyMS: mono.Since(received).Milliseconds(), Data: r.Data}
+			} else {
+				msg = protocol.Ack{ID: c.ID, LatencyMS: mono.Since(received).Milliseconds()}
+			}
+		} else {
+			msg = protocol.Nack{ID: c.ID, FaultCode: r.FaultCode, Message: r.Message}
+		}
+		n.dedup.Complete(entry, msg)
+		n.send(msg)
+	}()
+}
+
+// admitHeadlight spends one of the two headlight slots in any rolling second, shared by every source on this
+// machine. A refused request is not recorded, so the next one a moment later can still go.
+func (n *Agent) admitHeadlight(at mono.Instant) bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if len(n.headlightAt) >= HeadlightPerSecond && at-n.headlightAt[0] < mono.Instant(time.Second) {
+		return false
+	}
+	n.headlightAt = append(n.headlightAt, at)
+	if len(n.headlightAt) > HeadlightPerSecond {
+		n.headlightAt = n.headlightAt[len(n.headlightAt)-HeadlightPerSecond:]
+	}
+	return true
 }
 
 // computer runs one exec, fs or screen command: no clamping, a long reply window (the server's deadline, at most
