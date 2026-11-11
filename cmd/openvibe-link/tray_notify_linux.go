@@ -126,6 +126,9 @@ func (n *dbusNotifier) Ask(a agent.Approval, again string) {
 	var actions []string
 	if n.actions {
 		actions = []string{"approve", "Approve", "deny", "Deny"}
+		if a.Plugin == "machine-access" {
+			actions[1] = "Allow"
+		}
 	} else {
 		body += "\nopenvibe-link approve " + safety.QuoteHint(a.ID) + "  (or deny " + safety.QuoteHint(a.ID) + ")"
 	}
@@ -138,7 +141,14 @@ func (n *dbusNotifier) Ask(a agent.Approval, again string) {
 	}
 	hints := map[string]dbus.Variant{"urgency": dbus.MakeVariant(byte(2)), "desktop-entry": dbus.MakeVariant("openvibe-link-tray")}
 	var nid uint32
-	err := n.obj.Call(notifyIface+".Notify", 0, "OpenVibe Link", replaces, "dialog-question", "OpenVibe: your agent asks",
+	title := "OpenVibe: your agent asks"
+	if a.Plugin == "machine-access" {
+		title = a.Title
+		if title == "" {
+			title = "Machine asks for access"
+		}
+	}
+	err := n.obj.Call(notifyIface+".Notify", 0, "OpenVibe Link", replaces, "dialog-question", title,
 		n.text(body), actions, hints, expire).Store(&nid)
 	if err != nil {
 		n.log.Warn("tray: notification failed", "err", err)

@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OpenVibers/OpenVibe.Link/internal/access"
 	"github.com/OpenVibers/OpenVibe.Link/internal/firstrun"
 	"github.com/OpenVibers/OpenVibe.Link/internal/link"
 	"github.com/OpenVibers/OpenVibe.Link/internal/panel"
@@ -97,6 +98,23 @@ func (n *Agent) panelSendOptions(ctx context.Context) panelSend {
 	// A random local port accepts a sealed envelope from another of the owner's machines on this network. The relay
 	// stays the fallback, and nothing unauthenticated can reach the inbox.
 	lan := send.NewLAN(n.opt.Creds.Principal)
+	lan.SetGrantCheck(func(ctx context.Context, token, sender string) error {
+		if n.grantVerifier == nil || n.accessClient == nil {
+			return access.ErrGrant
+		}
+		claims, err := n.grantVerifier.Verify(ctx, token, sender, "send")
+		if err != nil {
+			return access.ErrGrant
+		}
+		grants, err := n.accessClient.Grants(ctx)
+		if err != nil || !grantStillActive(grants, claims.ID, sender, n.opt.Creds.Principal, "send") {
+			return access.ErrGrant
+		}
+		return nil
+	})
+	n.mu.Lock()
+	n.grantedSend = lan
+	n.mu.Unlock()
 	if err := lan.Listen(""); err != nil {
 		n.log.Warn("Link Send stays on the relay: no local listening port", "err", err)
 	} else {
@@ -689,6 +707,14 @@ func (n *Agent) panelStop(id string) error {
 
 // answerApproval lets one waiting request run or refuses it; the tray, the CLI and the window all end here.
 func (n *Agent) answerApproval(nonce string, approved bool) error {
+	n.mu.Lock()
+	for _, a := range n.approvals {
+		if a.ID == nonce && a.Plugin == "machine-access" {
+			n.mu.Unlock()
+			return n.answerAccessApproval(a, approved)
+		}
+	}
+	n.mu.Unlock()
 	n.mu.Lock()
 	var a Approval
 	ok := false

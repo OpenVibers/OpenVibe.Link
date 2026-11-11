@@ -74,6 +74,11 @@ Usage:
                             start drives as before (stop is the kill switch, and holds until resume)
   openvibe-link plugins [--json]
   openvibe-link approvals [--json]   what the computer plugin waits to be approved (control level "ask")
+  openvibe-link mcp                    serve agent and machine tools over MCP stdio
+  openvibe-link mcp --print-config claude|codex|muse|opencode
+  openvibe-link mcp install claude|codex|muse|opencode   ask before adding to a CLI
+  openvibe-link access request <machine> --scope agent,send [--for 1h] [--reason text]
+  openvibe-link access list|approve <id>|deny <id>|revoke <id>
   openvibe-link approve <ID>         let it run
   openvibe-link deny <ID>            refuse it
   openvibe-link tray [--autostart on|off]
@@ -192,26 +197,31 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 	fs.StringVar(&g.home, "home", "", "config and state directory")
 	fs.StringVar(&g.logLevel, "log-level", "info", "log level")
 	var (
-		server  = fs.String("server", "", "OpenVibe.Bot origin (pair)")
-		kind    = fs.String("kind", "", "onboard or bridge (pair)")
-		robot   = fs.String("robot", "", "the rob_… id of the robot to pair with, from the installer command (pair)")
-		name    = fs.String("name", "", "a name for this device on openvibe.bot; default: the hostname (pair)")
-		codeArg = fs.String("code", "", "the pairing code, instead of the argument (pair)")
-		network = fs.String("network", "", "OpenVibe.Network origin: pair this machine there (pair)")
-		pairing = fs.String("pairing", "", "the pair_… id from the installer command (pair, with --network)")
-		force   = fs.Bool("force", false, "pair again even if already paired")
-		dryRun  = fs.Bool("dry-run", false, "run only the dry-run plugin and the test pattern (run)")
-		asJSON  = fs.Bool("json", false, "print JSON (status, plugins)")
-		svcUser = fs.String("user", "", "run the service as this account (install)")
-		session = fs.Bool("user-session", false, "Windows: start at sign-in in your own session instead of as a service (install, uninstall)")
-		keyID   = fs.String("key-id", "", "accept only this Bot signing key id (profile verify)")
-		autoArg = fs.String("autostart", "", "on or off: start the tray when you sign in (tray)")
-		shKey   = fs.String("key", "", "the share's ovc_… connect key from connect.openvibe.link (share)")
-		shPort  = fs.Int("port", 0, "the local port to share (share)")
-		shSrv   = fs.String("connect-server", "", "OpenVibe Connect's tunnel URL; default wss://connect.openvibe.link/tunnel (share)")
-		shID    = fs.String("share", "", "a share this computer serves itself, as OpenVibe Link: its shr_… id, no key (share)")
-		gitRoot = fs.String("root", "", "the folder Link may clone into or publish from (clone, git); default ~/OpenVibe")
-		yes     = fs.Bool("yes", false, "approve this clone without asking (clone; for a script, never for a person)")
+		server       = fs.String("server", "", "OpenVibe.Bot origin (pair)")
+		kind         = fs.String("kind", "", "onboard or bridge (pair)")
+		robot        = fs.String("robot", "", "the rob_… id of the robot to pair with, from the installer command (pair)")
+		name         = fs.String("name", "", "a name for this device on openvibe.bot; default: the hostname (pair)")
+		codeArg      = fs.String("code", "", "the pairing code, instead of the argument (pair)")
+		network      = fs.String("network", "", "OpenVibe.Network origin: pair this machine there (pair)")
+		pairing      = fs.String("pairing", "", "the pair_… id from the installer command (pair, with --network)")
+		force        = fs.Bool("force", false, "pair again even if already paired")
+		dryRun       = fs.Bool("dry-run", false, "run only the dry-run plugin and the test pattern (run)")
+		asJSON       = fs.Bool("json", false, "print JSON (status, plugins)")
+		printConfig  = fs.String("print-config", "", "print MCP server config for a CLI (mcp)")
+		mcpAgent     = fs.String("agent", "", "local CLI identity for MCP")
+		accessScope  = fs.String("scope", "", "comma-separated machine access scopes")
+		accessFor    = fs.String("for", "", "machine access duration")
+		accessReason = fs.String("reason", "", "why this machine asks for access")
+		svcUser      = fs.String("user", "", "run the service as this account (install)")
+		session      = fs.Bool("user-session", false, "Windows: start at sign-in in your own session instead of as a service (install, uninstall)")
+		keyID        = fs.String("key-id", "", "accept only this Bot signing key id (profile verify)")
+		autoArg      = fs.String("autostart", "", "on or off: start the tray when you sign in (tray)")
+		shKey        = fs.String("key", "", "the share's ovc_… connect key from connect.openvibe.link (share)")
+		shPort       = fs.Int("port", 0, "the local port to share (share)")
+		shSrv        = fs.String("connect-server", "", "OpenVibe Connect's tunnel URL; default wss://connect.openvibe.link/tunnel (share)")
+		shID         = fs.String("share", "", "a share this computer serves itself, as OpenVibe Link: its shr_… id, no key (share)")
+		gitRoot      = fs.String("root", "", "the folder Link may clone into or publish from (clone, git); default ~/OpenVibe")
+		yes          = fs.Bool("yes", false, "approve this clone without asking (clone; for a script, never for a person)")
 	)
 	// Accept flags anywhere: split positionals out.
 	var positional []string
@@ -285,6 +295,14 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		err = cmdQuit(g, stdout)
 	case "plugins":
 		err = cmdPlugins(g, *asJSON, stdout)
+	case "mcp":
+		if *printConfig != "" {
+			err = mcpCommand(g, []string{"--print-config", *printConfig}, *mcpAgent, stdin, stdout)
+		} else {
+			err = mcpCommand(g, positional, *mcpAgent, stdin, stdout)
+		}
+	case "access":
+		err = cmdAccess(g, positional, accessArgs{Scope: *accessScope, For: *accessFor, Reason: *accessReason, JSON: *asJSON}, stdout)
 	case "approvals":
 		err = cmdApprovals(g, *asJSON, stdout)
 	case "approve", "deny":

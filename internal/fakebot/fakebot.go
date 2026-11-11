@@ -13,6 +13,7 @@
 package fakebot
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/OpenVibers/OpenVibe.Link/internal/access"
 	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
@@ -46,17 +48,22 @@ type Server struct {
 	// no measured round trip, so no bound on its clock estimate.
 	HoldHeartbeatAcks bool
 
-	mu           sync.Mutex
-	codes        map[string]string // code → robot id
-	creds        map[string]string // credential → device id
-	robots       map[string]string // device id → robot id
-	live         map[string]*Conn  // device id → its current connection
-	estop        map[string]bool   // robot id → the robot's e-stop latch, as Bot keeps it
-	pairRequests []protocol.PairRequest
-	pairRefusal  *refusal
-	bindRefusals []refusal
-	credInURL    bool
-	binds        atomic.Int64
+	mu             sync.Mutex
+	codes          map[string]string // code → robot id
+	creds          map[string]string // credential → device id
+	robots         map[string]string // device id → robot id
+	live           map[string]*Conn  // device id → its current connection
+	machineDevices map[string]string // node principal → device id
+	deviceMachines map[string]string // device id → node principal
+	relayRoutes    map[string]relayRoute
+	relayOrigin    string
+	relayAllowed   func(string, string, string, string) bool
+	estop          map[string]bool // robot id → the robot's e-stop latch, as Bot keeps it
+	pairRequests   []protocol.PairRequest
+	pairRefusal    *refusal
+	bindRefusals   []refusal
+	credInURL      bool
+	binds          atomic.Int64
 
 	conns  chan *Conn
 	count  atomic.Int64
@@ -69,6 +76,8 @@ type refusal struct {
 	code, detail string
 }
 
+type relayRoute struct{ from, to string }
+
 // RobotID is the robot AddCode and AddCredential attach devices to.
 const RobotID = "rob_01J8Z4M2Q0R7T9YV3K6N8P1W2X"
 
@@ -77,7 +86,7 @@ func (s *Server) SetHealth(status int) { s.health.Store(int64(status)) }
 
 // New starts the fake server.
 func New() *Server {
-	s := &Server{codes: map[string]string{}, creds: map[string]string{}, robots: map[string]string{}, live: map[string]*Conn{}}
+	s := &Server{codes: map[string]string{}, creds: map[string]string{}, robots: map[string]string{}, live: map[string]*Conn{}, machineDevices: map[string]string{}, deviceMachines: map[string]string{}, relayRoutes: map[string]relayRoute{}}
 	s.health.Store(http.StatusOK)
 	s.estop = map[string]bool{}
 	s.conns = make(chan *Conn, 16)
@@ -132,6 +141,77 @@ func (s *Server) AddCredential(cred, deviceID string) {
 	s.creds[cred] = deviceID
 	s.robots[deviceID] = RobotID
 	s.mu.Unlock()
+}
+
+// SetRelayAuthority gives the fake Bot Network's JWKS and live grant lookup.
+func (s *Server) SetRelayAuthority(origin string, allowed func(string, string, string, string) bool) {
+	s.mu.Lock()
+	s.relayOrigin, s.relayAllowed = origin, allowed
+	s.mu.Unlock()
+}
+
+func (s *Server) BindMachine(principal, deviceID string) {
+	s.mu.Lock()
+	s.machineDevices[principal] = deviceID
+	s.deviceMachines[deviceID] = principal
+	s.mu.Unlock()
+}
+
+func (s *Server) RevokeGrant(id, to string) {
+	s.mu.Lock()
+	c := s.live[s.machineDevices[to]]
+	s.mu.Unlock()
+	if c != nil {
+		_ = c.Send(protocol.AccessRevoked{GrantID: id})
+	}
+}
+
+func (s *Server) DeliverAgentTask(to string, task protocol.AgentTaskFrame) bool {
+	s.mu.Lock()
+	c := s.live[s.machineDevices[to]]
+	s.mu.Unlock()
+	return c != nil && c.Send(task) == nil
+}
+
+func (s *Server) relayFrame(c *Conn, m protocol.Message) {
+	switch frame := m.(type) {
+	case protocol.MachineRelay:
+		s.mu.Lock()
+		from := s.deviceMachines[c.DeviceID]
+		target := s.live[s.machineDevices[frame.To]]
+		origin, allowed := s.relayOrigin, s.relayAllowed
+		s.mu.Unlock()
+		refuse := func() {
+			_ = c.Send(protocol.MachineReply{ID: frame.ID, From: frame.To, To: from, Error: "machine relay refused"})
+		}
+		if from == "" || frame.From != from || target == nil || origin == "" || allowed == nil || !access.ValidScope(frame.Scope) {
+			refuse()
+			return
+		}
+		claims, err := access.NewVerifier(origin, frame.To).Verify(context.Background(), frame.GrantToken, from, frame.Scope)
+		if err != nil || !allowed(claims.ID, from, frame.To, frame.Scope) {
+			refuse()
+			return
+		}
+		s.mu.Lock()
+		s.relayRoutes[frame.ID] = relayRoute{from: from, to: frame.To}
+		s.mu.Unlock()
+		_ = target.Send(frame)
+	case protocol.MachineReply:
+		s.mu.Lock()
+		from := s.deviceMachines[c.DeviceID]
+		route, ok := s.relayRoutes[frame.ID]
+		if ok && route.to == from && frame.From == from && frame.To == route.from {
+			delete(s.relayRoutes, frame.ID)
+		} else {
+			ok = false
+		}
+		target := s.live[s.machineDevices[route.from]]
+		s.mu.Unlock()
+		if ok && target != nil {
+			_ = target.Send(frame)
+		}
+	}
 }
 
 // Revoke invalidates a credential and closes the device's live connection with 4003, as Bot's revoke does.
@@ -517,6 +597,9 @@ func (c *Conn) read() {
 				ack.T, ack.Echo = t, &t
 			}
 			_ = c.Send(ack)
+		}
+		if c.srv != nil {
+			c.srv.relayFrame(c, f.Msg)
 		}
 		c.fmu.Lock()
 		c.frames = append(c.frames, f)

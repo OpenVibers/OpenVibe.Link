@@ -123,6 +123,9 @@ type Config struct {
 	// PartyPool offers this machine to OpenVibe's own computer pool for openvibe.party (docs/party-desktop.md).
 	// Off unless enabled. The machine still has to be registered by the owner on openvibe.party/pool.
 	PartyPool PartyPoolConfig `json:"party_pool,omitzero"`
+	// AgentsTalk lets this machine register its local CLIs and receive agent tasks.
+	// The owner must turn it on explicitly; the default is false.
+	AgentsTalk bool `json:"agents_talk,omitempty"`
 }
 
 // PartyPoolConfig is this machine's part in OpenVibe's own computer pool: the Link asks Chat, as this machine, what

@@ -78,6 +78,13 @@ func (j *jobs) accepted(id string) bool {
 	return ok
 }
 
+func (j *jobs) answer(id string) (protocol.Message, bool) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	m, ok := j.answers[id]
+	return m, ok
+}
+
 // job answers a job frame with ack or nack, keyed by the job id, and runs an accepted job. A job the worker holds is
 // answered from it (an ack while it runs, its job_exit once it ended) and never started twice.
 func (n *Agent) job(r protocol.JobRequest) {

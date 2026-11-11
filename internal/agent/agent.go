@@ -25,6 +25,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/OpenVibers/OpenVibe.Link/internal/access"
 	"github.com/OpenVibers/OpenVibe.Link/internal/config"
 	"github.com/OpenVibers/OpenVibe.Link/internal/connect"
 	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
@@ -37,6 +38,7 @@ import (
 	"github.com/OpenVibers/OpenVibe.Link/internal/plugins"
 	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 	"github.com/OpenVibers/OpenVibe.Link/internal/safety"
+	"github.com/OpenVibers/OpenVibe.Link/internal/send"
 	"github.com/OpenVibers/OpenVibe.Link/internal/stream"
 	"github.com/OpenVibers/OpenVibe.Link/internal/video"
 	"github.com/OpenVibers/OpenVibe.Link/internal/worker"
@@ -156,6 +158,15 @@ type Agent struct {
 	codesAgents codesAgentsCache
 	// shares keeps OpenVibe Connect shares up and lets the window add or end one.
 	shares *shareSet
+	// accessInbox keeps received agent tasks until answered or 24 hours old.
+	accessInbox   *access.Inbox
+	grantVerifier *access.Verifier
+	accessClient  *access.Client
+	localAgents   map[string]localAgent
+	relayWaiting  map[string]chan protocol.MachineReply
+	relayTargets  map[string]string
+	relaySources  map[string]relaySource
+	grantedSend   *send.LAN
 }
 
 // ErrQuit is what Run returns after `openvibe-link quit`: every actuator stopped, nothing latched, the process may exit.
@@ -178,6 +189,7 @@ type Approval struct {
 	binding   *plugins.ApprovalRequest
 	Plugin    string `json:"plugin"`
 	Kind      string `json:"kind,omitempty"`
+	Title     string `json:"title,omitempty"`
 	Summary   string `json:"summary,omitempty"`
 	At        int64  `json:"at"`
 	ExpiresS  int64  `json:"expires_s,omitempty"`
@@ -199,10 +211,18 @@ func New(opt Options) (*Agent, error) {
 	panelClipboard, panelAutoAccept := loadPanelSettings(opt.Paths.StateDir)
 	n := &Agent{opt: opt, log: opt.Log, latch: latch, dedup: safety.NewDedup(4096, 10*time.Minute),
 		jobs: newJobs(nil), telemetry: map[string]map[string]any{}, telemMS: 500, approvals: map[string]Approval{}, inputs: map[string]bool{},
-		panelOff: panelOff, panelFirst: panelFirst, panelClipboard: panelClipboard, panelAutoAccept: panelAutoAccept}
+		panelOff: panelOff, panelFirst: panelFirst, panelClipboard: panelClipboard, panelAutoAccept: panelAutoAccept, localAgents: map[string]localAgent{}, relayWaiting: map[string]chan protocol.MachineReply{}, relayTargets: map[string]string{}, relaySources: map[string]relaySource{}}
 	home, _ := os.UserHomeDir()
 	n.codes = loadCodesTasks(opt.Paths.StateDir, home, opt.Log)
 	n.codesAgents.fn = opt.CodesAgents
+	n.accessInbox, err = access.OpenInbox(opt.Paths.StateDir + string(os.PathSeparator) + "agent-inbox.json")
+	if err != nil {
+		return nil, err
+	}
+	if opt.Creds != nil && opt.Creds.NetworkPaired() {
+		n.grantVerifier = access.NewVerifier(opt.Creds.Network, opt.Creds.Principal)
+		n.accessClient = &access.Client{Origin: opt.Creds.Network, Tokens: link.NewTokenSourceFor(opt.Creds, nil, "openvibe-link/"+opt.Version, "openvibe.network")}
+	}
 	n.limits = safety.Merge(protocol.Limits{}, opt.Config.Limits.MaxSpeed, opt.Config.Limits.MaxTurn, opt.Config.Limits.MaxCommandMS)
 
 	var specs []plugins.Spec
@@ -342,6 +362,14 @@ func (n *Agent) Run(parent context.Context) error {
 		wg.Add(1)
 		go func() { defer wg.Done(); n.fleet.Run(ctx) }()
 	}
+	if n.accessClient != nil {
+		wg.Add(1)
+		go func() { defer wg.Done(); n.pollAccessRequests(ctx) }()
+		if n.opt.Config.AgentsTalk {
+			wg.Add(1)
+			go func() { defer wg.Done(); n.registerLocalAgents(ctx) }()
+		}
+	}
 	// OpenVibe's own computer pool (docs/party-desktop.md): a machine the owner registered asks Chat what to host.
 	if n.opt.Config.PartyPool.Enabled {
 		wg.Add(1)
@@ -434,6 +462,16 @@ func (n *Agent) Frame(f protocol.Frame) {
 		} else {
 			n.log.Debug("job_exit_ack ignored: no worker", "id", m.ID)
 		}
+	case protocol.AgentTaskFrame:
+		if err := n.receiveAgentTask(m); err != nil {
+			n.log.Warn("agent task refused", "err", err)
+		}
+	case protocol.AccessRevoked:
+		n.revokeAccess(m)
+	case protocol.MachineRelay:
+		go n.receiveMachineRelay(m)
+	case protocol.MachineReply:
+		n.receiveMachineReply(m)
 	}
 }
 
@@ -970,6 +1008,9 @@ func (n *Agent) serverNow(sentMS int64, received mono.Instant) int64 {
 }
 
 func (n *Agent) send(m protocol.Message) {
+	if n.relayResult(m) {
+		return
+	}
 	if n.link == nil {
 		return
 	}
@@ -1494,6 +1535,10 @@ func (n *Agent) Approvals() []Approval {
 	defer n.mu.Unlock()
 	out := make([]Approval, 0, len(n.approvals))
 	for id, a := range n.approvals {
+		if a.Plugin == "machine-access" {
+			out = append(out, a)
+			continue
+		}
 		p := n.mgr.Get(a.Plugin)
 		if p == nil || !p.ApprovalValid(a.binding) {
 			delete(n.approvals, id)
@@ -1549,6 +1594,10 @@ func (n *Agent) control(r localctl.Request) localctl.Response {
 			return localctl.Response{Error: err.Error()}
 		}
 		return localctl.Response{OK: true, Data: b}
+	case localctl.CmdMCP:
+		return n.mcpControl(r.ID, r.Agent, r.Data)
+	case localctl.CmdAccess:
+		return n.accessControl(r.ID, r.Data)
 	case localctl.CmdApprove, localctl.CmdDeny:
 		if err := n.answerApproval(r.ID, r.Cmd == localctl.CmdApprove); err != nil {
 			return localctl.Response{Error: err.Error()}

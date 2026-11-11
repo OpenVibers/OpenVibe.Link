@@ -37,13 +37,17 @@ const (
 	CmdPanel     = "panel"
 	CmdPartyHost = "party_host"
 	CmdPartyStop = "party_stop"
+	// CmdMCP runs one named MCP tool through the same local authorization path as the CLI.
+	CmdMCP    = "mcp"
+	CmdAccess = "access"
 )
 
 type Request struct {
-	Cmd  string          `json:"cmd"`
-	ID   string          `json:"id,omitempty"`   // approve and deny: the locally minted approval nonce (never the cloud command ID)
-	On   bool            `json:"on,omitempty"`   // tray: the tray is running
-	Data json.RawMessage `json:"data,omitempty"` // first_run: the telemetry events to report
+	Cmd   string          `json:"cmd"`
+	ID    string          `json:"id,omitempty"`    // approve and deny: the locally minted approval nonce (never the cloud command ID)
+	Agent string          `json:"agent,omitempty"` // MCP: which local CLI launched the server
+	On    bool            `json:"on,omitempty"`    // tray: the tray is running
+	Data  json.RawMessage `json:"data,omitempty"`  // first_run: the telemetry events to report
 }
 
 type Response struct {
@@ -93,6 +97,11 @@ func Serve(ctx context.Context, path string, h Handler) error {
 			if err := json.NewDecoder(c).Decode(&req); err != nil {
 				_ = json.NewEncoder(c).Encode(Response{Error: "bad request"})
 				return
+			}
+			if req.Cmd == CmdMCP {
+				// agent_ask may wait for a remote agent's reply. The socket is local and
+				// the MCP server still caps that wait at 120 seconds.
+				_ = c.SetDeadline(time.Now().Add(123 * time.Second))
 			}
 			_ = json.NewEncoder(c).Encode(h(req))
 		}(c)

@@ -1,5 +1,11 @@
 # Link ↔ OpenVibe.Bot protocol (bot.device-message@1, device side)
 
+## Machine access and agent relay
+
+A Network-paired Link may send `machine.relay` with `id`, `from`, `to`, `scope`, `grant_token`, `action`, and JSON `data`. Bot checks the live grant before forwarding. The target verifies the signed grant and checks Network's current grant state again, then sends `machine.reply` with `id`, `from`, `to`, `ok`, and either `data` or `error`. `access.revoked` with `grant_id` ends a locally cached grant at once. Network sends `agent.task` with an A2A `task`; a cross-machine task also carries `from_machine` and `grant_token`. The local agent inbox is gated by the owner's `agents_talk` switch.
+
+The `machine.relay` scope maps to an existing local feature: `agent` queues a task, `send` places a Locker-sealed envelope in Link Send, `screen` and `desk` use their command kinds, `computer` uses the computer plugin's own owner level and per-action approval, and `worker` uses the sandbox job handler. The LAN handover for granted Send uses `/api/link-send/v2` with both the owner's HMAC and the same grant check.
+
 OpenVibe.Bot's own `docs/protocol.md` (section 1, the `/device` socket) and its `POST /api/v1/pair` handler are the
 source of truth. Every field name below lives in one Go package, `internal/protocol/`, and the exact frames from Bot's
 doc are pinned verbatim in [`internal/protocol/testdata/bot`](../internal/protocol/testdata/bot) (its README names the
