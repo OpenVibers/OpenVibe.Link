@@ -5,6 +5,7 @@ package worker
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -51,6 +52,37 @@ func skillRunnerWorker(t *testing.T, m *mediaFake) (*Worker, *sink) {
 	w, s := newRunWorkerConfig(t, wc)
 	w.mediaRT = m.srv.Client().Transport
 	return w, s
+}
+
+// The owner may share coding CLI logins with other functions. Skill code must never receive those files.
+func TestSkillRunnerJobHasNoPlanLogins(t *testing.T) {
+	home := t.TempDir()
+	setHome(t, home)
+	login := filepath.Join(home, ".codex", "auth.json")
+	if err := os.MkdirAll(filepath.Dir(login), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(login, []byte(`{"test":"login"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tool := []byte(`const fs = require('fs'); process.stdout.write(JSON.stringify({present: fs.existsSync('.codex/auth.json')}));`)
+	m := newMediaFake(t)
+	m.objects[inputID] = tool
+	t.Setenv(testMediaEnv, testMediaToken)
+	w, s := skillRunnerWorker(t, m)
+	w.cfg.PlanLogins = []string{login}
+	j := skillJob(4, tool, digestOf(tool), `{"tool":"check","entry":"code.js","input":{}}`)
+	run(t, w, j)
+	ex := s.exit(t, j.ID)
+	var got struct {
+		OK     bool `json:"ok"`
+		Output struct {
+			Present bool `json:"present"`
+		} `json:"output"`
+	}
+	if err := json.Unmarshal(ex.Result, &got); err != nil || !got.OK || got.Output.Present {
+		t.Fatalf("the skill job received a plan login: %+v result %s: %v", ex, ex.Result, err)
+	}
 }
 
 // skillJob is one job of the declared runner: code.js is the tool's code, pinned by digest, and args names it.

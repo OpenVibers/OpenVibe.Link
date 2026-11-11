@@ -429,9 +429,7 @@ func (w *Worker) execute(jb *job) protocol.JobExit {
 		}
 		return never(protocol.ExitFailed, err)
 	}
-	// The owner's plan logins, staged for this job only: the copy goes with the job's directory and its content
-	// never leaves the machine.
-	planLogins, err := stagePlanLogins(w.cfg.PlanLogins, dir)
+	planLogins, err := stageJobPlanLogins(jb.fn, w.cfg.PlanLogins, dir)
 	if err != nil {
 		return never(protocol.ExitFailed, err)
 	}

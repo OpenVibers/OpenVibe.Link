@@ -95,7 +95,8 @@ write any file (in the job directory included), read anything outside the job di
 The runner adds no network of its own: the tool has the job sandbox's network namespace, so under `net: deny` (the
 default) there is no network at all, and under `public` or `openvibe-only` only what the job's `net` and the owner's
 egress allow. The tool also has the job's uid/gid, private root, seccomp filter, cgroups and rlimits; it sees no Link
-credential, no owner home and no state.
+credential, no owner home and no state. The worker does not stage `worker.plan_logins` for skill runner jobs, even when
+the owner enabled plan logins for other functions.
 
 The tool writes **one JSON value to stdout, at most 64 KiB**. More is stopped and the result says `limit`; stderr is
 kept for the person, cut at 16 KiB. The runner writes the job's result to fd 3:
