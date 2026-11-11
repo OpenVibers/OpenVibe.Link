@@ -829,12 +829,18 @@ class Browser:
         out = {"done": True}
         try:
             self._follow()
-            r = receipt(before, self._eval(BEFORE_JS))
+            after = self._eval(BEFORE_JS)
+            r = receipt(before, after)
         except BrowserError:
             r = None
         if r is not None:
             if self.tab_change:
                 r["page"] = self.tab_change
+            parts = origin_of(after.get("url"))
+            origin = "%s://%s:%d" % (parts[0], "[%s]" % parts[1] if ":" in parts[1] else parts[1], parts[2]) if parts else "unknown"
+            if not re.fullmatch(r"https?://[A-Za-z0-9.:[\]-]+", origin):
+                origin = "unknown"
+            r["appeared"] = [fence_text(line, origin=origin)[0] for line in r["appeared"]]
             out["receipt"] = r
         return out
 

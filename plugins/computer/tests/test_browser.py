@@ -520,7 +520,8 @@ class RealBrowserTest(unittest.TestCase):
         r = b._eval("(() => { const r = document.getElementById('go').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()")
         x, y = round(r[0] * shot["width"] / 1000), round(r[1] * shot["height"] / 600)
         clicked = cmd("input", {"action": "click", "x": x, "y": y, "width": shot["width"], "height": shot["height"]})
-        self.assertEqual(clicked["receipt"]["appeared"], ["Row added"], clicked)
+        from openvibe_computer.fence import parse_fenced
+        self.assertEqual([parse_fenced(x) for x in clicked["receipt"]["appeared"]], ["Row added"], clicked)
         # Type into the field it focused, select all, delete.
         b._eval("document.querySelector('input[type=email]').focus()")
         cmd("input", {"action": "type", "text": "a@b.co"})
