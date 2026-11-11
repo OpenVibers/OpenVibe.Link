@@ -157,7 +157,7 @@ server's own counter, never the heartbeat's.
 |-----------------|--------------------------------------------------------------------------------------------------|
 | `hello`         | `session_id`, `device_id`, `robot_ids` [], `server_time` (RFC 3339) — on every authenticated connection |
 | `config`        | `heartbeat_ms`, `limits` {`max_speed` 0..1, `max_turn` 0..1, `max_command_ms`, `heartbeat_ms`}, `allowed_commands` [kinds], `estop_latched`, `roles` [ids] — right after `hello` |
-| `command`       | `id` (server-minted: the idempotency and ack key), `ref` (the operator's own id, logs only), `kind`, `value`, `deadline_ms` (absolute, motion kinds only), `operator` {`subject`, `role`}, `robot_id`; Link only: `target` (plugin name) |
+| `command`       | `id` (server-minted: the idempotency and ack key), `ref` (the operator's own id, logs only), `kind`, `value`, `deadline_ms` (absolute, motion kinds and `headlight`), `operator` {`subject`, `role`}, `robot_id`; Link only: `target` (plugin name); `headlight` only: `provenance` {`session`, `seq`, `issued_at_ms`, `expires_at_ms`, `clock_uncertainty_ms`} |
 | `estop`         | `latched` (true: the e-stop latched; false: the owner cleared it), `by`, `at`                    |
 | `heartbeat_ack` | `echo` (the heartbeat's `t`, or null), `t` (the same send time when the server has it), `server_time` (RFC 3339); the Link measures RTT from the echoed send time |
 | `error`         | `code`, `detail` — a frame the server refused; logged, never fatal                               |
@@ -210,6 +210,7 @@ reading until the next one.
 | `say`      | `{"text": "…"}` (1–1000 bytes; plugins may cap lower)                                                    | no     |
 | `display`  | `{"text": "…"}`, `{"face": "happy"}` or `{"image_png_b64": "…"}`                                        | no     |
 | `button`   | `{"name": "forward"}` press; `{"name": …, "state": "down"\|"up"}` hold (names from the robot's profile)   | guarded |
+| `headlight` | `{"on": true}` or `{"on": false}` — explicit, never a toggle; Bot's provenance and a 300 ms original lifetime/250 ms deadline | no |
 | `point`    | `{"x": 0..1, "y": 0..1}` normalised click on the video, for the [`relay`](plugins.md) plugin              | guarded |
 | `halt`     | `{}` — stop every actuator now (not latched); always accepted                                           | —      |
 | `exec`     | `{"argv": ["prog", "arg"…], "cwd"?, "timeout_s"?, "stdin"?}`: run a program on the machine ([computer.md](computer.md)) | computer |
@@ -223,13 +224,29 @@ Sign conventions: `throttle`/`x` positive = forward; `steer` positive = turn rig
 servo in their config to make the hardware match).
 
 `deadline_ms` is an **absolute** instant in Unix milliseconds on the server's clock, present on `drive`, `actuator`,
-`ptz` and `button` (a held button is re-sent, so its deadline releases the hold — see the [`relay`](plugins.md) plugin). A device's clock may be minutes off, so the Link never compares it with its own clock: it estimates the
+`ptz`, `button` and `headlight` (a held button is re-sent, so its deadline releases the hold — see the [`relay`](plugins.md) plugin). A device's clock may be minutes off, so the Link never compares it with its own clock: it estimates the
 server's clock from the `ts` of every frame on the connection (the largest `ts` − receive time: the skew less the
 fastest transit, kept for the whole connection so a run of delayed frames cannot reopen an expired deadline) and
 compares `deadline_ms` with that at receipt. A command that arrives at or after its deadline →
 `nack expired` and never reaches a plugin; otherwise the plugin gets only the time that is left. No `deadline_ms` →
 300 ms. Always capped at `max_command_ms` (default 1000). A held control is re-sent by the panel every 150 ms, each
 with a new `id`. Plugins still get a relative `deadline_ms` and keep their own stop timer ([plugins.md](plugins.md)).
+
+**Headlights.** `headlight` is the one custom non-motion kind with its own timing: `{"on": true|false}`, explicit and
+never a toggle. Bot mints one with an original 300 ms lifetime and a `deadline_ms` at most 250 ms after issue, and
+stamps `provenance` on the frame: `session` (the hello's id), `seq` and `issued_at_ms` (this frame's envelope seq and
+ts), `expires_at_ms` (the original 300 ms expiry) and `clock_uncertainty_ms` (Bot's last measured link round trip).
+The Link checks provenance against the frame, nacks `bad_value` when they disagree or the lifetime/deadline are not
+Bot's, nacks `expired` when less than 200 ms of the original 300 ms lifetime is left on receipt (or the deadline
+already passed), and only then routes it to the driver. The driver gets `deadline_ms` ≤ 250,
+`expires_at_mono_ns` at the original expiry on the shared QPC/monotonic clock, the frame's `operator` and
+`turn_epoch`, and Bot's `provenance` with the Link's own measured `clock_uncertainty_ms`. A headlight is never motion:
+it does not renew a drive or head deadline. At most two are accepted in any rolling second on one machine, shared
+with the owner's local controls. A rate/busy refusal is an `ack` with `data`
+`{"stage":"headlight_refused","admitted":false}`; a refusal from the driver is the same. An accepted one is an `ack`
+with `{"stage":"headlight_pending","admitted":true}` — accepted, **not confirmed on the hardware**. A `nack` is a
+rejection. The driver reports `sensors.p7_headlight` {`commanded`: true|false|null, `pending`: bool,
+`physical_state_verified`: false} in telemetry; a panel shows the commanded state, never a physical reading.
 
 What the Link does with a command, in order:
 
@@ -239,7 +256,9 @@ What the Link does with a command, in order:
 3. `halt` → every plugin stops, `ack`.
 4. No `config` yet on this connection → `nack not_ready`. Kind not in `config.allowed_commands` → `nack not_allowed`.
 5. `drive`, `ptz`, `actuator`, `button` and `point` while the local kill switch is latched → `nack local_stop`; while
-   the remote e-stop is latched → `nack estopped`; past its `deadline_ms` → `nack expired`.
+   the remote e-stop is latched → `nack estopped`; past its `deadline_ms` → `nack expired`. `headlight` is checked by
+   its own provenance/lifetime rules above instead (it is not motion and is not refused by the latch here; the driver
+   applies STOP and its own preconditions).
 6. The value is clamped in the core, before any plugin sees it: `throttle`, `x`, `y` to ±`max_speed`; `steer`,
    `rotation` to ±`max_turn`; `pan`, `tilt`, `zoom` and a numeric actuator `value` to ±1; a `point`'s `x`/`y` must be
    numbers in 0..1. The limits are the stricter of the server's `config.limits` and the local config's `limits`.

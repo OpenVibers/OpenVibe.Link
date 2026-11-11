@@ -17,6 +17,7 @@ var capabilityFor = map[string]string{
 	protocol.KindDisplay:      "display",
 	protocol.KindButton:       "button",
 	protocol.KindPoint:        "point",
+	protocol.KindHeadlight:    "headlight",
 	protocol.KindExec:         "terminal",
 	protocol.KindFS:           "files",
 	protocol.KindScreen:       "screen",

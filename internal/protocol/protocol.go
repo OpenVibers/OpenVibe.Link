@@ -159,6 +159,10 @@ const (
 	KindHalt     = "halt"
 	KindButton   = "button"
 	KindPoint    = "point"
+	// KindHeadlight switches a robot's lights on or off, explicitly ({"on": true|false}), and is not motion: it
+	// never renews a drive/head deadline. It is the community LOOI driver's remote light (docs/hardware-looi.md)
+	// and carries Bot's provenance and a short original expiry, checked by the Agent before it reaches a plugin.
+	KindHeadlight = "headlight"
 
 	// The machine's own computer (the `computer` plugin, docs/plugins.md): run a program, use a file, capture the
 	// screen. Their ack carries the answer in data; the owner's control level on the machine decides what runs.
@@ -201,7 +205,7 @@ const (
 )
 
 // Kinds lists every command kind the Link understands.
-var Kinds = []string{KindDrive, KindActuator, KindPTZ, KindSay, KindDisplay, KindHalt, KindButton, KindPoint, KindExec, KindFS, KindScreen, KindProbe, KindInput, KindBrowser, KindScreenStream, KindDesk, KindDeskStream, KindAI}
+var Kinds = []string{KindDrive, KindActuator, KindPTZ, KindSay, KindDisplay, KindHalt, KindButton, KindPoint, KindHeadlight, KindExec, KindFS, KindScreen, KindProbe, KindInput, KindBrowser, KindScreenStream, KindDesk, KindDeskStream, KindAI}
 
 // ComputerKinds move nothing: they carry long deadlines (DefaultComputerMS, at most MaxComputerMS) and no clamping.
 var ComputerKinds = map[string]bool{KindExec: true, KindFS: true, KindScreen: true, KindProbe: true, KindInput: true, KindBrowser: true, KindScreenStream: true, KindDesk: true, KindDeskStream: true, KindAI: true}
@@ -379,6 +383,22 @@ type Command struct {
 	TurnEpoch int64  `json:"turn_epoch,omitempty"`
 	RobotID   string `json:"robot_id,omitempty"`
 	Target    string `json:"target,omitempty"` // Link only: a driver name; default: the first driver with the capability
+	// Provenance is Bot's own stamp for a custom action (kind headlight): which link session and frame it was
+	// minted on, when Bot sent it, and the original instant it expires. Bot fills it; the Agent checks it against
+	// the frame's session, seq and ts and passes it to the plugin with expires_at_mono_ns on the shared clock.
+	Provenance *CommandProvenance `json:"provenance,omitempty"`
+}
+
+// CommandProvenance is where Bot minted a custom-action command (kind headlight), passed unchanged to the driver
+// as `provenance` (docs/plugins.md). Session is the hello session id of the connection, Seq the frame's envelope
+// seq, IssuedAtMS the frame's ts, and ExpiresAtMS the original instant Bot minted it to expire (300 ms later).
+// ClockUncertaintyMS is the Agent's own measured bound, filled by the Agent.
+type CommandProvenance struct {
+	Session            string `json:"session,omitempty"`
+	Seq                uint64 `json:"seq,omitempty"`
+	IssuedAtMS         int64  `json:"issued_at_ms,omitempty"`
+	ExpiresAtMS        int64  `json:"expires_at_ms,omitempty"`
+	ClockUncertaintyMS *int64 `json:"clock_uncertainty_ms,omitempty"`
 }
 
 // Estop is sent when the e-stop latches (Latched true) or the owner clears it (Latched false).

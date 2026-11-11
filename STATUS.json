@@ -5,14 +5,15 @@
   "wave": "T15",
   "plan": "Plan track T15 (Bot complete) and ADR-043 (Bot: devices, pairing, control and safety); the computer plugin and the job worker serve OpenVibe.Actor and the Codes job runner (tracks T14/T17)",
   "kind": "client",
-  "version": "0.56.0",
-  "release": "v0.56.0: sandbox skill jobs never receive the owner's plan login files, even when the owner enabled those files for other functions. Skill code runs with the scanned inputs in its job directory and no coding CLI credentials.",
+  "version": "0.57.0",
+  "release": "v0.57.0: LOOI headlights \u2014 a Bot headlight command ({\"on\": true|false}, not a toggle) reaches the community LOOI driver as its own non-motion kind, with Bot's provenance, a 300 ms original lifetime and a deadline of at most 250 ms, at least 200 ms of the original lifetime left on receipt, expires_at_mono_ns on the shared clock, a shared 2 requests/second budget with local controls, and the driver's headlight_pending/headlight_refused ack data relayed to Bot. Drive and head deadlines are unchanged.",
   "runtime": "go 1.24 (one static binary per platform); plugins in Python 3; an ESP32 Arduino library",
   "database": "none",
   "deployed": false,
   "deployment": "none of its own: people install it on their machines and robots (curl -fsSL https://openvibe.link/install | sh, or a release binary); it connects out to OpenVibe.Bot (wss://openvibe.bot/device) and pairs through OpenVibe.Bot or OpenVibe.Network. On 2026-10-22 production held 1 platform node with 4 pairings and 5 node principals on Network, and 3 robots with 5 devices on Bot.",
   "features": [
     "Git on this computer (G3): `openvibe-link clone <link>` clones into the root you chose in Link after you approve it there, reporting progress to git.openvibe.codes; `openvibe-link git connect <link>` publishes the repositories under that root, read-only, browsed through Link while the machine is online, and carries a repository page's \"Clone to <this computer>\" to the same approval there",
+    "LOOI headlights: Bot's explicit on/off custom action reaches the community driver as kind \"headlight\" (never actuator), with provenance, 300 ms lifetime/250 ms deadline, 200 ms original reserve on receipt, expires_at_mono_ns on the shared clock, a 2 requests/second budget shared with local controls, and stage=headlight_pending/headlight_refused ack data",
     "pairing with a code approved on openvibe.bot (or through Network), one outbound WebSocket, no open ports",
     "safety: deadlines, owner limits clamped before any driver, heartbeats and a deadman, a persisted e-stop and the local kill switch (openvibe-link stop)",
     "plugins as separate processes (JSON lines): dryrun, adeept_adr036, cozmo, relay and ros2 (rclpy or rosbridge); the community LOOI driver's contract; signed community profiles (openvibe-link profile verify)",
@@ -34,5 +35,5 @@
     "a tray on macOS (approvals there are a dialog with Deny as its default)",
     "the computer plugin's browser on Windows"
   ],
-  "updated": "2026-11-10"
+  "updated": "2026-11-11"
 }

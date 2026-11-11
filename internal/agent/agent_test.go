@@ -62,6 +62,13 @@ func start(t *testing.T) *env {
 // connected, without waiting for its first status.
 func startWith(t *testing.T, prep func(*fakebot.Server), ready bool) *env {
 	t.Helper()
+	return startWithPlugin(t, prep, ready, nil)
+}
+
+// startWithPlugin is startWith with the one plugin replaced (the headlight tests run a tiny Python driver that
+// describes the headlight kind; every other test runs the bundled dry-run plugin).
+func startWithPlugin(t *testing.T, prep func(*fakebot.Server), ready bool, plugin *config.PluginConfig) *env {
+	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("end-to-end tests run on unix")
 	}
@@ -99,6 +106,9 @@ func startWith(t *testing.T, prep func(*fakebot.Server), ready bool) *env {
 	cfg.Python = py
 	cfg.Plugins = []config.PluginConfig{{Name: "dryrun", Config: map[string]any{"record": record, "log_commands": false},
 		Env: map[string]string{"PYTHONPATH": filepath.Join(root, "plugins/sdk") + string(os.PathListSeparator) + filepath.Join(root, "plugins/dryrun")}}}
+	if plugin != nil {
+		cfg.Plugins = []config.PluginConfig{*plugin}
+	}
 	cfg.Video = config.VideoConfig{Source: "auto", Width: 64, Height: 48, FPS: 10, WHIPURL: srv.URL() + "/whip/" + creds.DeviceID}
 
 	n, err := New(Options{Config: cfg, Paths: paths, Creds: creds, Version: "test", HeartbeatInterval: 100 * time.Millisecond,
@@ -525,5 +535,204 @@ func TestVideoAndTelemetry(t *testing.T) {
 		if times[i]-times[i-1] < 450 {
 			t.Fatalf("telemetry faster than 2 Hz: %v", times)
 		}
+	}
+}
+
+// ── LOOI headlights (Maticus, 2026-11-11) ────────────────────────────────────────────────────────────────────────
+// Bot mints a headlight with an original 300 ms lifetime and a ≤250 ms deadline; Link passes it to the driver as
+// the note's envelope (deadline_ms ≤ 250, expires_at_mono_ns on the shared clock, Bot's provenance, operator and
+// turn_epoch), holds 200 ms of the original lifetime on receipt, shares two requests a second across sources, and
+// relays the driver's stage=headlight_pending/headlight_refused ack data back to Bot.
+
+func headlightPlugin(t *testing.T) (*env, string) {
+	t.Helper()
+	py, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 not installed")
+	}
+	root, _ := filepath.Abs("../..")
+	record := filepath.Join(t.TempDir(), "headlight.jsonl")
+	e := startWithPlugin(t, nil, true, &config.PluginConfig{
+		Name:    "headlight",
+		Command: []string{py, filepath.Join(root, "internal/agent/testdata/headlight_plugin.py")},
+		Config:  map[string]any{"record": record},
+	})
+	return e, record
+}
+
+type headlightRec struct {
+	ID              string             `json:"id"`
+	Kind            string             `json:"kind"`
+	Value           json.RawMessage    `json:"value"`
+	DeadlineMS      int                `json:"deadline_ms"`
+	ExpiresAtMonoNS *int64             `json:"expires_at_mono_ns"`
+	Operator        *protocol.Operator `json:"operator"`
+	TurnEpoch       int64              `json:"turn_epoch"`
+	Provenance      *struct {
+		Session            string `json:"session"`
+		Seq                uint64 `json:"seq"`
+		IssuedAtMS         int64  `json:"issued_at_ms"`
+		ExpiresAtMS        int64  `json:"expires_at_ms"`
+		ClockUncertaintyMS *int64 `json:"clock_uncertainty_ms"`
+	} `json:"provenance"`
+}
+
+func readHeadlight(t *testing.T, path string) []headlightRec {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		b, err := os.ReadFile(path)
+		if err == nil && len(b) > 0 {
+			var out []headlightRec
+			for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+				var r headlightRec
+				if json.Unmarshal([]byte(line), &r) == nil {
+					out = append(out, r)
+				}
+			}
+			if len(out) > 0 {
+				return out
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("the headlight plugin recorded no command in %s", path)
+	return nil
+}
+
+func ackData(t *testing.T, r protocol.Message) map[string]any {
+	t.Helper()
+	ad, ok := r.(protocol.AckData)
+	if !ok {
+		t.Fatalf("not an ack with data: %#v", r)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(ad.Data, &out); err != nil {
+		t.Fatalf("ack data %s: %v", ad.Data, err)
+	}
+	return out
+}
+
+func headlightCommand(t *testing.T, e *env, id string, on bool, deadline int, prov *protocol.CommandProvenance) protocol.Message {
+	t.Helper()
+	cmd := protocol.Command{ID: id, Kind: protocol.KindHeadlight, Value: json.RawMessage(`{"on":` + map[bool]string{true: "true", false: "false"}[on] + `}`), Operator: &protocol.Operator{Subject: "usr_test", Role: "operator"}, TurnEpoch: 4242, Provenance: prov}
+	if err := e.conn.Command(cmd, deadline); err != nil {
+		t.Fatal(err)
+	}
+	r, err := e.conn.Reply(id, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+func TestHeadlightEnvelopeAndAckData(t *testing.T) {
+	e, record := headlightPlugin(t)
+	r := headlightCommand(t, e, "hl-1", true, HeadlightDeadlineMS, &protocol.CommandProvenance{})
+	if d := ackData(t, r); d["stage"] != "headlight_pending" || d["admitted"] != true {
+		t.Fatalf("ack data %v", d)
+	}
+	// The fake plugin reports telemetry; the Agent relays it to Bot.
+	if _, err := e.conn.Expect(protocol.TypeTelemetry, 5*time.Second, func(m protocol.Message) bool {
+		t, ok := m.(protocol.Telemetry)
+		if !ok {
+			return false
+		}
+		s, _ := t.Sensors["p7_headlight"].(map[string]any)
+		return s != nil && s["commanded"] == true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := readHeadlight(t, record)[0]
+	if got.Kind != protocol.KindHeadlight || string(got.Value) != `{"on":true}` {
+		t.Fatalf("plugin got %+v", got)
+	}
+	if got.DeadlineMS < 1 || got.DeadlineMS > HeadlightDeadlineMS {
+		t.Fatalf("plugin deadline_ms %d", got.DeadlineMS)
+	}
+	if got.ExpiresAtMonoNS == nil || *got.ExpiresAtMonoNS == 0 {
+		t.Fatalf("no expires_at_mono_ns: %+v", got)
+	}
+	if got.Operator == nil || got.Operator.Subject != "usr_test" || got.Operator.Role != "operator" || got.TurnEpoch != 4242 {
+		t.Fatalf("operator/turn_epoch: %+v", got)
+	}
+	p := got.Provenance
+	if p == nil || p.Session == "" || p.Seq == 0 || p.IssuedAtMS == 0 || p.ExpiresAtMS-p.IssuedAtMS != HeadlightLifetimeMS {
+		t.Fatalf("provenance: %+v", p)
+	}
+	if p.Session != e.conn.SessionID || p.ClockUncertaintyMS == nil {
+		t.Fatalf("provenance session/clock uncertainty: %+v (hello %s)", p, e.conn.SessionID)
+	}
+}
+
+func TestHeadlightReserveAndRefusals(t *testing.T) {
+	e, _ := headlightPlugin(t)
+	// A frame that spent 150 ms on the way has only 150 ms of its original 300 ms lifetime left: never sent.
+	cmd := protocol.Command{ID: "hl-late", Kind: protocol.KindHeadlight, Value: json.RawMessage(`{"on":false}`), Provenance: &protocol.CommandProvenance{}}
+	if err := e.conn.CommandLate(cmd, HeadlightDeadlineMS, 150*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	r, err := e.conn.Reply("hl-late", 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, ok := r.(protocol.Nack); !ok || n.FaultCode != protocol.FaultExpired {
+		t.Fatalf("the late headlight was not refused expired: %#v", r)
+	}
+	// Provenance is checked against the frame: another session, another seq, another lifetime or a deadline over
+	// 250 ms is a bad value, never a plugin call.
+	cases := []struct {
+		name     string
+		deadline int
+		prov     *protocol.CommandProvenance
+	}{
+		{"session", HeadlightDeadlineMS, &protocol.CommandProvenance{Session: "sess_other"}},
+		{"seq", HeadlightDeadlineMS, &protocol.CommandProvenance{Seq: 999}},
+		{"lifetime", HeadlightDeadlineMS, &protocol.CommandProvenance{ExpiresAtMS: time.Now().Add(400 * time.Millisecond).UnixMilli()}},
+		{"deadline", HeadlightDeadlineMS + 10, &protocol.CommandProvenance{}},
+	}
+	for _, c := range cases {
+		cmd := protocol.Command{ID: "hl-" + c.name, Kind: protocol.KindHeadlight, Value: json.RawMessage(`{"on":true}`), Provenance: c.prov}
+		if err := e.conn.Command(cmd, c.deadline); err != nil {
+			t.Fatal(err)
+		}
+		r, err := e.conn.Reply("hl-"+c.name, 5*time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n, ok := r.(protocol.Nack); !ok || n.FaultCode != protocol.FaultBadValue {
+			t.Fatalf("%s: %#v", c.name, r)
+		}
+	}
+	// Explicit on/off only: no toggle, no other key.
+	bad := protocol.Command{ID: "hl-bad", Kind: protocol.KindHeadlight, Value: json.RawMessage(`{"on":"yes"}`), Provenance: &protocol.CommandProvenance{}}
+	if err := e.conn.Command(bad, HeadlightDeadlineMS); err != nil {
+		t.Fatal(err)
+	}
+	r, err = e.conn.Reply("hl-bad", 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, ok := r.(protocol.Nack); !ok || n.FaultCode != protocol.FaultBadValue {
+		t.Fatalf("odd on: %#v", r)
+	}
+}
+
+func TestHeadlightTwoPerSecond(t *testing.T) {
+	e, _ := headlightPlugin(t)
+	for i := 0; i < HeadlightPerSecond; i++ {
+		r := headlightCommand(t, e, "hl-rate-"+string(rune('a'+i)), true, HeadlightDeadlineMS, &protocol.CommandProvenance{})
+		if d := ackData(t, r); d["admitted"] != true {
+			t.Fatalf("request %d refused: %v", i, d)
+		}
+	}
+	r := headlightCommand(t, e, "hl-rate-c", false, HeadlightDeadlineMS, &protocol.CommandProvenance{})
+	if d := ackData(t, r); d["stage"] != "headlight_refused" || d["admitted"] != false {
+		t.Fatalf("the third in a second was not refused: %v", d)
+	}
+	time.Sleep(1100 * time.Millisecond)
+	r = headlightCommand(t, e, "hl-rate-d", false, HeadlightDeadlineMS, &protocol.CommandProvenance{})
+	if d := ackData(t, r); d["admitted"] != true {
+		t.Fatalf("the next second was refused: %v", d)
 	}
 }

@@ -452,3 +452,36 @@ func TestHeartbeatCarriesTheFleet(t *testing.T) {
 		t.Fatalf("an empty fleet is absent, not []: %s", plain)
 	}
 }
+
+// A headlight is Bot's custom non-motion kind: the frame carries its own provenance (session, seq, issued/expires
+// time and the measured clock bound), which Link checks against the envelope and passes to the driver unchanged.
+func TestHeadlightFrameCarriesBotProvenance(t *testing.T) {
+	raw := []byte(`{"v":1,"seq":7,"ts":1738065600000,"type":"command","id":"cmd_hl","ref":"op_hl","kind":"headlight","value":{"on":true},"deadline_ms":1738065600250,"operator":{"subject":"usr_01J8","role":"owner"},"turn_epoch":1738065600100,"robot_id":"rob_1","provenance":{"session":"sess_1","seq":7,"issued_at_ms":1738065600000,"expires_at_ms":1738065600300,"clock_uncertainty_ms":12}}`)
+	f, err := Decode(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, ok := f.Msg.(Command)
+	if !ok {
+		t.Fatalf("%T", f.Msg)
+	}
+	if c.Kind != KindHeadlight || string(c.Value) != `{"on":true}` || c.DeadlineMS != 1738065600250 {
+		t.Fatalf("headlight: %+v", c)
+	}
+	if c.Operator == nil || c.Operator.Subject != "usr_01J8" || c.Operator.Role != "owner" || c.TurnEpoch != 1738065600100 {
+		t.Fatalf("operator/turn_epoch: %+v", c.Operator)
+	}
+	p := c.Provenance
+	if p == nil || p.Session != "sess_1" || p.Seq != 7 || p.IssuedAtMS != 1738065600000 ||
+		p.ExpiresAtMS != 1738065600300 || p.ClockUncertaintyMS == nil || *p.ClockUncertaintyMS != 12 {
+		t.Fatalf("provenance: %+v", p)
+	}
+	// It is a known kind, so Link routes it rather than nacking unsupported, and it is not motion.
+	known := false
+	for _, k := range Kinds {
+		known = known || k == KindHeadlight
+	}
+	if !known || GuardedKinds[KindHeadlight] || ComputerKinds[KindHeadlight] {
+		t.Fatalf("headlight kind: known=%v guarded=%v computer=%v", known, GuardedKinds[KindHeadlight], ComputerKinds[KindHeadlight])
+	}
+}
