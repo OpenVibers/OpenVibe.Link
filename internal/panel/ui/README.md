@@ -29,8 +29,8 @@ fragment: `/panel/#t=<token>`. The page sends that token as `X-Link-Panel` on ev
 | `POST /panel/api/files/:id/decline` | — | Removes the incoming item. |
 | `POST /panel/api/files/:id/complete` | — | Removes the accepted item after download starts. |
 | `POST /panel/api/first-run` | `{ "uses": ["codes", "browser"], "skip": false }` | The first-run answer. Uses are `codes`, `browser`, `models`, `earn` and `vibe`. The daemon turns on what each says (`earn` stays off until it is confirmed on Exchange) and stops asking; `skip: true` only stops asking. |
-| `POST /panel/api/clipboard` | `{ "on": true }` | The per-machine clipboard-sharing switch, off by default; text only, sealed like every other item. |
-| `POST /panel/api/send/auto-accept` | `{ "on": true }` | Save incoming items from the person's own machines without asking, per machine. Off by default. |
+| `POST /panel/api/clipboard` | `{ "on": true }` | The per-machine clipboard-sharing switch, off by default; text only. The daemon seals each new clipboard change for the person's other machines while the window is closed. |
+| `POST /panel/api/send/auto-accept` | `{ "on": true }` | Save incoming items from the person's own machines without asking, per machine. Off by default; the daemon saves files to Downloads and clipboard text to the clipboard while the window is closed. |
 
 ## `GET /panel/api/state`
 

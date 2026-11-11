@@ -118,9 +118,10 @@ tasks this machine ran today, and what happened, and lets you pause everything, 
 share a port, or send a file, a note or copied text to another of your machines (sealed on this computer with
 openvibe-sdk/locker; the other machine lists the sender and size and asks before saving). A transfer is uploaded in
 parts, so a dropped connection continues where it stopped; on the same network it is handed over directly, and
-otherwise the relay holds only ciphertext. Clipboard sharing is a per-machine switch, off by default and text only. It is served only on
-loopback, with a per-run token in the address fragment that every API call must send; see [docs/panel.md](docs/panel.md)
-for the security rules.
+otherwise the relay holds only ciphertext. Clipboard sharing is a per-machine switch, off by default and text only;
+with auto-accept on, the daemon saves a received file to Downloads and puts received copied text on the clipboard
+without needing the window open. It is served only on loopback, with a per-run token in the address fragment that
+every API call must send; see [docs/panel.md](docs/panel.md) for the security rules.
 
 **Your machines:** [openvibe.link/machines](https://openvibe.link/machines) opens the signed-in machines hub: each
 paired machine, whether it is online, the roles it plays (Codes jobs, desks, your own models, a robot), and pairing a
