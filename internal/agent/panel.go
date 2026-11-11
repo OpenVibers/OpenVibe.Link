@@ -125,6 +125,19 @@ func (n *Agent) panelSendOptions(ctx context.Context) panelSend {
 			}
 		}
 	}()
+	// The window can be closed; receiving and clipboard sync still run here while the person has the switches on.
+	// Auto-accept only keeps items from this account's own machines: a granted item from another account stays in
+	// the window for an answer.
+	service := send.NewService(send.ServiceOptions{
+		Relay: client, Direct: lan, Key: key, Principal: n.opt.Creds.Principal, Log: n.log,
+		Settings: func() send.Settings {
+			n.mu.Lock()
+			defer n.mu.Unlock()
+			return send.Settings{AutoAccept: n.panelAutoAccept, Clipboard: n.panelClipboard}
+		},
+		OnActivity: n.addActivity,
+	})
+	go service.Run(ctx)
 	return panelSend{
 		key: func() any {
 			return map[string]any{"private_key": key, "subject": map[string]string{"type": "link", "id": n.opt.Creds.Principal}}

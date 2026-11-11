@@ -181,7 +181,6 @@
     var drop = $('[data-lk-drop]'), say = $('[data-lk-drop-say]'), targetSelect = $('[data-lk-send-target]');
     var sendKey = null, lockerModule = null;
     var settings = { clipboard: false, auto_accept: false };
-    var seenInbox = {};
     function panelApi(path, method, body) {
         return fetch('/panel/api/' + path, { method: method || 'GET', headers: Object.assign({ 'X-Link-Panel': token }, body ? { 'Content-Type': 'application/json' } : {}),
             body: body ? JSON.stringify(body) : undefined, credentials: 'same-origin' }).then(function (r) {
@@ -239,7 +238,7 @@
             var view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes), n = new DataView(view.buffer, view.byteOffset, view.byteLength).getUint32(0);
             if (n < 2 || n > view.length - 4) throw new Error('The encrypted item is incomplete.');
             var info = JSON.parse(new TextDecoder().decode(view.subarray(4, 4 + n))), fileBytes = view.subarray(4 + n);
-            if (info.kind === 'clipboard' && navigator.clipboard && navigator.clipboard.writeText) {
+            if (info.kind === 'clipboard' && settings.clipboard && navigator.clipboard && navigator.clipboard.writeText) {
                 var text = new TextDecoder().decode(fileBytes);
                 return navigator.clipboard.writeText(text).then(function () {
                     return panelApi('files/' + encodeURIComponent(item.id) + '/complete', 'POST', {}).then(function () {
@@ -257,11 +256,7 @@
     function loadInbox() {
         panelApi('send/inbox').then(function (body) {
             var list = $('[data-lk-send-inbox]');
-            (body.items || []).forEach(function (item) {
-                if (!settings.auto_accept || seenInbox[item.id]) return;
-                seenInbox[item.id] = true;
-                downloadAccepted(item).catch(function (e) { say(e.message || 'An item from one of your machines could not be opened.'); });
-            });
+            // Auto-accept runs in the daemon, even when this window is closed; doing it here too would save twice.
             list.replaceChildren.apply(list, (body.items || []).map(function (item) {
                 var li = el('li', 'lk-send-item'), label = el('span', '', 'Encrypted item from ' + (item.sender_name || 'your machine') + ' · ' + size(item.bytes) + ' · ' + ago(item.created_at));
                 var actions = el('div'), accept = el('button', '', 'Accept'), decline = el('button', '', 'Decline');
