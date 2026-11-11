@@ -105,7 +105,7 @@ Usage:
   openvibe-link share add|list|remove …             the shares the Link service keeps up (openvibe-link share)
   openvibe-link party host <party-id>               host a shared browser for an openvibe.party room, until stopped
   openvibe-link clone <LINK>                        clone a repository here: the "Clone to my computer" link from
-                                                    its page on git.openvibe.codes, approved in this terminal
+                                                    its page on git.openvibe.codes, approved on this computer
   openvibe-link git connect <LINK>                  publish the repositories under --root to OpenVibe Git, read-only,
                                                     until Ctrl-C (the link is on your Git page)
   openvibe-link version
