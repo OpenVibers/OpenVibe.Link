@@ -6,7 +6,17 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
 )
+
+// Skill code can read its entire job directory. It must never receive an owner's plan-login files.
+func stageJobPlanLogins(fn config.FunctionConfig, logins []string, root string) ([]string, error) {
+	if fn.Name == "openvibe-skill-runner" {
+		return nil, nil
+	}
+	return stagePlanLogins(logins, root)
+}
 
 // The plan logins: the owner's own coding-CLI sign-in files, copied read-only into a job's private home.
 //

@@ -4,7 +4,33 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/OpenVibers/OpenVibe.Link/internal/config"
 )
+
+func TestSkillRunnerNeverStagesPlanLogins(t *testing.T) {
+	home := t.TempDir()
+	setHome(t, home)
+	login := filepath.Join(home, ".codex", "auth.json")
+	if err := os.MkdirAll(filepath.Dir(login), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(login, []byte(`{"test":"login"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	names, err := stageJobPlanLogins(config.FunctionConfig{Name: "openvibe-skill-runner", Version: "1.0.0"}, []string{login}, root)
+	if err != nil || len(names) != 0 {
+		t.Fatalf("skill runner staged a login: names=%v err=%v", names, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".codex", "auth.json")); !os.IsNotExist(err) {
+		t.Fatalf("skill runner left a login in its job directory: %v", err)
+	}
+	names, err = stageJobPlanLogins(config.FunctionConfig{Name: "openvibe-codes"}, []string{login}, root)
+	if err != nil || len(names) != 1 {
+		t.Fatalf("ordinary function lost the owner's opt-in: names=%v err=%v", names, err)
+	}
+}
 
 // The plan logins: the copy, the read-only mode, the cleanup and the opt-in.
 
