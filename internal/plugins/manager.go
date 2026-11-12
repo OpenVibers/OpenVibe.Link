@@ -80,7 +80,7 @@ func (m *Manager) Get(name string) *Plugin {
 	return nil
 }
 
-// StopAll tells every plugin to stop every actuator, saying why (StopLinkLost, StopShutdown).
+// StopAll tells every plugin to stop every actuator, saying why (StopLinkLost, StopLinkRestart, StopShutdown).
 func (m *Manager) StopAll(cause string) {
 	for _, p := range m.plugins {
 		p.Stop(cause)

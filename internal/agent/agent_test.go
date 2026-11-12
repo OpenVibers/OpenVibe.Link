@@ -26,6 +26,7 @@ import (
 	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 	"github.com/OpenVibers/OpenVibe.Link/internal/safety"
 	"github.com/OpenVibers/OpenVibe.Link/internal/video"
+	"github.com/gorilla/websocket"
 )
 
 func init() {
@@ -541,7 +542,7 @@ func TestVideoAndTelemetry(t *testing.T) {
 // ── LOOI headlights (Maticus, 2026-11-11) ────────────────────────────────────────────────────────────────────────
 // Bot mints a headlight with an original 300 ms lifetime and a ≤250 ms deadline; Link passes it to the driver as
 // the note's envelope (deadline_ms ≤ 250, expires_at_mono_ns on the shared clock, Bot's provenance, operator and
-// turn_epoch), holds 200 ms of the original lifetime on receipt, shares two requests a second across sources, and
+// turn_epoch), holds 50 ms of the original lifetime on receipt, shares two requests a second across sources, and
 // relays the driver's stage=headlight_pending/headlight_refused ack data back to Bot.
 
 func headlightPlugin(t *testing.T) (*env, string) {
@@ -710,12 +711,25 @@ func TestHeadlightReserveOnASlowLink(t *testing.T) {
 
 func TestHeadlightReserveAndRefusals(t *testing.T) {
 	e, _ := headlightPlugin(t)
-	// A frame that spent 150 ms on the way has only 150 ms of its original 300 ms lifetime left: never sent.
-	cmd := protocol.Command{ID: "hl-late", Kind: protocol.KindHeadlight, Value: json.RawMessage(`{"on":false}`), Provenance: &protocol.CommandProvenance{}}
-	if err := e.conn.CommandLate(cmd, HeadlightDeadlineMS, 150*time.Millisecond); err != nil {
+	// 0.62.0: 50 ms of the original 300 ms is enough (P7's tray takes 50 or more). A frame that spent 150 ms on the way
+	// still has 150 ms left: sent. One that spent 260 ms is past its 250 ms deadline (40 ms of lifetime left): never sent.
+	// With the deadline at most 250 ms into a 300 ms life, a command inside its deadline always has over 50 ms left.
+	ok := protocol.Command{ID: "hl-150", Kind: protocol.KindHeadlight, Value: json.RawMessage(`{"on":true}`), Provenance: &protocol.CommandProvenance{}}
+	if err := e.conn.CommandLate(ok, HeadlightDeadlineMS, 150*time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
-	r, err := e.conn.Reply("hl-late", 5*time.Second)
+	r, err := e.conn.Reply("hl-150", 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := ackData(t, r); d["admitted"] != true {
+		t.Fatalf("a headlight with 150 ms left was refused: %#v", r)
+	}
+	cmd := protocol.Command{ID: "hl-late", Kind: protocol.KindHeadlight, Value: json.RawMessage(`{"on":false}`), Provenance: &protocol.CommandProvenance{}}
+	if err := e.conn.CommandLate(cmd, HeadlightDeadlineMS, 260*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	r, err = e.conn.Reply("hl-late", 5*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -758,6 +772,27 @@ func TestHeadlightReserveAndRefusals(t *testing.T) {
 	}
 	if n, ok := r.(protocol.Nack); !ok || n.FaultCode != protocol.FaultBadValue {
 		t.Fatalf("odd on: %#v", r)
+	}
+}
+
+// A deploy of Bot closes the link with 1012: every plugin is stopped with cause link_restart, so a driver can stop its
+// motors without latching a stop of its own (Maticus, 11-12). Any other end is link_lost.
+func TestServerRestartStopsWithLinkRestart(t *testing.T) {
+	e, record := headlightPlugin(t)
+	e.conn.CloseWith(websocket.CloseServiceRestart, "restarting")
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		b, _ := os.ReadFile(record + ".stops")
+		if strings.Contains(string(b), "link_restart") {
+			if strings.Contains(string(b), "link_lost") {
+				t.Fatalf("a restart also stopped as link_lost: %q", b)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no link_restart stop: %q", b)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 

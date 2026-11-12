@@ -182,13 +182,14 @@ var ErrQuit = errors.New("quit by its owner")
 const InputGuard = 2 * time.Second
 
 // Headlights (Maticus's 2026-11-11 handoff, docs/hardware-looi.md): Bot mints a headlight with an original 300 ms
-// lifetime and a deadline of at most 250 ms; by the time it reaches this machine at least 200 ms of that original
-// lifetime must be left, so the driver never gets a command that was already most of the way through its life.
+// lifetime and a deadline of at most 250 ms; by the time it reaches this machine at least 50 ms of that original
+// lifetime must be left (0.62.0; it was 200 until Maticus, 11-12: P7's tray accepts a headlight with 50 ms or more, and
+// the stricter floor here refused ones the tray would have taken).
 // At most two are accepted in any rolling second, shared by every source (Bot and the owner's local controls).
 const (
 	HeadlightLifetimeMS = 300
 	HeadlightDeadlineMS = 250
-	HeadlightReserveMS  = 200
+	HeadlightReserveMS  = 50
 	HeadlightPerSecond  = 2
 )
 
@@ -441,8 +442,15 @@ func (n *Agent) Connected() {
 }
 
 func (n *Agent) Disconnected(err error) {
-	n.log.Warn("link lost: stopping every actuator", "err", err)
-	n.mgr.StopAll(plugins.StopLinkLost)
+	// Bot closing with 1012 is a planned restart (a deploy): the stop says so, so a driver can stop its motors without
+	// latching a stop of its own that the owner would then have to clear by hand (Maticus, 11-12).
+	if errors.Is(err, link.ErrServerRestart) {
+		n.log.Warn("link closed for a server restart: stopping every actuator", "err", err)
+		n.mgr.StopAll(plugins.StopLinkRestart)
+	} else {
+		n.log.Warn("link lost: stopping every actuator", "err", err)
+		n.mgr.StopAll(plugins.StopLinkLost)
+	}
 	n.mu.Lock()
 	n.configured = false
 	n.mu.Unlock()
@@ -884,7 +892,7 @@ func (n *Agent) command(c protocol.Command, sentMS int64, seq uint64, received m
 
 // headlight passes one Bot-minted headlight to its driver. It is not a motion kind: it never renews a drive or
 // head deadline. Bot's provenance is checked against the frame (session, seq, ts) and the original lifetime and
-// deadline, at least 200 ms of the original 300 ms lifetime must be left when the frame is read, the shared
+// deadline, at least 50 ms of the original 300 ms lifetime must be left when the frame is read, the shared
 // 2 requests/second budget is spent, and the plugin gets deadline_ms ≤ 250 with expires_at_mono_ns at the
 // original expiry on the shared clock. Its ack's data (stage headlight_pending/headlight_refused) is relayed to Bot.
 func (n *Agent) headlight(c protocol.Command, entry *safety.Entry, sentMS int64, seq uint64, received mono.Instant, limits safety.Limits, nack func(code, msg string)) {

@@ -248,7 +248,8 @@ Asked next by the same authors (2026-10-27, P7 LOOI shadow integration), and cha
      | op | `cause` | when | latches |
      |---|---|---|---|
      | `stop` | `halt` | Bot's halt: a turn ended, a viewer handoff, a release, a timeout, an unbind (with `turn_epoch`) | no |
-     | `stop` | `link_lost` | the link to Bot dropped (two missed heartbeats, a close) | no |
+     | `stop` | `link_lost` | the link to Bot dropped (two missed heartbeats, a close, no close frame) | no |
+     | `stop` | `link_restart` | Bot closed the link to restart (close 1012, a deploy); it reconnects within seconds (0.62.0) | no |
      | `stop` | `shutdown` | the Link is stopping (service stop, `openvibe-link quit`), or the core is stopping this process | no |
      | `stop` | `timeout` | a command got no answer from the driver within its window | no |
      | `estop` | `remote` | the platform's stop (a robot owner or staff), with its `reason` | yes, until the owner clears it |
@@ -268,6 +269,9 @@ Asked next by the same authors (2026-10-27, P7 LOOI shadow integration), and cha
      information. Never ARM P7, clear its physical latch or restore a remote grant there; the next command still passes
      every check. Across a plugin restart the latch arrives again as `estop` `latched` with `replayed: true`, and the halt
      epoch comes in `hello`. Across a Link reconnect the link's loss is a `stop` (`link_lost`); an old server stop latch set while offline is applied from config before any command.
+     A planned restart of Bot (a deploy closes every link with 1012) is `link_restart` from 0.62.0: stop the motors, and
+     there is no need to latch P7's own STOP for it, so the owner does not have to clear it and ARM again by hand. The
+     Link logs every close with its code and reason, or "the link dropped with no close frame".
 
 Reviewed again by the same authors against v0.17.0 (2026-10-27, `632207f`), and changed in Link 0.18.0:
 
@@ -327,7 +331,7 @@ Reviewed again by the same authors against v0.17.0 (2026-10-27, `632207f`), and 
        - `info.cause` says which (answer 7).
        - `info.halt_epoch` is the newest halt epoch the runtime knows, and comes from `hello` after a restart.
        - `info.turn_epoch` is the epoch of the halt that caused this stop.
-     - An ordinary stop (`halt`, `link_lost`, `shutdown`, `timeout`, `deadline`, `heartbeat`) only says "stop now". It
+     - An ordinary stop (`halt`, `link_lost`, `link_restart`, `shutdown`, `timeout`, `deadline`, `heartbeat`) only says "stop now". It
        latches nothing in the core or the runtime, so an adapter may revoke remote motion without touching a newer local
        owner's command.
      - `on_resume` is information. Its default does nothing, and the runtime re-arms nothing, so P7 is not re-armed and

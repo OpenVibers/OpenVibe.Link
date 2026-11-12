@@ -78,8 +78,9 @@ What the driver receives from OpenVibe Link (the note's exact non-motion envelop
 }
 ```
 
-- The numbers are the contract: 300 ms original lifetime, a deadline of at most 250 ms, and at least 200 ms of the
-  original lifetime left when the Link reads the line (Link nacks `expired` otherwise). It is not a motion kind and
+- The numbers are the contract: 300 ms original lifetime, a deadline of at most 250 ms, and at least 50 ms of the
+  original lifetime left when the Link reads the line (Link nacks `expired` otherwise; 200 until Link 0.62.0, which
+  matched it to P7's tray). It is not a motion kind and
   must never renew a drive/head deadline.
 - At most two are accepted per rolling second on the machine, shared with the owner's local control; Link/plugin
   must not retry automatically.
