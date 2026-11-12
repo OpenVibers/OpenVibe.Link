@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -483,5 +484,40 @@ func TestHeadlightFrameCarriesBotProvenance(t *testing.T) {
 	}
 	if !known || GuardedKinds[KindHeadlight] || ComputerKinds[KindHeadlight] {
 		t.Fatalf("headlight kind: known=%v guarded=%v computer=%v", known, GuardedKinds[KindHeadlight], ComputerKinds[KindHeadlight])
+	}
+}
+
+func TestDocsSayStopNotEStop(t *testing.T) {
+	root := filepath.Join("..", "..")
+	var files []string
+	for _, name := range []string{"AGENTS.md", "README.md", "STATUS.json"} {
+		files = append(files, filepath.Join(root, name))
+	}
+	err := filepath.WalkDir(filepath.Join(root, "docs"), func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && strings.HasSuffix(path, ".md") {
+			files = append(files, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fence := regexp.MustCompile("(?s)```.*?```")
+	code := regexp.MustCompile("`[^`]*`")
+	word := regexp.MustCompile(`(?i)(^|[^A-Za-z])e-?stop([^A-Za-z]|$)|emergency\s+stop`)
+	for _, file := range files {
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := fence.ReplaceAllString(string(raw), "")
+		text = code.ReplaceAllString(text, "")
+		if loc := word.FindStringIndex(text); loc != nil {
+			line := strings.Count(text[:loc[0]], "\n") + 1
+			t.Errorf("%s:%d still says e-stop; these are small hobby robots, write Stop", file, line)
+		}
 	}
 }

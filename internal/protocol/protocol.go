@@ -36,7 +36,7 @@ const (
 	TypeHello        = "hello"
 	TypeConfig       = "config"
 	TypeCommand      = "command"
-	TypeEstop        = "estop" // latched true sets the e-stop, false is the owner clearing it
+	TypeEstop        = "estop" // latched true sets the stop, false is the owner clearing it
 	TypeHeartbeatAck = "heartbeat_ack"
 	TypeError        = "error"
 	// TypeVoiceAnswer is Vibe's answer to a voice_ask (contracts 0.214.0): working, answered or refused, to speak.
@@ -134,9 +134,9 @@ const (
 	JobNotAvailable   = "class not available"
 
 	// Refused by a running worker (platform.job@1: a missing artifact, the local kill switch, limits it cannot honor).
-	JobUnknownArtifact = "unknown artifact"                    // not a function declared in the Link's local config
-	JobStopped         = "the e-stop or local stop is latched" // fault estopped or local_stop
-	JobBusy            = "worker busy"                         // worker.caps.max_jobs are running; fault not_ready
+	JobUnknownArtifact = "unknown artifact"                  // not a function declared in the Link's local config
+	JobStopped         = "the stop or local stop is latched" // fault estopped or local_stop
+	JobBusy            = "worker busy"                       // worker.caps.max_jobs are running; fault not_ready
 )
 
 // job_exit reasons.
@@ -222,7 +222,7 @@ const (
 
 // ComputerActs reports whether a computer command changes the machine (runs a program, writes a file, uses the mouse
 // or keyboard, drives the browser, starts or stops the private desk): those are refused while the local stop or an
-// e-stop is latched. Capturing the screen, reading files, reading or closing the browser and the desk's status are not.
+// stop is latched. Capturing the screen, reading files, reading or closing the browser and the desk's status are not.
 func ComputerActs(kind string, value json.RawMessage) bool {
 	switch kind {
 	case KindExec, KindInput:
@@ -255,7 +255,7 @@ func ComputerActs(kind string, value json.RawMessage) bool {
 	return false
 }
 
-// GuardedKinds move something and are refused while an e-stop or the local kill switch is latched.
+// GuardedKinds move something and are refused while an stop or the local kill switch is latched.
 var GuardedKinds = map[string]bool{KindDrive: true, KindActuator: true, KindPTZ: true, KindButton: true, KindPoint: true}
 
 // Fault codes carried in nack.fault_code and status.faults[].code.
@@ -264,7 +264,7 @@ const (
 	FaultBadValue      = "bad_value"      // a value is missing, not a number, or out of shape
 	FaultUnsupported   = "unsupported"    // no driver on this device handles the kind or the actuator
 	FaultNotAllowed    = "not_allowed"    // the kind is not in config.allowed
-	FaultEstopped      = "estopped"       // the remote e-stop is latched
+	FaultEstopped      = "estopped"       // the remote stop is latched
 	FaultLocalStop     = "local_stop"     // the local kill switch (`openvibe-link stop`) is latched
 	FaultNoHeartbeat   = "no_heartbeat"   // a plugin lost the core's heartbeat
 	FaultNotReady      = "not_ready"      // the driver is starting or restarting, or the server's config has not arrived
@@ -402,7 +402,7 @@ type CommandProvenance struct {
 	ClockUncertaintyMS *int64 `json:"clock_uncertainty_ms,omitempty"`
 }
 
-// Estop is sent when the e-stop latches (Latched true) or the owner clears it (Latched false).
+// Estop is sent when the stop latches (Latched true) or the owner clears it (Latched false).
 type Estop struct {
 	Latched bool   `json:"latched"`
 	By      string `json:"by,omitempty"`

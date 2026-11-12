@@ -169,7 +169,7 @@ llama.cpp's RPC has no authentication of its own, so the plugin never exposes it
 - **Idle-only and the kill switch hold for the whole pool.** The head asks every member every half second; any member
   that is in use (a game, OBS, the person at the keyboard, another program on the GPU; the pool's own GPU use does not
   count), outside its hours, offline or stopped by its kill switch pauses the whole pool, and a member the head stops
-  calling pauses itself after three seconds. The kill switch (an emergency stop of any machine) holds the pool until
+  calling pauses itself after three seconds. The kill switch (an stop of any machine) holds the pool until
   its latch is cleared. Network marks the pool's offer not ready when any machine misses a renewal for ten seconds.
 
 ### Setting one up

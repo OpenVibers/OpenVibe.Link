@@ -2,7 +2,7 @@
 //
 // This is the whole stateful device side of docs/protocol.md sections 1–3 (minus jobs and video): the frame envelope,
 // hello/config/command/estop/heartbeat_ack handling, clamping before any driver sees a value, ack/nack, the heartbeat
-// cadence and deadman, the motion deadline, the e-stop latch and the close-code policy. It has no Arduino headers:
+// cadence and deadman, the motion deadline, the stop latch and the close-code policy. It has no Arduino headers:
 // it includes only ArduinoJson (v7) and the standard library, so the same file runs on an ESP32 and in the desktop
 // conformance harness (esp32/test).
 //
@@ -45,12 +45,12 @@ inline constexpr int64_t kDedupTTLMS = 600000;   // a repeated id is answered fo
 
 // Resource limits for one inbound frame. The protocol allows frames up to 1 MiB; a device with a few hundred KiB of
 // heap bounds them far lower. Anything over these limits (or a frame the JSON parser cannot allocate) is treated as a
-// frame that might have been an e-stop: motion stops and the link is dropped to re-read config.estop_latched.
+// frame that might have been an stop: motion stops and the link is dropped to re-read config.estop_latched.
 inline constexpr size_t kMaxFrameBytes = 16384;
 inline constexpr size_t kMaxJsonDepth = 10; // ArduinoJson's own default nesting limit, passed explicitly
 inline constexpr size_t kMaxIdBytes = 64;   // command ids (and kinds) longer than this are rejected unread
 inline constexpr size_t kMaxKindBytes = 64;
-// The e-stop reason (`by`, or a cached nack message) is bounded too: an estop frame can carry a `by` up to the frame
+// The stop reason (`by`, or a cached nack message) is bounded too: an estop frame can carry a `by` up to the frame
 // limit, and that string is copied into every dedup entry that answers an estopped command. 64 bytes keeps the cache's
 // total size small while leaving room for the "by " prefix.
 inline constexpr size_t kMaxEstopReasonBytes = 64;

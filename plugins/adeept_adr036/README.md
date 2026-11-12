@@ -1,7 +1,7 @@
 # openvibe-adeept-adr036
 
 OpenVibe Link plugin for the **Adeept 4WD Smart Car Kit for Raspberry Pi (ADR036)**, ordinary or mecanum wheels,
-on Raspberry Pi OS Bookworm. Built on `openvibe_plugin` (deadlines, heartbeat loss, stdin EOF, e-stop and halt all stop
+on Raspberry Pi OS Bookworm. Built on `openvibe_plugin` (deadlines, heartbeat loss, stdin EOF, stop and halt all stop
 the wheels). The mapping was checked against Adeept's `Server/Server_*Wheels/Move.py` and `Voltage.py`; none of the
 kit's code is imported.
 

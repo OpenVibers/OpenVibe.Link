@@ -422,7 +422,7 @@ class RuntimeTest(unittest.TestCase):
         self.assertGreater(p.handled[0].deadline_ms, 0)
 
     def test_a_replayed_estop_is_applied_before_any_motion(self):
-        # A restarted process hears, in this order: hello (with the newest halt epoch), the latched e-stop replayed,
+        # A restarted process hears, in this order: hello (with the newest halt epoch), the latched stop replayed,
         # and only then commands (the core routes none to it before its ready, and lines reach it in the order they
         # were queued). No motion handler runs while the replayed latch holds; resume is information only.
         rt, p, out, clock = make()

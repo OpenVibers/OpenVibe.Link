@@ -4,9 +4,9 @@
 // and then authenticates the Authorization header (a bad credential closes with 4002, a revoked device with 4003, a
 // second connection replaces the first with 4000), sends hello and then config (always with allowed_commands and
 // the robot's estop_latched), sends commands with a server-minted id, an absolute deadline_ms, the operator and the
-// robot, and answers heartbeats. Like Bot, it keeps the robot's e-stop latch: an estop frame it sends sets or clears
+// robot, and answers heartbeats. Like Bot, it keeps the robot's stop latch: an estop frame it sends sets or clears
 // it, a device's estop_state latched:true sets it, and latched:false is only a report. Tests drive it to send
-// commands, e-stops, errors and silence, and read back what the device sent.
+// commands, stops, errors and silence, and read back what the device sent.
 //
 // heartbeat_ack carries Bot's own envelope seq and echoes the heartbeat's t as both t and echo (echo null when the
 // heartbeat had no t), with server_time as Bot's clock; the device measures RTT from the echoed send time.
@@ -59,7 +59,7 @@ type Server struct {
 	relayOrigin    string
 	relayAllowed   func(string, string, string, string) bool
 	agentResult    func(string, string, json.RawMessage)
-	estop          map[string]bool // robot id → the robot's e-stop latch, as Bot keeps it
+	estop          map[string]bool // robot id → the robot's stop latch, as Bot keeps it
 	pairRequests   []protocol.PairRequest
 	pairRefusal    *refusal
 	bindRefusals   []refusal

@@ -59,7 +59,7 @@ Drive from openvibe.bot; watch `openvibe-link status --json` for telemetry.
 | Line tracking (GPIO 22/27/17) | `sensors.line` flips over tape | |
 | Buzzer (GPIO 18) / WS2812 (SPI 0.0) | horn + lights widgets work | |
 | Camera (`rpicam-vid --codec h264 --inline -o -` → `internal/video/whip.go`) | panel shows live video (needs the Ops-WHIP row) | |
-| Safety | kill Wi-Fi / Ctrl-C / panel e-stop → wheels stop; e-stop stays latched through a restart | |
+| Safety | kill Wi-Fi / Ctrl-C / panel stop → wheels stop; stop stays latched through a restart | |
 
 Mecanum chassis: re-run with `--driver adeept-mecanum` (same profile `adeept.adr036`, plugin config `wheels: "mecanum"`).
 

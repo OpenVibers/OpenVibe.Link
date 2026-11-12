@@ -1,4 +1,4 @@
-// Package safety holds the rules that keep motors from running when they should not: the persisted e-stop and local
+// Package safety holds the rules that keep motors from running when they should not: the persisted stop and local
 // kill-switch latch, the owner's limits applied to every value before it reaches a plugin, deadline capping, and the
 // command-id cache that makes a repeated command answer with its first result instead of running twice.
 package safety
@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-// LatchState is the persisted e-stop state. Two independent latches:
+// LatchState is the persisted stop state. Two independent latches:
 //
 //   - Remote: set by a server `estop`; cleared by a server `estop` with latched:false (the owner) or a local `resume`.
 //   - Local: set on the machine itself — `openvibe-link stop`, or a driver's own stop (`local_stop`); cleared only by
@@ -36,7 +36,7 @@ type LatchState struct {
 // so a remote clear can still release robot plugins.
 func (s LatchState) Stopped() bool { return s.Remote || s.Local }
 
-// Latch is the persisted latch. It survives restarts: a Link that was e-stopped comes back e-stopped.
+// Latch is the persisted latch. It survives restarts: a Link that was stopped comes back stopped.
 type Latch struct {
 	mu       sync.Mutex
 	path     string
@@ -134,7 +134,7 @@ func (l *Latch) persistLocked() error {
 	return nil
 }
 
-// SetRemote latches the server e-stop.
+// SetRemote latches the server stop.
 func (l *Latch) SetRemote(reason string) (LatchState, error) {
 	return l.SetRemoteWithComputer(reason, false)
 }
@@ -150,7 +150,7 @@ func (l *Latch) SetRemoteWithComputer(reason string, computer bool) (LatchState,
 	})
 }
 
-// ClearRemote clears the server e-stop (the owner's estop latched:false). The local latch is untouched.
+// ClearRemote clears the server stop (the owner's estop latched:false). The local latch is untouched.
 func (l *Latch) ClearRemote() (LatchState, error) {
 	return l.update(func(s *LatchState) { s.Remote, s.RemoteReason, s.RemoteAt = false, "", time.Time{} })
 }

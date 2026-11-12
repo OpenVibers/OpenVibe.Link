@@ -399,7 +399,7 @@ void Core::handle_hello(JsonDocument& doc, int64_t now) {
 
 void Core::handle_config(JsonDocument& doc) {
   // A wrong-typed estop_latched is a malformed frame (Go's json.Unmarshal would reject it whole): apply nothing and
-  // keep the latch exactly as it is, rather than reading `"false"` or `0` as false and releasing the e-stop.
+  // keep the latch exactly as it is, rather than reading `"false"` or `0` as false and releasing the stop.
   JsonVariantConst estopv = doc["estop_latched"];
   if (!estopv.isNull() && !estopv.is<bool>()) {
     log("warn", "config with a non-boolean estop_latched ignored; the latch is unchanged");
@@ -530,7 +530,7 @@ void Core::handle_command(JsonDocument& doc, int64_t ts, int64_t now) {
       return;
     }
     if (remote_stop_) {
-      const std::string msg = remote_reason_.empty() ? std::string("the remote e-stop is latched") : remote_reason_;
+      const std::string msg = remote_reason_.empty() ? std::string("the remote stop is latched") : remote_reason_;
       send_nack(id, kFaultEstopped, msg);
       remember(id, DedupResult{false, kFaultEstopped, msg});
       return;
@@ -605,7 +605,7 @@ void Core::handle_estop(JsonDocument& doc) {
   JsonVariantConst latchedv = doc["latched"];
   if (!latchedv.isNull() && !latchedv.is<bool>()) {
     // Wrong type: ignore the frame and keep the latch (Go's json.Unmarshal rejects it too). Reading `"false"` or 0 as
-    // false would release the e-stop on a malformed frame.
+    // false would release the stop on a malformed frame.
     log("warn", "estop with a non-boolean latched ignored; the latch is unchanged");
     return;
   }
@@ -615,7 +615,7 @@ void Core::handle_estop(JsonDocument& doc) {
     // The frame can carry up to kMaxFrameBytes, and this string is copied into every dedup entry that answers an
     // estopped command: bound it so the cache cannot be filled with megabytes.
     if (by.size() > kMaxEstopReasonBytes) by.resize(kMaxEstopReasonBytes);
-    set_remote_stop(true, by.empty() ? std::string("the remote e-stop is latched") : ("by " + by), true);
+    set_remote_stop(true, by.empty() ? std::string("the remote stop is latched") : ("by " + by), true);
   } else {
     set_remote_stop(false, "", true);
   }
@@ -910,14 +910,14 @@ void Core::set_remote_stop(bool on, const std::string& reason, bool notify) {
     remote_reason_ = reason.size() > kMaxEstopReasonBytes ? reason.substr(0, kMaxEstopReasonBytes) : reason;
     stop_motion();
     if (notify) {
-      log("warn", "e-stop latched: " + remote_reason_); // the bounded copy, so a huge `by` cannot flood the log either
+      log("warn", "stop latched: " + remote_reason_); // the bounded copy, so a huge `by` cannot flood the log either
       notify_latch();
     }
   } else {
     remote_stop_ = false;
     remote_reason_.clear();
     if (notify) {
-      log("warn", "e-stop cleared; motion allowed again");
+      log("warn", "stop cleared; motion allowed again");
       notify_latch();
     }
   }

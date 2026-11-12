@@ -18,7 +18,7 @@ apk=$(find android/app/build/outputs/apk/debug -name "*.apk" | head -n 1)
 adb install -r "$apk"
 
 for screen in pair approvals camera location notify activity phone; do
-    adb shell am force-stop network.openvibe.link || true
+    adb shell am forcstop network.openvibe.link || true
     adb shell am start -W -n network.openvibe.link/.PreviewActivity --es screen "$screen" >/dev/null
     sleep 2
     adb exec-out screencap -p > "$out/$screen.png"
@@ -26,7 +26,7 @@ for screen in pair approvals camera location notify activity phone; do
 done
 
 # The launcher entry, as a person sees it first.
-adb shell am force-stop network.openvibe.link || true
+adb shell am forcstop network.openvibe.link || true
 adb shell am start -W -n network.openvibe.link/.MainActivity >/dev/null
 sleep 2
 adb exec-out screencap -p > "$out/app.png"

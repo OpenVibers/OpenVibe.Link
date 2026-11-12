@@ -72,7 +72,7 @@ openvibe-link exchange serve --model qwen3:32b --public-url https://gpu.example.
 
 - **Core** (Go, one static binary per platform): pairing, one outbound WebSocket to `wss://openvibe.bot/device`
   (credential in the `Authorization` header only), heartbeats and a deadman, the safety rules (deadlines, owner limits
-  clamped before any driver sees a value, a persisted e-stop, the local kill switch), the plugin supervisor, WHIP video
+  clamped before any driver sees a value, a persisted stop, the local kill switch), the plugin supervisor, WHIP video
   publishing with pion, and the system service (systemd, launchd, Windows).
 - **Plugins** (separate processes, JSON lines over stdin/stdout): [`dryrun`](plugins/dryrun), the Adeept 4WD Smart Car
   Kit [`adeept_adr036`](plugins/adeept_adr036/README.md), [`cozmo`](plugins/cozmo/README.md) through PyCozmo, and
@@ -81,7 +81,7 @@ openvibe-link exchange serve --model qwen3:32b --public-url https://gpu.example.
   ([docs/hardware-looi.md](docs/hardware-looi.md) is its contract). Each plugin stops its own actuators when stdin closes,
   at a command's deadline and after 1 s without a heartbeat, so the core dying never leaves motors running.
 - **ESP32 library** ([`esp32/`](esp32/README.md), `OpenVibeLink`): the device side of the protocol for ESP32 boards —
-  pairing, the control link, drive/actuator commands, telemetry, heartbeat, deadman and e-stop — but no jobs or video.
+  pairing, the control link, drive/actuator commands, telemetry, heartbeat, deadman and stop — but no jobs or video.
 
 **Community robots:** a profile people submit on openvibe.bot (`community.<name>`) is reviewed by an OpenVibe admin
 and signed by Bot (Ed25519 over its canonical JSON). `openvibe-link profile verify community.<name>` checks that

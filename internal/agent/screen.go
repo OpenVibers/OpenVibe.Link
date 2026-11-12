@@ -23,7 +23,7 @@ import (
 // with stream "screen"; the core encodes and publishes them on a second WHIP session, apart from a robot's camera.
 //
 // A stream ends when its time is up, on stop, when the plugin says it ended, and at once when the local kill switch
-// or an e-stop latches; a start is refused while either is latched. One stream at a time: a new start replaces it.
+// or an stop latches; a start is refused while either is latched. One stream at a time: a new start replaces it.
 const (
 	ScreenDefaultSeconds = 600
 	ScreenMinSeconds     = 30

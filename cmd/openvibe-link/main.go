@@ -9,7 +9,7 @@
 //	openvibe-link uninstall       stop and remove the system service
 //	openvibe-link status          show the link, the plugins, the stop latch and video
 //	openvibe-link stop            local kill switch: stop every actuator and hold it stopped
-//	openvibe-link resume          release the local kill switch (and a server e-stop)
+//	openvibe-link resume          release the local kill switch (and a server stop)
 //	openvibe-link quit            end the running node cleanly: every actuator stops, nothing is latched
 //	openvibe-link plugins         list plugins and their capabilities
 //	openvibe-link memory scan [--tools a,b] [--project DIR …] [--json]
@@ -809,7 +809,7 @@ func cmdResume(g *globals, stdout io.Writer) error {
 		}
 		chownLikeDir(g.paths.LatchFile(), g.paths.StateDir)
 	}
-	fmt.Fprintln(stdout, "Resumed: the local stop and any server e-stop are released. Operators can drive again.")
+	fmt.Fprintln(stdout, "Resumed: the local stop and any server stop latch are released. Operators can drive again.")
 	return nil
 }
 
@@ -976,7 +976,7 @@ func deviceLine(device, principal, server string) string {
 
 func latchText(l safety.LatchState) string {
 	if l.Computer {
-		return "STOPPED for computer control (an e-stop on this computer); `openvibe-link resume` on this machine is required"
+		return "STOPPED for computer control (a stop on this computer); `openvibe-link resume` on this machine is required"
 	}
 	switch {
 	case l.Local && l.Remote:
@@ -984,7 +984,7 @@ func latchText(l safety.LatchState) string {
 	case l.Local:
 		return "STOPPED locally; `openvibe-link resume` releases it"
 	case l.Remote:
-		return "E-STOPPED by the server (" + l.RemoteReason + "); the owner clears it on openvibe.bot"
+		return "STOPPED by the server (" + l.RemoteReason + "); the owner clears it on openvibe.bot"
 	}
 	return "clear"
 }

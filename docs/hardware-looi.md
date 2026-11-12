@@ -17,7 +17,7 @@ them per robot.
 
 Who may drive is Bot's job, not the driver's: the owner, invited operators, an optional public queue with timed
 turns, cooldowns and per-role allowed commands, all enforced by Bot's command gate before a command reaches the Link.
-The e-stop is latched in Bot and only the owner clears it. Each command tells the driver who sent it (`cmd.operator`,
+Stop is a plain command: Bot sends `halt`, and the tray's own Stop stays local. Each command tells the driver who sent it (`cmd.operator`,
 `{"subject", "role"}`), and when a queue turn ends or its holder leaves Bot halts the robot before the next person
 drives (the driver gets `stop`), so commands from the last driver never come after it
 ([plugins.md](plugins.md#core--plugin)). The owner or an operator driving during someone's turn pauses that turn and
@@ -115,8 +115,8 @@ The driver should send telemetry with `battery` (`{"percent": 0..100}` or `{"vol
 - **A stop on the robot itself.** If the driver has its own stop (a button, a hotkey, a sensor it trusts), call
   `self.local_stop("reason")` (or send `{"op": "local_stop", "reason": "…"}`). Every actuator stops at once, the
   Link latches its **local** stop (persisted across restarts), and the panel shows the robot as stopped on the robot.
-  The owner's remote clear does not lift it: only `openvibe-link resume` on the bridge computer does, and then the
-  owner clears the panel's e-stop. Running `openvibe-link stop` does the same from a terminal.
+  Only `openvibe-link resume` on the bridge computer lifts it. Running `openvibe-link stop` does the same from a
+  terminal.
 
 ## Installing the driver
 

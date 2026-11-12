@@ -110,7 +110,7 @@ type Plugin struct {
 	desc     *Describe
 	fault    *protocol.Fault
 	estopped bool
-	// The e-stop's cause and reason, sent again (replayed) to a restarted process while the stop is latched.
+	// The stop's cause and reason, sent again (replayed) to a restarted process while the stop is latched.
 	estopCause, estopReason string
 	// The newest turn_epoch a halt carried: hello tells a restarted process, so a stale turn stays refused there too.
 	haltEpoch int64
@@ -302,7 +302,7 @@ const (
 	StopLinkLost = "link_lost" // the link to Bot was lost
 	StopShutdown = "shutdown"  // the Link is stopping (service stop, `openvibe-link quit`)
 	StopTimeout  = "timeout"   // a command got no answer from the driver within its window
-	EstopRemote  = "remote"    // an e-stop from the platform (a robot owner or staff)
+	EstopRemote  = "remote"    // an stop from the platform (a robot owner or staff)
 	EstopLocal   = "local"     // `openvibe-link stop` on the device
 	EstopDriver  = "driver"    // a driver's own local stop (a plugin reported one)
 	EstopLatched = "latched"   // the stop was already latched when the Link or this process started
@@ -324,7 +324,7 @@ func (p *Plugin) Halt(turnEpoch int64) {
 	_ = p.send(msg)
 }
 
-// Estop latches the plugin's e-stop (the core also refuses motion itself), saying why.
+// Estop latches the plugin's stop (the core also refuses motion itself), saying why.
 func (p *Plugin) Estop(cause, reason string) {
 	p.mu.Lock()
 	p.estopped, p.estopCause, p.estopReason = true, cause, reason
@@ -332,7 +332,7 @@ func (p *Plugin) Estop(cause, reason string) {
 	_ = p.send(map[string]any{"op": "estop", "cause": cause, "reason": reason})
 }
 
-// Resume tells the plugin the platform's e-stop latch was cleared by its owner. It is information, never a re-arm: the
+// Resume tells the plugin the platform's stop latch was cleared by its owner. It is information, never a re-arm: the
 // driver keeps its own hardware latch and grants as they are.
 func (p *Plugin) Resume() {
 	p.mu.Lock()

@@ -42,9 +42,9 @@ mode 0600 and its contents never appear in logs, errors or `status`.
 - Control link: `wss://openvibe.bot/device`, credential in the `Authorization: Bearer` header of the upgrade (never in the
   URL). Every frame is JSON with `v` (1), `seq` (per-direction counter), `ts` (ms). Server→device: `hello`, `config`
   (limits, heartbeat_ms, deadman_ms), `command` (`id`, `kind` drive|actuator|ptz|say|display|halt, `value`, `deadline_ms`,
-  `operator`, `role`), `estop` (latched), `heartbeat_ack`. Device→server: `status` (agent version, drivers, faults,
-  estop_latched), `telemetry` (≤ 2 Hz: battery, rssi, sensors), `ack` / `nack` (`id`, `fault_code`), `heartbeat` (1 s),
-  `estop_state`. A repeated command `id` is answered with the first result and never executed twice. Commands are never
+  `operator`, `role`), the old stop-latch frame, `heartbeat_ack`. Device→server: `status` (agent version, drivers, faults,
+  and the legacy latch field), `telemetry` (≤ 2 Hz: battery, rssi, sensors), `ack` / `nack` (`id`, `fault_code`), `heartbeat` (1 s),
+  the old Stop report. A repeated command `id` is answered with the first result and never executed twice. Commands are never
   queued while offline and never replayed after a reconnect. Reconnect with exponential backoff and jitter.
 - The service side (OpenVibe.Bot) is being built at the same time; its `docs/protocol.md` will be the exact wire format.
   Keep every wire detail inside `internal/protocol/` so aligning later is one package. Build a **fake Bot server** in Go
@@ -57,7 +57,7 @@ mode 0600 and its contents never appear in logs, errors or `status`.
   only the time left, and the plugin stops at that deadline unless a newer command arrived. Held controls are re-sent by the operator every 150 ms.
 - Stop all actuators on: 2 missed heartbeats, link loss, core shutdown, plugin crash (the core restarts it with backoff
   and it starts stopped), `openvibe-link stop`, an `estop`.
-- Two latches, both persisted across restarts. The **remote** e-stop: a server `estop` sets it, and the owner's `estop`
+- Two latches, both persisted across restarts. The **remote** stop: a server `estop` sets it, and the owner's `estop`
   `latched:false` or the local `resume` clears it. The **local** stop (`openvibe-link stop`, or a driver's `local_stop`):
   only the local `resume` clears it, never the owner. Owner limits (`max_speed`, `max_turn`) clamp every value in the core before it reaches a plugin.
 - Never run or expose a kit's stock control server (the Adeept kit ships one on 0.0.0.0:8888 with the fixed login
@@ -87,7 +87,7 @@ Raspberry Pi OS Bookworm, Python 3, `adafruit-circuitpython-pca9685`, `adafruit-
 - **Buzzer**: `gpiozero.TonalBuzzer(18)`; **WS2812 LEDs** over SPI (`spidev`, bus 0 device 0).
 - **Camera**: Picamera2/libcamera. The core publishes it: prefer `rpicam-vid --codec h264 --inline -o -` piped into the
   WHIP publisher; fall back to MJPEG frames from the plugin.
-- Tests: a fake I²C/GPIO layer so the plugin runs on any machine; assert the deadline stop, stdin-EOF stop, estop, and the
+- Tests: a fake I²C/GPIO layer so the plugin runs on any machine; assert the deadline stop, stdin-EOF stop, a local stop, and the
   exact channel numbers.
 
 ## Plugin 2: `cozmo` (a bridge plugin)

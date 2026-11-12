@@ -3,7 +3,7 @@
 This plugin drives a ROS 2 robot from OpenVibe.Bot: TurtleBot 3 or 4, a Jackal, a home-built base, anything that takes
 `geometry_msgs/msg/Twist` on a `cmd_vel` topic. The Link runs on the robot's computer, or on a computer on the same
 network. The plugin turns Bot's commands into ROS 2 messages, and the robot's topics into telemetry and camera frames.
-Bot's gate (roles, the owner's limits, cooldowns and the e-stop) has already judged every command before it gets here.
+Bot's gate (roles, the owner's limits, cooldowns and the stop) has already judged every command before it gets here.
 
 ## What it bridges
 

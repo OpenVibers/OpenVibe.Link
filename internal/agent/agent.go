@@ -355,7 +355,7 @@ func (n *Agent) Run(parent context.Context) error {
 
 	pctx, cancelPlugins := context.WithCancel(context.Background())
 	// A stop latched on disk is set on every plugin before any starts: each process's first lines are then hello and
-	// the e-stop replayed (cause latched, first_cause what set it), before it can be routed any command.
+	// the stop replayed (cause latched, first_cause what set it), before it can be routed any command.
 	if st := n.latch.State(); st.Stopped() || st.Computer {
 		n.log.Warn("starting with the stop latched", "remote", st.Remote, "local", st.Local, "computer", st.Computer)
 	}
@@ -506,17 +506,17 @@ func (n *Agent) Frame(f protocol.Frame) {
 }
 
 func (n *Agent) remoteEstop(reason, by string) {
-	n.log.Warn("e-stop from the server", "by", by)
+	n.log.Warn("stop from the server", "by", by)
 	n.mgr.EstopAll(plugins.EstopRemote, safety.CleanReason(reason)) // at once, before the disk write
 	if _, err := n.latch.SetRemoteWithComputer(reason, n.hasComputer()); err != nil {
-		n.log.Error("could not persist the e-stop (it is held in memory)", "err", err)
+		n.log.Error("could not persist the stop (it is held in memory)", "err", err)
 	}
 }
 
 func (n *Agent) remoteClear(by string) {
-	n.log.Warn("e-stop cleared by the server", "by", by)
+	n.log.Warn("stop cleared by the server", "by", by)
 	if _, err := n.latch.ClearRemote(); err != nil {
-		n.log.Error("could not persist the e-stop clear", "err", err)
+		n.log.Error("could not persist the stop clear", "err", err)
 	}
 }
 
@@ -982,7 +982,7 @@ func (n *Agent) admitHeadlight(at mono.Instant) bool {
 }
 
 // computer runs one exec, fs or screen command: no clamping, a long reply window (the server's deadline, at most
-// MaxComputerMS, else DefaultComputerMS), refused while the local stop or an e-stop is latched when it would change the
+// MaxComputerMS, else DefaultComputerMS), refused while the local stop or an stop is latched when it would change the
 // machine, and answered with the plugin's data. The plugin applies its owner's control level.
 func (n *Agent) computer(c protocol.Command, entry *safety.Entry, sentMS int64, received mono.Instant, nack func(code, msg string)) {
 	if len(c.Value) > protocol.MaxComputerValue {
@@ -1009,7 +1009,7 @@ func (n *Agent) computer(c protocol.Command, entry *safety.Entry, sentMS int64, 
 			return
 		}
 		if st.Computer {
-			nack(protocol.FaultLocalStop, "the emergency stop on this computer needs a local `openvibe-link resume`: observe only")
+			nack(protocol.FaultLocalStop, "the stop on this computer needs a local `openvibe-link resume`: observe only")
 			return
 		}
 		if st.Remote {
@@ -1128,7 +1128,7 @@ func latchReason(st safety.LatchState) string {
 	case st.Local:
 		return st.LocalReason
 	default:
-		return "the computer's emergency stop: `openvibe-link resume` on this machine releases it"
+		return "the computer's stop: `openvibe-link resume` on this machine releases it"
 	}
 }
 
