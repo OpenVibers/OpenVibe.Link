@@ -1108,6 +1108,8 @@ fi
 
 # ---- your own models (--ai): the ai plugin, and which model server answers now ----
 if [ "$AI" = 1 ]; then
+	# The plugin's own package (it was configured but never installed: "No module named openvibe_ai", 2026-11-12).
+	$SUDO "$PIP" install --quiet "$STATE/plugins/ai" || die "the ai plugin did not install into $STATE/venv"
 	write_ai_config "$CONF/config.json" ${AI_ENDPOINT:+"$AI_ENDPOINT"}
 	found="$(ai_found ${AI_ENDPOINT:+"$AI_ENDPOINT"})"
 	if [ -n "$found" ]; then
