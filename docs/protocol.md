@@ -1,5 +1,13 @@
 # Link ↔ OpenVibe.Bot protocol (bot.device-message@1, device side)
 
+## Machine access and agent relay
+
+A Network-paired Link asks Bot for a relay with `relay.open` (`to`, `grant_token`). Bot verifies Network's signed token, opens a session and sends `relay.opened` to both machines with the relay id, its scopes and the same token. Each operation or answer then travels as `relay.frame` (`relay`, `scope`, `body`); Bot checks the grant and scope on every frame, and both Links verify the token and check Network's current grant state themselves. `relay.close` ends the session and `relay.closed` tells both sides why (closed, expired or revoked). `access.revoked` with `grant_id` also ends a locally cached grant at once.
+
+The relay body is `{"id","action","data"}`, plus `level` for `computer`. The answer is `{"id","ok","data"}` or `{"id","ok":false,"error"}`. The scope maps to an existing local feature: `agent` queues a task, `send` places a Locker-sealed envelope in Link Send, `screen` and `desk` use their command kinds, `computer` uses the computer plugin's own owner level and per-action approval (Bot and the target both refuse a level above the target's own), and `worker` uses the sandbox job handler. The LAN handover for granted Send uses `/api/link-send/v2` with both the owner's HMAC and the same grant check.
+
+Network delivers an A2A task to a machine through Bot as `agent.task` (`task`), after checking the sender, the receiving agent and any machine grant. The machine answers with `agent.task_result` (`task_id`, `status`, `result`); Bot records it on Network and acknowledges with `agent.task_result_ack`. The local agent inbox is gated by the owner's `agents_talk` switch.
+
 OpenVibe.Bot's own `docs/protocol.md` (section 1, the `/device` socket) and its `POST /api/v1/pair` handler are the
 source of truth. Every field name below lives in one Go package, `internal/protocol/`, and the exact frames from Bot's
 doc are pinned verbatim in [`internal/protocol/testdata/bot`](../internal/protocol/testdata/bot) (its README names the

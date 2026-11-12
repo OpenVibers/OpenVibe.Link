@@ -149,7 +149,11 @@ func (u *systrayUI) SetSlots(slots []traySlot) {
 	u.bindings = append([]traySlot(nil), slots...)
 	for _, slot := range slots {
 		item := u.requests.AddSubMenuItem(slot.Label, "")
-		approve := item.AddSubMenuItem("Approve", "Let it run")
+		label := "Approve"
+		if slot.Approval.Plugin == "machine-access" {
+			label = "Allow"
+		}
+		approve := item.AddSubMenuItem(label, "Let it run")
 		deny := item.AddSubMenuItem("Deny", "Refuse it")
 		u.slots = append(u.slots, item)
 		forwardTrayClicks(approve.ClickedCh, u.answers, slot.Approval.ID, true)

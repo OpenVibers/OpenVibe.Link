@@ -43,6 +43,8 @@ serves the share this computer was picked for at `https://<name>--<you>.openvibe
 
 **Host a shared party computer** with `openvibe-link party host <party-id>` from [openvibe.party](https://openvibe.party). Link shows the running desktop and its Stop action in its window ([guide](docs/party-desktop.md)).
 
+**Ask another machine for access:** `openvibe-link access request <machine> --scope screen,desk --for 1h`. The target owner approves on their machine; a signed, scoped grant controls each use. Turn on **Let my agents talk** to register local agent CLIs and give them Link's `openvibe-link mcp` tools. [Machine access and agent messages](docs/access-and-agents.md) explains scopes, approval, revocation, the inbox, and MCP setup.
+
 **Sell a local model** on [OpenVibe.Exchange](https://openvibe.exchange):
 `openvibe-link exchange serve --model qwen3:32b --public-url https://gpu.example.com/v1`. It serves the model from the
 local OpenAI-compatible server (Ollama by default at `127.0.0.1:11434`), registers the public https address through the

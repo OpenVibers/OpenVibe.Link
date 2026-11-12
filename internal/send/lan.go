@@ -27,6 +27,7 @@ import (
 
 const (
 	lanPath      = "/api/link-send/v1"
+	lanGrantPath = "/api/link-send/v2"
 	lanMaxBody   = 40 << 20
 	lanWindow    = 5 * time.Minute
 	lanMaxItems  = 100
@@ -46,17 +47,26 @@ type Incoming struct {
 
 // LAN is one Link's direct listener and its small queue of received items.
 type LAN struct {
-	target string
-	mu     sync.Mutex
-	secret []byte
-	items  map[string]Incoming
-	nonces map[string]time.Time
-	ln     net.Listener
-	server *http.Server
+	target     string
+	mu         sync.Mutex
+	secret     []byte
+	items      map[string]Incoming
+	nonces     map[string]time.Time
+	ln         net.Listener
+	server     *http.Server
+	grantCheck func(context.Context, string, string) error
 }
 
 func NewLAN(target string) *LAN {
 	return &LAN{target: target, items: map[string]Incoming{}, nonces: map[string]time.Time{}}
+}
+
+// SetGrantCheck makes the direct granted path use the same signed grant and
+// live revocation check as Bot-relayed transfers.
+func (l *LAN) SetGrantCheck(check func(context.Context, string, string) error) {
+	l.mu.Lock()
+	l.grantCheck = check
+	l.mu.Unlock()
 }
 
 // Listen opens a random port. It is loopback-only in tests; on a real machine it is reachable on the local network,
@@ -151,6 +161,23 @@ func (l *LAN) Items() []Incoming {
 	return out
 }
 
+// ReceiveGranted queues a sealed item after the Link agent has verified a
+// Network-signed send grant. The envelope stays encrypted until its owner opens
+// it through the existing Link Send inbox.
+func (l *LAN) ReceiveGranted(sender, envelope string) (string, error) {
+	if sender == "" || sender == l.target || len(envelope) == 0 || len(envelope) > 32*1024*1024 {
+		return "", errors.New("invalid granted transfer")
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.items) >= lanMaxItems {
+		return "", errors.New("this machine's transfer list is full")
+	}
+	id := "lan_" + hex.EncodeToString(random(16))
+	l.items[id] = Incoming{ID: id, Sender: sender, Envelope: envelope, Bytes: int64(len(envelope)), CreatedAt: time.Now()}
+	return id, nil
+}
+
 func (l *LAN) Accept(id string) (string, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -182,80 +209,94 @@ func (l *LAN) Complete(id string) error {
 }
 
 type lanRequest struct {
-	Sender   string `json:"sender_node"`
-	Target   string `json:"target_node"`
-	Envelope string `json:"envelope"`
-	At       int64  `json:"at"`
-	Nonce    string `json:"nonce"`
-	Mac      string `json:"mac"`
+	Sender     string `json:"sender_node"`
+	Target     string `json:"target_node"`
+	Envelope   string `json:"envelope"`
+	At         int64  `json:"at"`
+	Nonce      string `json:"nonce"`
+	Mac        string `json:"mac"`
+	GrantToken string `json:"grant_token,omitempty"`
 }
 
 func (l *LAN) handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc(lanPath, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		var req lanRequest
-		if err := json.NewDecoder(io.LimitReader(r.Body, lanMaxBody)).Decode(&req); err != nil {
-			http.Error(w, "unreadable transfer", http.StatusBadRequest)
-			return
-		}
-		l.mu.Lock()
-		secret := append([]byte(nil), l.secret...)
-		l.mu.Unlock()
-		if len(secret) == 0 {
-			http.Error(w, "this machine has not turned on receiving", http.StatusForbidden)
-			return
-		}
-		if req.Target != l.target {
-			http.Error(w, "that item is for another machine", http.StatusNotFound)
-			return
-		}
-		if req.Sender == "" || req.Sender == l.target || req.Nonce == "" || len(req.Nonce) > 128 {
-			http.Error(w, "the sender is not one of this machine's owner's machines", http.StatusForbidden)
-			return
-		}
-		if len(req.Envelope) == 0 || len(req.Envelope) > 32*1024*1024 {
-			http.Error(w, "the encrypted item is missing or too large", http.StatusBadRequest)
-			return
-		}
-		now := time.Now()
-		at := time.Unix(req.At, 0)
-		if req.At == 0 || now.Sub(at) > lanWindow || at.Sub(now) > lanWindow {
-			http.Error(w, "the transfer is too old", http.StatusForbidden)
-			return
-		}
-		want := lanMAC(secret, req.Sender, req.Target, req.At, req.Nonce, req.Envelope)
-		if subtle.ConstantTimeCompare([]byte(req.Mac), []byte(want)) != 1 {
-			http.Error(w, "the sender is not one of this machine's owner's machines", http.StatusForbidden)
-			return
-		}
-		l.mu.Lock()
-		defer l.mu.Unlock()
-		if _, seen := l.nonces[req.Nonce]; seen {
-			http.Error(w, "that transfer was already received", http.StatusConflict)
-			return
-		}
-		if len(l.nonces) > lanMaxNonces {
-			for nonce, when := range l.nonces {
-				if now.Sub(when) > lanWindow {
-					delete(l.nonces, nonce)
+	serve := func(granted bool) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			var req lanRequest
+			if err := json.NewDecoder(io.LimitReader(r.Body, lanMaxBody)).Decode(&req); err != nil {
+				http.Error(w, "unreadable transfer", http.StatusBadRequest)
+				return
+			}
+			l.mu.Lock()
+			secret := append([]byte(nil), l.secret...)
+			l.mu.Unlock()
+			if len(secret) == 0 {
+				http.Error(w, "this machine has not turned on receiving", http.StatusForbidden)
+				return
+			}
+			if req.Target != l.target {
+				http.Error(w, "that item is for another machine", http.StatusNotFound)
+				return
+			}
+			if req.Sender == "" || req.Sender == l.target || req.Nonce == "" || len(req.Nonce) > 128 {
+				http.Error(w, "the sender is not one of this machine's owner's machines", http.StatusForbidden)
+				return
+			}
+			if len(req.Envelope) == 0 || len(req.Envelope) > 32*1024*1024 {
+				http.Error(w, "the encrypted item is missing or too large", http.StatusBadRequest)
+				return
+			}
+			now := time.Now()
+			at := time.Unix(req.At, 0)
+			if req.At == 0 || now.Sub(at) > lanWindow || at.Sub(now) > lanWindow {
+				http.Error(w, "the transfer is too old", http.StatusForbidden)
+				return
+			}
+			want := lanMAC(secret, req.Sender, req.Target, req.At, req.Nonce, req.Envelope)
+			if subtle.ConstantTimeCompare([]byte(req.Mac), []byte(want)) != 1 {
+				http.Error(w, "the sender is not one of this machine's owner's machines", http.StatusForbidden)
+				return
+			}
+			if granted {
+				l.mu.Lock()
+				check := l.grantCheck
+				l.mu.Unlock()
+				if check == nil || req.GrantToken == "" || check(r.Context(), req.GrantToken, req.Sender) != nil {
+					http.Error(w, "machine access grant refused", http.StatusForbidden)
+					return
 				}
 			}
+			l.mu.Lock()
+			defer l.mu.Unlock()
+			if _, seen := l.nonces[req.Nonce]; seen {
+				http.Error(w, "that transfer was already received", http.StatusConflict)
+				return
+			}
+			if len(l.nonces) > lanMaxNonces {
+				for nonce, when := range l.nonces {
+					if now.Sub(when) > lanWindow {
+						delete(l.nonces, nonce)
+					}
+				}
+			}
+			if len(l.items) >= lanMaxItems {
+				http.Error(w, "this machine's transfer list is full; accept or decline an item first", http.StatusTooManyRequests)
+				return
+			}
+			l.nonces[req.Nonce] = now
+			id := "lan_" + hex.EncodeToString(random(16))
+			l.items[id] = Incoming{ID: id, Sender: req.Sender, Envelope: req.Envelope, Bytes: int64(len(req.Envelope)), CreatedAt: now}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":"` + id + `"}`))
 		}
-		if len(l.items) >= lanMaxItems {
-			http.Error(w, "this machine's transfer list is full; accept or decline an item first", http.StatusTooManyRequests)
-			return
-		}
-		l.nonces[req.Nonce] = now
-		id := "lan_" + hex.EncodeToString(random(16))
-		l.items[id] = Incoming{ID: id, Sender: req.Sender, Envelope: req.Envelope, Bytes: int64(len(req.Envelope)), CreatedAt: now}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte(`{"id":"` + id + `"}`))
-	})
+	}
+	mux.HandleFunc(lanPath, serve(false))
+	mux.HandleFunc(lanGrantPath, serve(true))
 	return mux
 }
 
@@ -277,12 +318,26 @@ func random(n int) []byte {
 // sendLAN tries the target's advertised local endpoints. Any failure (not on the network, a timeout, an old secret)
 // falls back to the relay by returning an error.
 func (c *Client) sendLAN(ctx context.Context, target, envelope string) error {
+	_, err := c.sendLANWithGrant(ctx, target, envelope, "")
+	return err
+}
+
+// SendGrantedLAN attempts the same-owner LAN hand-over with a signed send
+// grant. A caller may fall back to Bot's authenticated relay on error.
+func (c *Client) SendGrantedLAN(ctx context.Context, target, envelope, grantToken string) (string, error) {
+	if grantToken == "" {
+		return "", errors.New("send grant missing")
+	}
+	return c.sendLANWithGrant(ctx, target, envelope, grantToken)
+}
+
+func (c *Client) sendLANWithGrant(ctx context.Context, target, envelope, grantToken string) (string, error) {
 	if c.Self == "" {
-		return errors.New("this machine has no id for a direct transfer")
+		return "", errors.New("this machine has no id for a direct transfer")
 	}
 	machines, err := c.Targets(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
 	var endpoints []string
 	for _, m := range machines {
@@ -292,24 +347,28 @@ func (c *Client) sendLAN(ctx context.Context, target, envelope string) error {
 		}
 	}
 	if len(endpoints) == 0 {
-		return errors.New("the receiving machine is not on this network")
+		return "", errors.New("the receiving machine is not on this network")
 	}
 	encoded, err := c.LANKey(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
 	secret, err := base64.RawURLEncoding.DecodeString(encoded)
 	if err != nil || len(secret) < 16 {
-		return errors.New("the LAN sender secret is not valid")
+		return "", errors.New("the LAN sender secret is not valid")
 	}
 	for _, base := range endpoints {
 		at := time.Now().Unix()
 		nonce := hex.EncodeToString(random(16))
 		body, _ := json.Marshal(lanRequest{
 			Sender: c.Self, Target: target, Envelope: envelope, At: at, Nonce: nonce,
-			Mac: lanMAC(secret, c.Self, target, at, nonce, envelope),
+			Mac: lanMAC(secret, c.Self, target, at, nonce, envelope), GrantToken: grantToken,
 		})
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(base, "/")+lanPath, strings.NewReader(string(body)))
+		path := lanPath
+		if grantToken != "" {
+			path = lanGrantPath
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(base, "/")+path, strings.NewReader(string(body)))
 		if err != nil {
 			continue
 		}
@@ -319,11 +378,14 @@ func (c *Client) sendLAN(ctx context.Context, target, envelope string) error {
 		if err != nil {
 			continue
 		}
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		var reply struct {
+			ID string `json:"id"`
+		}
+		_ = json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&reply)
 		resp.Body.Close()
 		if resp.StatusCode == http.StatusCreated {
-			return nil
+			return reply.ID, nil
 		}
 	}
-	return errors.New("the direct transfer did not arrive")
+	return "", errors.New("the direct transfer did not arrive")
 }

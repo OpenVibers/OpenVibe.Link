@@ -13,6 +13,7 @@
 package fakebot
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/OpenVibers/OpenVibe.Link/internal/access"
 	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 )
 
@@ -46,17 +48,23 @@ type Server struct {
 	// no measured round trip, so no bound on its clock estimate.
 	HoldHeartbeatAcks bool
 
-	mu           sync.Mutex
-	codes        map[string]string // code → robot id
-	creds        map[string]string // credential → device id
-	robots       map[string]string // device id → robot id
-	live         map[string]*Conn  // device id → its current connection
-	estop        map[string]bool   // robot id → the robot's e-stop latch, as Bot keeps it
-	pairRequests []protocol.PairRequest
-	pairRefusal  *refusal
-	bindRefusals []refusal
-	credInURL    bool
-	binds        atomic.Int64
+	mu             sync.Mutex
+	codes          map[string]string // code → robot id
+	creds          map[string]string // credential → device id
+	robots         map[string]string // device id → robot id
+	live           map[string]*Conn  // device id → its current connection
+	machineDevices map[string]string // node principal → device id
+	deviceMachines map[string]string // device id → node principal
+	relays         map[string]*fakeRelay
+	relayOrigin    string
+	relayAllowed   func(string, string, string, string) bool
+	agentResult    func(string, string, json.RawMessage)
+	estop          map[string]bool // robot id → the robot's e-stop latch, as Bot keeps it
+	pairRequests   []protocol.PairRequest
+	pairRefusal    *refusal
+	bindRefusals   []refusal
+	credInURL      bool
+	binds          atomic.Int64
 
 	conns  chan *Conn
 	count  atomic.Int64
@@ -69,6 +77,13 @@ type refusal struct {
 	code, detail string
 }
 
+type fakeRelay struct {
+	ID, GrantID, From, To, Token string
+	Scopes                       map[string]bool
+	Expires                      time.Time
+	FromConn, ToConn             *Conn
+}
+
 // RobotID is the robot AddCode and AddCredential attach devices to.
 const RobotID = "rob_01J8Z4M2Q0R7T9YV3K6N8P1W2X"
 
@@ -77,7 +92,7 @@ func (s *Server) SetHealth(status int) { s.health.Store(int64(status)) }
 
 // New starts the fake server.
 func New() *Server {
-	s := &Server{codes: map[string]string{}, creds: map[string]string{}, robots: map[string]string{}, live: map[string]*Conn{}}
+	s := &Server{codes: map[string]string{}, creds: map[string]string{}, robots: map[string]string{}, live: map[string]*Conn{}, machineDevices: map[string]string{}, deviceMachines: map[string]string{}, relays: map[string]*fakeRelay{}}
 	s.health.Store(http.StatusOK)
 	s.estop = map[string]bool{}
 	s.conns = make(chan *Conn, 16)
@@ -132,6 +147,157 @@ func (s *Server) AddCredential(cred, deviceID string) {
 	s.creds[cred] = deviceID
 	s.robots[deviceID] = RobotID
 	s.mu.Unlock()
+}
+
+// SetRelayAuthority gives the fake Bot Network's JWKS and live grant lookup.
+func (s *Server) SetRelayAuthority(origin string, allowed func(string, string, string, string) bool) {
+	s.mu.Lock()
+	s.relayOrigin, s.relayAllowed = origin, allowed
+	s.mu.Unlock()
+}
+
+func (s *Server) BindMachine(principal, deviceID string) {
+	s.mu.Lock()
+	s.machineDevices[principal] = deviceID
+	s.deviceMachines[deviceID] = principal
+	s.mu.Unlock()
+}
+
+func (s *Server) RevokeGrant(id, to string) {
+	s.mu.Lock()
+	closed := make([]*fakeRelay, 0)
+	for _, relay := range s.relays {
+		if relay.GrantID == id {
+			delete(s.relays, relay.ID)
+			closed = append(closed, relay)
+		}
+	}
+	s.mu.Unlock()
+	for _, relay := range closed {
+		for _, c := range []*Conn{relay.FromConn, relay.ToConn} {
+			if c != nil {
+				_ = c.Send(protocol.RelayClosed{Relay: relay.ID, Reason: "revoked"})
+			}
+		}
+	}
+	if c := s.live[s.machineDevices[to]]; c != nil {
+		_ = c.Send(protocol.AccessRevoked{GrantID: id})
+	}
+}
+
+// SetAgentResult receives agent.task_result from the machine an agent.task was delivered to.
+func (s *Server) SetAgentResult(fn func(string, string, json.RawMessage)) {
+	s.mu.Lock()
+	s.agentResult = fn
+	s.mu.Unlock()
+}
+
+func (s *Server) DeliverAgentTask(to string, task protocol.AgentTaskFrame) bool {
+	s.mu.Lock()
+	c := s.live[s.machineDevices[to]]
+	s.mu.Unlock()
+	return c != nil && c.Send(protocol.AgentTaskFrame{Task: task.Task}) == nil
+}
+
+func relayError(c *Conn, code, detail string) {
+	_ = c.Send(protocol.Error{Code: code, Detail: detail})
+}
+
+// relayFrame is Bot's machine-to-machine relay and agent task result path
+// (server/realtime.js): relay.open checks the grant token, relay.frame carries
+// one operation or answer, relay.close ends the session.
+func (s *Server) relayFrame(c *Conn, m protocol.Message) {
+	switch frame := m.(type) {
+	case protocol.RelayOpen:
+		s.mu.Lock()
+		from := s.deviceMachines[c.DeviceID]
+		target := s.live[s.machineDevices[frame.To]]
+		origin, allowed := s.relayOrigin, s.relayAllowed
+		s.mu.Unlock()
+		if from == "" || target == nil || origin == "" || allowed == nil || !strings.HasPrefix(frame.To, "lnk_") || frame.To == from {
+			relayError(c, "bot.relay_target_offline", "the receiving machine is not connected")
+			return
+		}
+		claims, err := access.NewVerifier(origin, frame.To).VerifyAny(context.Background(), frame.GrantToken, from)
+		if err != nil || claims.From != from || claims.To != frame.To {
+			relayError(c, "bot.relay_grant_denied", "no live Network grant lets this machine relay to that one")
+			return
+		}
+		scopes := map[string]bool{}
+		for _, scope := range claims.Scopes {
+			if !access.ValidScope(scope) || !allowed(claims.ID, from, frame.To, scope) {
+				relayError(c, "bot.relay_grant_denied", "no live Network grant lets this machine relay to that one")
+				return
+			}
+			scopes[scope] = true
+		}
+		id := "rly_" + token()[:26]
+		relay := &fakeRelay{ID: id, GrantID: claims.ID, From: from, To: frame.To, Token: frame.GrantToken,
+			Scopes: scopes, Expires: time.Unix(claims.Expiry, 0), FromConn: c, ToConn: target}
+		s.mu.Lock()
+		s.relays[id] = relay
+		s.mu.Unlock()
+		opened := protocol.RelayOpened{Relay: id, To: frame.To, GrantToken: frame.GrantToken, Scopes: claims.Scopes,
+			ExpiresAt: time.Unix(claims.Expiry, 0).UTC().Format(time.RFC3339), From: from}
+		_ = c.Send(opened)
+		_ = target.Send(opened)
+	case protocol.RelayFrame:
+		s.mu.Lock()
+		relay := s.relays[frame.Relay]
+		var other *Conn
+		if relay != nil {
+			switch c {
+			case relay.FromConn:
+				other = relay.ToConn
+			case relay.ToConn:
+				other = relay.FromConn
+			default:
+				relay = nil
+			}
+		}
+		s.mu.Unlock()
+		if relay == nil || !relay.Scopes[frame.Scope] || len(frame.Body) == 0 || len(frame.Body) > 250<<10 {
+			relayError(c, "bot.relay_scope_denied", "the relay is closed or the grant does not include that scope")
+			return
+		}
+		if time.Now().After(relay.Expires) {
+			s.mu.Lock()
+			delete(s.relays, relay.ID)
+			s.mu.Unlock()
+			_ = c.Send(protocol.RelayClosed{Relay: relay.ID, Reason: "expired"})
+			if other != nil {
+				_ = other.Send(protocol.RelayClosed{Relay: relay.ID, Reason: "expired"})
+			}
+			relayError(c, "bot.relay_expired", "the grant token expired")
+			return
+		}
+		from := relay.From
+		if c == relay.ToConn {
+			from = relay.To
+		}
+		_ = other.Send(protocol.RelayFrame{Relay: relay.ID, From: from, Scope: frame.Scope, Body: frame.Body})
+	case protocol.RelayClose:
+		s.mu.Lock()
+		relay := s.relays[frame.Relay]
+		if relay != nil {
+			delete(s.relays, frame.Relay)
+		}
+		s.mu.Unlock()
+		if relay == nil {
+			relayError(c, "bot.relay_unknown", "the relay is already closed")
+			return
+		}
+		_ = relay.FromConn.Send(protocol.RelayClosed{Relay: relay.ID, Reason: "closed"})
+		_ = relay.ToConn.Send(protocol.RelayClosed{Relay: relay.ID, Reason: "closed"})
+	case protocol.AgentTaskResult:
+		s.mu.Lock()
+		fn := s.agentResult
+		s.mu.Unlock()
+		if fn != nil {
+			fn(frame.TaskID, frame.Status, frame.Result)
+		}
+		_ = c.Send(protocol.AgentTaskResultAck{TaskID: frame.TaskID, Status: frame.Status})
+	}
 }
 
 // Revoke invalidates a credential and closes the device's live connection with 4003, as Bot's revoke does.
@@ -539,6 +705,9 @@ func (c *Conn) read() {
 				ack.T, ack.Echo = t, &t
 			}
 			_ = c.Send(ack)
+		}
+		if c.srv != nil {
+			c.srv.relayFrame(c, f.Msg)
 		}
 		c.fmu.Lock()
 		c.frames = append(c.frames, f)

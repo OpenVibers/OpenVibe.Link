@@ -7,6 +7,7 @@ package fakenetwork
 
 import (
 	"crypto/rand"
+	"crypto/rsa"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
@@ -33,22 +34,38 @@ type Server struct {
 
 	bot *fakebot.Server
 
-	mu         sync.Mutex
-	health     int             // GET /api/health status; 200 unless a test sets it
-	codes      map[string]bool // normalized code → live
-	credential string          // the node credential, once paired
-	revoked    bool
-	tokens     []string
-	pairings   []protocol.LinkPairingRequest
-	tokenForms []map[string]string
+	mu            sync.Mutex
+	health        int             // GET /api/health status; 200 unless a test sets it
+	codes         map[string]bool // normalized code → live
+	credential    string          // the node credential, once paired
+	revoked       bool
+	tokens        []string
+	pairings      []protocol.LinkPairingRequest
+	tokenForms    []map[string]string
+	machines      map[string]fakeMachine
+	codeMachines  map[string]fakeMachine
+	tokenOwners   map[string]string
+	tokenAudience map[string]string
+	requests      map[string]*fakeAccessRequest
+	grants        map[string]*fakeAccessGrant
+	agents        map[string]*fakeAgent
+	agentTasks    map[string]*fakeAgentTask
+	signing       *rsa.PrivateKey
 }
+
+type fakeMachine struct{ Principal, DeviceID, Credential string }
 
 // New starts the fake Network; bot (may be nil) learns every token it mints.
 func New(bot *fakebot.Server) *Server {
-	s := &Server{TTL: 300, bot: bot, codes: map[string]bool{}, health: http.StatusOK}
+	s := &Server{TTL: 300, bot: bot, codes: map[string]bool{}, health: http.StatusOK,
+		machines: map[string]fakeMachine{}, codeMachines: map[string]fakeMachine{}, tokenOwners: map[string]string{}, tokenAudience: map[string]string{},
+		requests: map[string]*fakeAccessRequest{}, grants: map[string]*fakeAccessGrant{}, agents: map[string]*fakeAgent{}, agentTasks: map[string]*fakeAgentTask{}}
+	s.signing, _ = rsa.GenerateKey(rand.Reader, 2048)
 	mux := http.NewServeMux()
 	mux.HandleFunc(protocol.LinkPairingPath, s.pair)
 	mux.HandleFunc(protocol.TokenPath, s.token)
+	s.registerAccessRoutes(mux)
+	s.registerAgentRoutes(mux)
 	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		status := s.health
@@ -58,6 +75,10 @@ func New(bot *fakebot.Server) *Server {
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	})
 	s.HTTP = httptest.NewServer(mux)
+	if bot != nil {
+		bot.SetRelayAuthority(s.URL(), s.GrantActive)
+		bot.SetAgentResult(s.AgentResult)
+	}
 	return s
 }
 
@@ -76,6 +97,17 @@ func (s *Server) AddCode(code string) {
 	s.mu.Lock()
 	s.codes[code] = true
 	s.mu.Unlock()
+}
+
+// AddMachine pairs a second fake Link with the same Network and Bot.
+func (s *Server) AddMachine(code, principal, deviceID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.codes[code] = true
+	s.codeMachines[code] = fakeMachine{Principal: principal, DeviceID: deviceID}
+	if s.bot != nil {
+		s.bot.BindMachine(principal, deviceID)
+	}
 }
 
 // Revoke makes /oauth/token refuse the node credential (401 invalid_client), as a revoked principal is.
@@ -135,9 +167,15 @@ func (s *Server) pair(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.pairings = append(s.pairings, req)
 	ok := s.codes[code] && (req.Pairing == "" || req.Pairing == PairingID)
+	machine, defined := s.codeMachines[code]
+	if !defined {
+		machine = fakeMachine{Principal: Principal, DeviceID: DeviceID}
+	}
 	if ok {
 		delete(s.codes, code)
 		s.credential, s.revoked = random(), false
+		machine.Credential = s.credential
+		s.machines[machine.Principal] = machine
 	}
 	cred := s.credential
 	s.mu.Unlock()
@@ -145,10 +183,13 @@ func (s *Server) pair(w http.ResponseWriter, r *http.Request) {
 		problem(w, http.StatusForbidden, "registry.pairing_code_invalid")
 		return
 	}
+	if s.bot != nil {
+		s.bot.BindMachine(machine.Principal, machine.DeviceID)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(protocol.LinkPairingResponse{Principal: Principal, LinkID: "n-01j8z4m2q0r7t9yv3k6n8p1w2x",
+	_ = json.NewEncoder(w).Encode(protocol.LinkPairingResponse{Principal: machine.Principal, LinkID: "n-01j8z4m2q0r7t9yv3k6n8p1w2x",
 		HomeCell: "eu-1", Credential: cred, TokenEndpoint: s.HTTP.URL + protocol.TokenPath,
 		PairedFor: &protocol.PairedFor{Service: "bot", Ref: fakebot.RobotID}})
 }
@@ -164,8 +205,9 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	s.tokenForms = append(s.tokenForms, form)
-	good := !s.revoked && s.credential != "" && form["grant_type"] == "client_credentials" &&
-		form["client_id"] == Principal && form["client_secret"] == s.credential
+	machine, exists := s.machines[form["client_id"]]
+	good := !s.revoked && exists && machine.Credential != "" && form["grant_type"] == "client_credentials" &&
+		form["client_secret"] == machine.Credential
 	s.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
 	if !good {
@@ -173,7 +215,7 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(protocol.OAuthError{Error: "invalid_client", Description: "Invalid client credentials"})
 		return
 	}
-	if form["audience"] != "openvibe.bot" {
+	if form["audience"] != "openvibe.bot" && form["audience"] != "openvibe.network" {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(protocol.OAuthError{Error: "invalid_scope", Description: "a node token is for openvibe.network or openvibe.bot"})
 		return
@@ -181,9 +223,11 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	tok := "eyJ" + random()
 	s.mu.Lock()
 	s.tokens = append(s.tokens, tok)
+	s.tokenOwners[tok] = machine.Principal
+	s.tokenAudience[tok] = form["audience"]
 	s.mu.Unlock()
-	if s.bot != nil {
-		s.bot.AddCredential(tok, DeviceID)
+	if s.bot != nil && form["audience"] == "openvibe.bot" {
+		s.bot.AddCredential(tok, machine.DeviceID)
 	}
 	_ = json.NewEncoder(w).Encode(protocol.TokenResponse{AccessToken: tok, TokenType: "Bearer", ExpiresIn: s.TTL})
 }
