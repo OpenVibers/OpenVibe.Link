@@ -134,9 +134,9 @@ const (
 	JobNotAvailable   = "class not available"
 
 	// Refused by a running worker (platform.job@1: a missing artifact, the local kill switch, limits it cannot honor).
-	JobUnknownArtifact = "unknown artifact"                    // not a function declared in the Link's local config
+	JobUnknownArtifact = "unknown artifact"                  // not a function declared in the Link's local config
 	JobStopped         = "the stop or local stop is latched" // fault estopped or local_stop
-	JobBusy            = "worker busy"                         // worker.caps.max_jobs are running; fault not_ready
+	JobBusy            = "worker busy"                       // worker.caps.max_jobs are running; fault not_ready
 )
 
 // job_exit reasons.
