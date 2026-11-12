@@ -47,6 +47,9 @@ type Server struct {
 	// HoldHeartbeatAcks makes new connections leave heartbeats unanswered until Conn.SetAutoAck(true): the device has
 	// no measured round trip, so no bound on its clock estimate.
 	HoldHeartbeatAcks bool
+	// HeartbeatAckDelay answers each heartbeat this much later: a slow path, so a large clock uncertainty (a connection
+	// whose fastest round trip is long).
+	HeartbeatAckDelay time.Duration
 
 	mu             sync.Mutex
 	codes          map[string]string // code → robot id
@@ -704,7 +707,11 @@ func (c *Conn) read() {
 				t := hb.T
 				ack.T, ack.Echo = t, &t
 			}
-			_ = c.Send(ack)
+			if c.srv != nil && c.srv.HeartbeatAckDelay > 0 {
+				time.AfterFunc(c.srv.HeartbeatAckDelay, func() { _ = c.Send(ack) })
+			} else {
+				_ = c.Send(ack)
+			}
 		}
 		if c.srv != nil {
 			c.srv.relayFrame(c, f.Msg)
