@@ -685,7 +685,7 @@ func (n *Agent) stopEverything(reason string) error {
 	return err
 }
 
-// resumeEverything releases the local kill switch (and a server e-stop).
+// resumeEverything releases the local kill switch (and a server stop).
 func (n *Agent) resumeEverything() error {
 	_, err := n.latch.Resume()
 	return err

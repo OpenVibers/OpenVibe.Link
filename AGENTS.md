@@ -46,7 +46,7 @@ Install: `curl -fsSL https://openvibe.link/install | sh` (and `--robot/--driver`
 
 - **Core Go binary** ([cmd/openvibe-link/](cmd/openvibe-link/main.go), [internal/](internal/)): pairing, the outbound
   WebSocket, heartbeats/deadman, the safety rules (deadlines, owner limits clamped before any driver sees a value, a
-  persisted e-stop, the local kill switch), the plugin supervisor, WHIP video (pion), the system service
+  persisted stop, the local kill switch), the plugin supervisor, WHIP video (pion), the system service
   (systemd/launchd/Windows).
 - **Plugins** ([plugins/](plugins/), separate processes, JSON lines over stdin/stdout): `dryrun`,
   `adeept_adr036` (Adeept 4WD), `cozmo` (PyCozmo), `relay` (existing Live hardware clients), `ros2` (rclpy or
@@ -54,7 +54,7 @@ Install: `curl -fsSL https://openvibe.link/install | sh` (and `--robot/--driver`
   community LOOI driver contract. A plugin stops its own actuators when stdin closes, at a command deadline and after
   1 s without a heartbeat — the core dying never leaves motors running.
 - **ESP32 library** ([esp32/](esp32/README.md), `OpenVibeLink`): pairing, control link, drive/actuator commands,
-  telemetry, heartbeat, deadman and e-stop; no jobs or video.
+  telemetry, heartbeat, deadman and stop; no jobs or video.
 - **Computer plugin** ([docs/computer.md](docs/computer.md), [internal/agent/](internal/agent/)): `--computer
   observe|ask|trusted|full`; runs as the person's account; approvals in the tray / notification / `openvibe-link
   approve`; browser over DevTools `--remote-debugging-pipe` (no port); exact-origin task checks; nonce-fenced page
@@ -77,7 +77,7 @@ Install: `curl -fsSL https://openvibe.link/install | sh` (and `--robot/--driver`
 
 ## Safety, Egress and Security
 
-- **The kill switch is the promise:** `openvibe-link stop` latches (persisted e-stop); `resume` clears it. Every
+- **The kill switch is the promise:** `openvibe-link stop` latches (persisted stop); `resume` clears it. Every
   actuator path checks deadlines and clamped owner limits before a driver sees a value; the deadman/heartbeat stops
   motion when the control link is lost.
 - **No open ports:** the core connects out; the panel is loopback-only with a per-run token; the browser is driven over
@@ -101,7 +101,7 @@ Install: `curl -fsSL https://openvibe.link/install | sh` (and `--robot/--driver`
 
 None of its own: people install it on their machines/robots (install script or release binary), it pairs through
 OpenVibe.Bot/Network and runs as a system service. There is no database; local state lives in the Link's state
-directory (config, e-stop latch, panel.json, usage/reservations, memory/skills settings). Production is a distribution
+directory (config, stop latch, panel.json, usage/reservations, memory/skills settings). Production is a distribution
 matter, not a service deploy.
 
 ## Key Pitfalls
@@ -111,7 +111,7 @@ matter, not a service deploy.
 - **Never let a network role or a remote command turn on a local feature**; the local config is the upper bound.
   Approvals at `ask` must be answerable (tray/notification/CLI) and deny by default.
 - **A plugin that keeps moving when its stdin closes is a safety bug.** Every driver must stop on stdin close, deadline
-  and 1 s without a heartbeat; keep the persisted e-stop checked on every path.
+  and 1 s without a heartbeat; keep the persisted stop checked on every path.
 - **Computer/browser:** exact-origin checks for task origins, no direct DNS/QUIC/non-proxied WebRTC UDP in the shared
   browser, nonce-fenced page text, and no port. Do not "simplify" the DevTools pipe into a TCP debug port.
 - **Egress failure is closed:** a Network/Bot outage must never fall back to direct browsing or a relay that bypasses

@@ -14,7 +14,7 @@ doc are pinned verbatim in [`internal/protocol/testdata/bot`](../internal/protoc
 Bot commit). `go test ./internal/protocol ./internal/link` decodes every one of them and drives the fake server
 (`internal/fakebot`) through pair → connect → command → ack → reconnect with those exact bytes.
 
-An ESP32 library ([`esp32/`](../esp32/README.md), `OpenVibeLink`) implements this device side minus jobs and video: pairing, the control link, drive/actuator/halt, telemetry, heartbeat, deadman and the e-stop.
+An ESP32 library ([`esp32/`](../esp32/README.md), `OpenVibeLink`) implements this device side minus jobs and video: pairing, the control link, drive/actuator/halt, telemetry, heartbeat, deadman and the stop.
 
 ## 1. Pairing
 
@@ -166,11 +166,11 @@ server's own counter, never the heartbeat's.
 | `hello`         | `session_id`, `device_id`, `robot_ids` [], `server_time` (RFC 3339) — on every authenticated connection |
 | `config`        | `heartbeat_ms`, `limits` {`max_speed` 0..1, `max_turn` 0..1, `max_command_ms`, `heartbeat_ms`}, `allowed_commands` [kinds], `estop_latched`, `roles` [ids] — right after `hello` |
 | `command`       | `id` (server-minted: the idempotency and ack key), `ref` (the operator's own id, logs only), `kind`, `value`, `deadline_ms` (absolute, motion kinds and `headlight`), `operator` {`subject`, `role`}, `robot_id`; Link only: `target` (plugin name); `headlight` only: `provenance` {`session`, `seq`, `issued_at_ms`, `expires_at_ms`, `clock_uncertainty_ms`} |
-| `estop`         | `latched` (true: the e-stop latched; false: the owner cleared it), `by`, `at`                    |
+| `estop`         | `latched` (true: the stop latched; false: the owner cleared it), `by`, `at`                    |
 | `heartbeat_ack` | `echo` (the heartbeat's `t`, or null), `t` (the same send time when the server has it), `server_time` (RFC 3339); the Link measures RTT from the echoed send time |
 | `error`         | `code`, `detail` — a frame the server refused; logged, never fatal                               |
 
-`config.estop_latched` is the robot's e-stop as the server holds it: an owner e-stop set while the device was offline
+`config.estop_latched` is the robot's stop as the server holds it: an owner stop set while the device was offline
 latches the Link on reconnect, and a clear made while offline releases it. Until a connection's `config` has been
 applied the Link runs nothing but `halt` (`nack not_ready`), so that latch is in force before any motion.
 `config.allowed_commands` absent allows every kind; present (Bot always sends it, `halt` included) it is the list.
@@ -179,7 +179,7 @@ applied the Link runs nothing but `halt` (`nack not_ready`), so that latch is in
 this machine was installed for; the local configuration always wins (a role never installs anything and never turns on
 a feature the owner turned off here), and a role the Link does not know is ignored.
 `estop` `latched:false` is the owner's clear: it clears the remote latch only, never the local kill switch. A computer
-plugin is the one exception to the remote latch's reach: an e-stop on a computer waits for `openvibe-link resume` on the
+plugin is the one exception to the remote latch's reach: an stop on a computer waits for `openvibe-link resume` on the
 machine, whatever the server clears (docs/computer.md).
 
 ### Device → server
@@ -192,7 +192,7 @@ machine, whatever the server clears (docs/computer.md).
 | `nack`        | `id`, `fault_code`; Link extra: `message`                                                           |
 | `heartbeat`   | `t` (send time, Unix ms), `rtt_ms` (the last measured round trip, once there is one; 0 is a real measurement); Link extra: `fleet` [{`agent`, `installed`, `signed_in`, `windows` [{`name`, `used`, `limit`, `resets_at`}]}] — what the machine's coding agents have left (Codes C9c) |
 | `reauth`      | `token`: a fresh node token for the same principal (a Network-paired machine only; refused → `error` `bot.reauth_refused`) |
-| `estop_state` | `latched` (the device is stopped: remote e-stop or local kill switch), `by` (`device`), `at`; Link extras: `robot_id` (when `hello` named exactly one robot), `local_stop` (local kill switch), `reason` |
+| `estop_state` | `latched` (the device is stopped: remote stop or local kill switch), `by` (`device`), `at`; Link extras: `robot_id` (when `hello` named exactly one robot), `local_stop` (local kill switch), `reason` |
 
 The first `status` and `estop_state` go out once the connection's `config` has been applied, never right after the
 upgrade or `hello`; then `status` whenever a plugin changes state or faults and `estop_state` after every `config`,
@@ -282,7 +282,7 @@ What the Link does with a command, in order:
 3. `halt` → every plugin stops, `ack`.
 4. No `config` yet on this connection → `nack not_ready`. Kind not in `config.allowed_commands` → `nack not_allowed`.
 5. `drive`, `ptz`, `actuator`, `button` and `point` while the local kill switch is latched → `nack local_stop`; while
-   the remote e-stop is latched → `nack estopped`; past its `deadline_ms` → `nack expired`. `headlight` is checked by
+   the remote stop is latched → `nack estopped`; past its `deadline_ms` → `nack expired`. `headlight` is checked by
    its own provenance/lifetime rules above instead (it is not motion and is not refused by the latch here; the driver
    applies STOP and its own preconditions).
 6. The value is clamped in the core, before any plugin sees it: `throttle`, `x`, `y` to ±`max_speed`; `steer`,
@@ -299,7 +299,7 @@ What the Link does with a command, in order:
 reply window (an owner's approval on the machine plus the program's own run): absent → 60 s, capped at 10 minutes, no
 `max_command_ms`. Their value must be a JSON object of at most 384 KB and is not clamped. Running a program and
 writing a file (`exec`, `fs` other than `list`/`stat`/`read`) are refused while the local kill switch is latched
-(`nack local_stop`) or the remote e-stop is (`nack estopped`); capturing the screen and reading files are not. The
+(`nack local_stop`) or the remote stop is (`nack estopped`); capturing the screen and reading files are not. The
 `computer` plugin applies its owner's control level, and its `ack` carries the answer in `data` (at most 512 KB of JSON,
 else `nack bad_value`). An `ask`-level command waits for `openvibe-link approve|deny <id>` on the machine; the plugin
 raises an `approval` event while it waits and `approval_done` when it is answered or expires.
@@ -338,7 +338,7 @@ checked in this order:
 | `job inputs not supported`                   | `unsupported` | the job carries `inputs`: this Link cannot stage and check them yet, so it never runs it with them dropped |
 | `missing or invalid args, ttl_ms or limits`  | `bad_value`   | `args` is not an object, or `ttl_ms` or a limit is missing or below 1 |
 | `class not available`                        | `unsupported` | the class is valid but this Link does not run it (every class but `function`, `code` and `linux`; every class while the worker is off) |
-| `the e-stop or local stop is latched`        | `estopped` or `local_stop` | the stop latch is set: no job starts until it clears |
+| `the stop or local stop is latched`        | `estopped` or `local_stop` | the stop latch is set: no job starts until it clears |
 | `class not available`                        | `shutting_down` | the Link is stopping                                      |
 | `unknown artifact`                           | `unsupported` | `artifact` is not a function the owner declared, at that exact version |
 | `worker busy`                                | `not_ready`   | `worker.caps.max_jobs` jobs are already running              |
@@ -371,7 +371,7 @@ A Link shutting down sends `job_exit` (`stopped`) also for a job acked but not s
 | `cancelled` | null    | `job_cancel`: the process group is killed; a job cancelled before it started never starts            |
 | `ttl`       | null    | `ttl_ms` (from receipt, clamped to `worker.caps.max_ttl_ms`) ran out, before or while it ran         |
 | `limit`     | null    | `wall_ms`, `cpu_ms` or `mem_bytes` (each clamped to the local cap), more stdout than `max_output_bytes`, or more than 256 KiB of result |
-| `stopped`   | null    | the e-stop or the local stop latched, or the Link shut down                                          |
+| `stopped`   | null    | the stop or the local stop latched, or the Link shut down                                          |
 | `failed`    | null    | the worker could not run it: the namespaces could not be created, the spawn failed, or its CPU limit could not be set |
 
 `job_cancel` for an id that is not running (unknown, refused or ended) and `job_exit_ack` for an unknown id are

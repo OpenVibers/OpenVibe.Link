@@ -11,7 +11,7 @@ command can never raise it:
 * ``trusted``: run programs, write files inside the roots and use the mouse and keyboard without asking.
 * ``full``: as trusted, anywhere the account running the Node can reach.
 
-The local kill switch (``openvibe-link stop``) and a remote e-stop drop the plugin to observe, kill what is running
+The local kill switch (``openvibe-link stop``) and a remote stop drop the plugin to observe, kill what is running
 and deny what waits; the core refuses acting commands while either is latched too. The plugin runs as the Node's own
 account and never as root, except on a shared desk host for other people, where it runs as root and every desk sits in
 its own sandbox.
@@ -32,7 +32,7 @@ Command kinds and their answers (the ack's ``data``):
   most 5) with the same tools as ``screen`` and hands each to the core as video (``stream: "screen"``), which publishes
   it to the owner's private stream; the core alone holds the WHIP URL and key. It runs at every level, like a
   screenshot, says so on the desktop when it starts (config ``notify``), and ends when its time is up (30 s to 30 min),
-  on stop, and at once on the local kill switch or an e-stop. Config ``allow_screen_stream: false`` turns it off.
+  on stop, and at once on the local kill switch or an stop. Config ``allow_screen_stream: false`` turns it off.
 * ``input`` ``{"action", "x"?, "y"?, "width"?, "height"?, "dy"?, "text"?, "keys"?}`` → ``{done, action, x?, y?}``: move,
   click, double_click or right_click at a point, scroll by ``dy`` clicks, type ``text`` into whatever has focus, or press
   one key or chord (``keys``, for example ``ctrl+s``). ``x``/``y`` are in the space of a screen picture ``width`` ×
@@ -564,13 +564,13 @@ class Computer(Plugin):
 
     # ---- safety ----------------------------------------------------------------------------------------------------
     def effective_level(self):
-        """The level now: observe while a local stop or an e-stop is latched."""
+        """The level now: observe while a local stop or an stop is latched."""
         if self.runtime is not None and self.runtime.estopped:
             return "observe"
         return self.level
 
     def stop(self):
-        """halt, stop, the local kill switch and an e-stop: kill what runs, deny what waits."""
+        """halt, stop, the local kill switch and an stop: kill what runs, deny what waits."""
         with self.mu:
             # The generation rises before anything is killed: a closure authorized before this stop fails its check.
             self.generation += 1
@@ -1012,7 +1012,7 @@ class Computer(Plugin):
                 if RANK[level] < RANK["ask"]:
                     raise Fault("not_allowed", "this machine allows observing only")
                 # The Node has opened and checked the single-use encrypted Companion grant. At level ask this is the
-                # owner's approval; observe-only and the Node's emergency stop still refuse it.
+                # owner's approval; observe-only and the Node's stop still refuse it.
                 return self._act(cmd, "trusted", run, summary, threaded=True)
             if acting:
                 return self._act(cmd, level, run, summary, threaded=True)

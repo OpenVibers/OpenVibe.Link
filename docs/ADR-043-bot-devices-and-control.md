@@ -55,7 +55,7 @@ a Cozmo-based robot).
 6. **Safety is not optional.** Every motion command carries a deadline relative to receipt (`deadline_ms`, default 300 ms, at most the robot's
    `max_command_ms`); a held control re-sends every 150 ms; the **device** stops the motors at the deadline, on a lost
    heartbeat (1 s interval, stop after 2 missed) and on every disconnect or crash path, without asking the network. The
-   e-stop is latched on the device and in Bot and only the owner clears it. Speed, turn and range limits and time windows
+   stop is latched on the device and in Bot and only the owner clears it. Speed, turn and range limits and time windows
    are set by the owner; an operator never exceeds them. Cozmo additionally stops on a cliff or pick-up event. The agent
    never runs or exposes a kit's stock control server (the Adeept `admin:123456` port stays off).
 7. **Robot profiles, not rows.** `bot.robot-profile@1` (Contracts): capabilities (drive differential/mecanum, pan-tilt,
@@ -108,7 +108,7 @@ a Cozmo-based robot).
 - Pairing: a code works once, expires after 10 minutes, dies after 5 wrong tries; the credential is never logged or
   returned twice; rotation keeps the old credential for 60 s; revocation disconnects the device at once.
 - Safety: a drive command without a newer one stops the motors at its deadline; killing the network, the WebSocket or
-  the agent process stops the motors; the e-stop latches on the device and only the owner clears it; limits cap every
+  the agent process stops the motors; the stop latches on the device and only the owner clears it; limits cap every
   operator; Cozmo stops on a cliff event.
 - Access: a viewer cannot drive a private robot; a queued turn ends on its timer; chat commands pass the same gate.
 - Profiles: the Adeept and Cozmo profiles validate and render a panel with no robot-specific frontend code.

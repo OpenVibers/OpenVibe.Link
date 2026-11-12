@@ -7,7 +7,7 @@ says how to move its hardware:
 * describe first, touch hardware only after ``hello`` (and never in probe mode);
 * stop every actuator when stdin closes, when a motion command's deadline passes without a newer command, when no
   heartbeat has arrived from the core for ``HEARTBEAT_TIMEOUT_S``, and on ``stop`` / ``estop``;
-* keep an e-stop latched until the core sends ``resume``.
+* keep an stop latched until the core sends ``resume``.
 
 See docs/plugins.md for the wire format.
 """
@@ -34,7 +34,7 @@ MAX_LONG_DEADLINE_MS = 600000
 # Kinds that move something continuously and therefore stop at their deadline. A plugin may widen this set
 # (Plugin.motion_kinds) for actuators it drives by speed rather than by position.
 MOTION_KINDS = frozenset({"drive"})
-# Kinds refused while an e-stop is latched or the heartbeat is lost. halt is always accepted.
+# Kinds refused while an stop is latched or the heartbeat is lost. halt is always accepted.
 GUARDED_KINDS = frozenset({"drive", "ptz", "actuator"})
 
 
@@ -191,7 +191,7 @@ class StopInfo:
     ends with, so all actuators start stopped), "deadline" (a motion command's
     own deadline passed; motion_only is True: stop what moves on its own), "heartbeat" (the core went quiet),
     "handler_error", "eof". An older core sends no cause: "stop".
-    emergency is True for the platform's e-stop, with cause "remote" (a robot owner or staff), "local"
+    emergency is True for the platform's stop, with cause "remote" (a robot owner or staff), "local"
     (`openvibe-link stop` on the device), "driver" (a driver's own local stop) or "latched" (the stop was already
     latched when this process or the Node started: replayed is True and first_cause is the original cause when the core
     knows it); an older core sends "estop". reason is the latch's reason text, when there is one.

@@ -9,7 +9,7 @@
 //
 // The two enable pins are the ledc PWM channels and the four IN pins the direction. The core clamps every value to the
 // owner's limits before onDrive sees it, stops the motors when a motion deadline lapses or two heartbeats are missed,
-// and stops them on an e-stop or when the link closes. onStop() is the only place that zeroes the motors.
+// and stops them on an stop or when the link closes. onStop() is the only place that zeroes the motors.
 //
 // Fill in the four defines below. OV_CODE is the 8-character, single-use code openvibe.bot shows for the robot
 // (XXXX-XXXX, 10 minutes). After the first pairing the device id and credential are kept in NVS, so OV_CODE is only

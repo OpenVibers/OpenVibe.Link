@@ -276,7 +276,7 @@ console window that shows its log; closing the window stops the Link and every a
 | `openvibe-link uninstall --user-session --home DIR` | Windows: remove that directory's sign-in start (one per directory) |
 | `openvibe-link status [--json]`           | link, stop latch, limits, plugins, video, battery, running jobs            |
 | `openvibe-link stop`                      | **kill switch**: stop every actuator now and hold it stopped              |
-| `openvibe-link resume`                    | release the local stop (and a server e-stop)                               |
+| `openvibe-link resume`                    | release the local stop (and a server stop)                               |
 | `openvibe-link quit`                      | end the running Link cleanly: every actuator stops, **nothing is latched**, and it waits until the Link has exited |
 | `openvibe-link plugins [--json]`          | plugins and their capabilities                                             |
 
@@ -301,7 +301,7 @@ that owns the Link's life should run `openvibe-link run --home DIR` itself, with
 |---------------------------------------|-------------------------------------------------------|-----------------------------------|
 | `/etc/openvibe-link/config.json`      | `…/OpenVibe Link/config.json`                         | configuration                     |
 | `/etc/openvibe-link/credential.json`  | `…/OpenVibe Link/credential.json`                     | device or node credential (mode 600) |
-| `/var/lib/openvibe-link/latch.json`   | `…/OpenVibe Link/latch.json`                          | e-stop / kill switch latch        |
+| `/var/lib/openvibe-link/latch.json`   | `…/OpenVibe Link/latch.json`                          | stop / kill switch latch        |
 | `/var/lib/openvibe-link/node.sock`    | `…/OpenVibe Link/node.sock`                           | local control socket (mode 600)   |
 | `/var/lib/openvibe-link/venv`         | `…/OpenVibe Link/venv`                                | plugin Python environment         |
 

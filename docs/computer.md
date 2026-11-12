@@ -92,9 +92,9 @@ moment", and the tray and the plugin ask again. Deny always goes through.
 At most 8 requests wait at once. The panel on openvibe.bot sees `approval` and `approval_done` events, so it can say
 that a request is waiting on the machine.
 
-**Kill switch:** `openvibe-link stop` (and an owner's e-stop) drops the plugin to `observe`: what runs is killed, what
+**Kill switch:** `openvibe-link stop` (and an owner's stop) drops the plugin to `observe`: what runs is killed, what
 waits is denied, the agent's browser is closed, and the core also refuses `exec`, file writes, `input` and the browser's
-acting actions until `openvibe-link resume`. `halt` kills what runs. An e-stop on this computer always needs that local
+acting actions until `openvibe-link resume`. `halt` kills what runs. An stop on this computer always needs that local
 resume: the owner's remote clear (`estop` `latched:false`, or a config without `estop_latched`) releases the robot's remote
 latch, never this computer.
 
@@ -127,7 +127,7 @@ You can watch your machine's screen live on openvibe.bot (**Your machines** → 
 - **You are told.** The desktop says when it starts ("Your screen is live on OpenVibe"), and `openvibe-link status`
   shows `Screen: live … until …` while it runs.
 - **It ends** when its time is up, when you press Stop, when capturing fails five times in a row, and at once on
-  `openvibe-link stop` or an e-stop. While a stop is latched, a new start is refused.
+  `openvibe-link stop` or an stop. While a stop is latched, a new start is refused.
 - **Levels.** It runs at every level, like a screenshot. To never offer it, set `allow_screen_stream: false`.
 - **Without Pillow** the capture tool must write JPEG itself: `screencapture`, `grim`, `import` and `scrot` do;
   `gnome-screenshot` does not.
@@ -211,7 +211,7 @@ An agent can work on a desk of its own instead of your screen (plan track K: Vib
   `status` and `list` run at every level. What runs on the desk keeps its own rules: input and the browser still act.
 - **Watching and taking over.** Start the live screen with `"desk": "private"` (your desktop is not told, since nothing of
   yours is shown) and drive it the same way.
-- **It ends** on `stop`, and at once on `openvibe-link stop` or an e-stop: every process the desk started is ended by
+- **It ends** on `stop`, and at once on `openvibe-link stop` or an stop: every process the desk started is ended by
   handle, never by name.
 - **Needs** Linux with `Xvfb` (Debian/Ubuntu: `apt install xvfb`), `xdotool` for input and ImageMagick `import` or `scrot`
   for screenshots. Not offered elsewhere; `allow_desk: false` turns it off.

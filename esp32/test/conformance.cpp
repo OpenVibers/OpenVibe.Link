@@ -4,11 +4,11 @@
 // header in esp32/test/.deps (run.sh fetches and checks it). It replays every fixture in
 // internal/protocol/testdata/bot — each server-to-device frame is decoded and handled, and each device-to-server frame
 // the core emits is checked for the fixture's keys and value types — and runs the protocol's scenarios (deadman,
-// e-stop, clamping, nack codes, a job refusal, close codes, heartbeat cadence, hello/config ordering) plus the safety
+// stop, clamping, nack codes, a job refusal, close codes, heartbeat cadence, hello/config ordering) plus the safety
 // hardening scenarios (a wall clock that steps backwards, 64-bit monotonic time across the millis() wrap, wrong-typed
 // latch frames, oversize/too-deep/allocation-failing frames, over-long ids and kinds, the dedup cache's ten-minute
 // limit, the heartbeat cap, guarded commands while the link is lost, the backoff reset, the refused-reconnect floor,
-// the pre-hello timer with the transport down, a bounded e-stop reason and an overflowing command value).
+// the pre-hello timer with the transport down, a bounded stop reason and an overflowing command value).
 //
 // Exit status is non-zero if any scenario fails; every scenario prints one PASS/FAIL line.
 #include <ArduinoJson.h>
@@ -317,8 +317,8 @@ std::string scenarioEstop(const std::string& hello, const std::string& config) {
   h.sent.clear();
   h.core.feed("{\"v\":1,\"seq\":5,\"ts\":" + std::to_string(h.now) +
               ",\"type\":\"estop\",\"latched\":true,\"by\":\"usr_1\",\"at\":\"2026-09-29T19:20:01.200Z\"}");
-  REQUIRE(h.core.estopped(), "the e-stop did not latch");
-  REQUIRE(!h.stops.empty(), "the e-stop did not stop motion");
+  REQUIRE(h.core.estopped(), "the stop did not latch");
+  REQUIRE(!h.stops.empty(), "the stop did not stop motion");
   JsonDocument st;
   REQUIRE(lastOfType(h.sent, "estop_state", st), "no estop_state on latch");
   REQUIRE(st["latched"].as<bool>(), "estop_state did not report the latch");
@@ -326,11 +326,11 @@ std::string scenarioEstop(const std::string& hello, const std::string& config) {
   h.core.feed(commandFrame(id, "drive", "{\"throttle\":0.5,\"steer\":0}", h.now, h.now + 300));
   std::string fault;
   std::string message;
-  REQUIRE(h.lastNack(id, fault, message), "a drive while e-stopped was not nacked");
-  REQUIRE(fault == "estopped", "drive while e-stopped nacked " + fault);
-  REQUIRE(h.drives.empty(), "a drive reached the motors while e-stopped");
+  REQUIRE(h.lastNack(id, fault, message), "a drive while stopped was not nacked");
+  REQUIRE(fault == "estopped", "drive while stopped nacked " + fault);
+  REQUIRE(h.drives.empty(), "a drive reached the motors while stopped");
   h.core.feed("{\"v\":1,\"seq\":6,\"ts\":" + std::to_string(h.now) + ",\"type\":\"estop\",\"latched\":false}");
-  REQUIRE(!h.core.estopped(), "the e-stop did not clear");
+  REQUIRE(!h.core.estopped(), "the stop did not clear");
   h.core.feed(commandFrame("cmd_after_clear", "drive", "{\"throttle\":0.5,\"steer\":0}", h.now, h.now + 300));
   REQUIRE(h.drives.size() == 1, "a drive after the clear did not reach the motors");
   return "";
@@ -526,7 +526,7 @@ std::string scenarioWrongTypedLatch(const std::string& hello, const std::string&
   const std::string estop_true = "{\"v\":1,\"seq\":5,\"ts\":" + std::to_string(h.now) +
                                  ",\"type\":\"estop\",\"latched\":true,\"by\":\"usr_1\"}";
   h.core.feed(estop_true);
-  REQUIRE(h.core.estopped(), "the e-stop did not latch");
+  REQUIRE(h.core.estopped(), "the stop did not latch");
   for (const std::string& raw : {std::string("\"false\""), std::string("0"), std::string("1"), std::string("{}")}) {
     h.core.feed("{\"v\":1,\"seq\":6,\"ts\":" + std::to_string(h.now) + ",\"type\":\"estop\",\"latched\":" + raw + "}");
     REQUIRE(h.core.estopped(), "estop latched:" + raw + " released the latch");
@@ -807,7 +807,7 @@ std::string scenarioEstopReasonBound(const std::string& hello, const std::string
   const std::string big_by(16000, 'x'); // under the frame limit, far over the reason cap
   h.core.feed("{\"v\":1,\"seq\":5,\"ts\":" + std::to_string(h.now) +
               ",\"type\":\"estop\",\"latched\":true,\"by\":\"" + big_by + "\"}");
-  REQUIRE(h.core.estopped(), "the e-stop with a huge by did not latch");
+  REQUIRE(h.core.estopped(), "the stop with a huge by did not latch");
   JsonDocument st;
   REQUIRE(lastOfType(h.sent, "estop_state", st), "no estop_state for the huge-by latch");
   const std::string reason = st["reason"] | "";
@@ -1033,7 +1033,7 @@ int main(int argc, char** argv) {
   report("the reconnect backoff resets after a stable link", scenarioBackoffReset(hello));
   report("the 10 s floor after a refused reconnect", scenarioRefusedFloor(hello));
   report("the pre-hello timer does not fire with the transport down", scenarioPreHelloTimer());
-  report("a huge e-stop by is bounded in every cached message", scenarioEstopReasonBound(hello, config));
+  report("a huge stop by is bounded in every cached message", scenarioEstopReasonBound(hello, config));
   report("an overflowing command or actuator value is refused", scenarioValueOverflow(hello, config));
 
   if (failures > 0) {

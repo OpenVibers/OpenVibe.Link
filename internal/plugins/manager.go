@@ -94,7 +94,7 @@ func (m *Manager) HaltAll(turnEpoch int64) {
 	}
 }
 
-// EstopAll latches every plugin's e-stop, saying why (EstopRemote, EstopLocal, EstopDriver, EstopLatched).
+// EstopAll latches every plugin's stop, saying why (EstopRemote, EstopLocal, EstopDriver, EstopLatched).
 func (m *Manager) EstopAll(cause, reason string) {
 	for _, p := range m.plugins {
 		p.Estop(cause, reason)

@@ -353,7 +353,7 @@ func TestCrashRestartsWithEstop(t *testing.T) {
 	if p.Info().Restarts < 1 {
 		t.Fatal("no restart counted")
 	}
-	// After the restart the latched e-stop is sent again right after hello, as a replay of the same emergency.
+	// After the restart the latched stop is sent again right after hello, as a replay of the same emergency.
 	l := fx.lines()
 	var afterCrash []string
 	for i, s := range l {
@@ -368,7 +368,7 @@ func TestCrashRestartsWithEstop(t *testing.T) {
 }
 
 // A latch set before the manager starts (the Link booting with its stop latched on disk) is the first thing each
-// process hears after hello: the e-stop replayed, naming what set it, before the plugin can be routed any command.
+// process hears after hello: the stop replayed, naming what set it, before the plugin can be routed any command.
 func TestLatchSetBeforeStartIsReplayedFirst(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "plugin.log")
 	exe, _ := os.Executable()

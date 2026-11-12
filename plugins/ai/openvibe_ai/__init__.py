@@ -618,7 +618,7 @@ class Ai(Plugin):
                 self.pool_stopped.wait(2)
 
     def on_stop(self, info):
-        """The kill switch on this machine (an emergency stop) stops the whole pool now and holds it until the latch is
+        """The kill switch on this machine (an stop) stops the whole pool now and holds it until the latch is
         cleared; the Link stopping closes it and keeps the key. A turn's halt, a lost link or a command's timeout is not
         about the pool. Without a pool, every stop is as before (nothing moves here)."""
         if not self.cfg.get("pool_directory"):

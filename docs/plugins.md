@@ -39,7 +39,7 @@ computer plugin's shared desks) reads the same config as the Link that started i
    Linux and macOS.
 
 A plugin that exits is restarted with exponential backoff (1 s doubling to 30 s, reset after a minute of uptime). It
-starts stopped; if the e-stop or the local kill switch is latched, the core sends `estop` right after `hello`.
+starts stopped; if a local stop or the kill switch is latched, the core sends `estop` right after `hello` (the old name of a Stop).
 A plugin that does not describe itself within 15 s, or stops reading stdin, is killed.
 
 Probe mode (`hello` with `"probe": true`) is used by `openvibe-link pair` and `openvibe-link plugins`: the plugin
@@ -168,7 +168,7 @@ Asked by the Generic LOOI driver's authors (2026-10-27). Each answer is what Bot
    - The core passes `provenance` through unchanged.
    - An operator who repeats their own id gets the first result, and no second command reaches the robot.
    - A retry under a new id, or a held control re-sent every 150 ms, is a **new** command. It passes the gate again at
-     that moment: whose turn it is, the epoch, the e-stop and the limits. Its id, `seq`, `issued_at_ms`, deadline and
+     that moment: whose turn it is, the epoch, the stop latch and the limits. Its id, `seq`, `issued_at_ms`, deadline and
      `turn_epoch` are all new.
    - So a stamp is always a fresh decision, never an old command made current.
 3. **Order across a change of driver.** A queue turn can end, its holder can leave, or the owner can take it over. Then:
@@ -193,10 +193,10 @@ Asked by the Generic LOOI driver's authors (2026-10-27). Each answer is what Bot
      - a plugin missing its reply window.
    - `estop` stops every actuator **and latches**. The core refuses `drive`, `ptz` and `actuator` itself (`estopped`,
      `local_stop`), and so does the runtime, until `resume`. The latch:
-     - is set by Bot's e-stop (an owner or operator presses it), by `openvibe-link stop`, or by a driver's `local_stop`;
+     - is set by an old server stop latch, by `openvibe-link stop`, or by a driver's `local_stop`;
      - is written to disk, survives a Link restart, and is sent again at once to a plugin that restarts;
      - is reapplied from Bot's config on every reconnect.
-   - Only the owner clears Bot's e-stop. A local stop is cleared only by `openvibe-link resume` on the machine.
+   - Bot no longer sets this latch; it sends a plain `halt` instead. A local stop is cleared only by `openvibe-link resume` on the machine, and an old server latch is released by the same `resume`.
    - A `halt` still passes while latched.
    - The driver's own stops (a motion deadline passing, a second without a heartbeat, stdin closing) are `stop`s.
      Heartbeat loss also refuses motion until heartbeats return.
@@ -251,7 +251,7 @@ Asked next by the same authors (2026-10-27, P7 LOOI shadow integration), and cha
      | `stop` | `link_lost` | the link to Bot dropped (two missed heartbeats, a close) | no |
      | `stop` | `shutdown` | the Link is stopping (service stop, `openvibe-link quit`), or the core is stopping this process | no |
      | `stop` | `timeout` | a command got no answer from the driver within its window | no |
-     | `estop` | `remote` | the platform's e-stop (a robot owner or staff), with its `reason` | yes, until the owner clears it |
+     | `estop` | `remote` | the platform's stop (a robot owner or staff), with its `reason` | yes, until the owner clears it |
      | `estop` | `local` | `openvibe-link stop` on the device | yes, until `openvibe-link resume` |
      | `estop` | `driver` | a driver's own `local_stop` (this plugin's or another's) | yes, until `openvibe-link resume` |
      | `estop` | `latched` | the latch was already set when the Link or this process started (`replayed: true`, `first_cause` when known) | yes |
@@ -267,8 +267,7 @@ Asked next by the same authors (2026-10-27, P7 LOOI shadow integration), and cha
      true; an ordinary halt, a disconnect, a timeout or a handoff only revokes remote motion. Treat `on_resume` as
      information. Never ARM P7, clear its physical latch or restore a remote grant there; the next command still passes
      every check. Across a plugin restart the latch arrives again as `estop` `latched` with `replayed: true`, and the halt
-     epoch comes in `hello`. Across a Link reconnect the link's loss is a `stop` (`link_lost`); a platform e-stop set
-     while offline is applied from Bot's config before any command.
+     epoch comes in `hello`. Across a Link reconnect the link's loss is a `stop` (`link_lost`); an old server stop latch set while offline is applied from config before any command.
 
 Reviewed again by the same authors against v0.17.0 (2026-10-27, `632207f`), and changed in Link 0.18.0:
 
@@ -333,9 +332,9 @@ Reviewed again by the same authors against v0.17.0 (2026-10-27, `632207f`), and 
        owner's command.
      - `on_resume` is information. Its default does nothing, and the runtime re-arms nothing, so P7 is not re-armed and
        no local grant comes back.
-   - **A replayed e-stop comes before any motion.** The core keeps the latch on disk and sets it before it starts any
+   - **A replayed stop comes before any motion.** The core keeps the latch on disk and sets it before it starts any
      plugin.
-     - **Plugin restart.** The process gets `hello` with the latest halt epoch, then the e-stop again (`latched`,
+     - **Plugin restart.** The process gets `hello` with the latest halt epoch, then the stop again (`latched`,
        `replayed: true`, `first_cause`). No command is routed to it before its `ready`, and lines reach it in the order
        they were queued. So the replay arrives before any command, and the runtime refuses motion (`estopped`) from
        then on.
@@ -599,7 +598,7 @@ not its label. Live's `key_held` / `key_released` names are viewer status broadc
 hardware messages; the hardware socket, and so this relay, sends `key_down` / `key_up`. The old `control_id`,
 `from_user` and `timestamp` fields are unavailable in Bot's Link → plugin command; Live's example bridge reads
 `from_user` only for logging and defaults it, so hardware clients treat all three as optional. The SDK releases all
-held buttons on deadline, missed heartbeat, stop, e-stop, halt and stdin close.
+held buttons on deadline, missed heartbeat, stop, halt and stdin close.
 
 ## Writing a plugin in Python
 
@@ -633,9 +632,9 @@ A driver with a safety latch of its own tells an ordinary stop from an emergency
 plugin is stopped" above):
 
 ```python
-    def on_stop(self, info):              # every stop: a halt, a lost link, a deadline, an e-stop…
+    def on_stop(self, info):              # every stop: a halt, a lost link, a deadline, a stop…
         self.stop()                       # always stop every actuator first
-        if info.emergency:                # the platform's e-stop (remote, local, driver, or replayed as latched)
+        if info.emergency:                # the platform's stop (remote, local, driver, or replayed as latched)
             self.hardware_latch.set()     # only then latch the hardware's own STOP
 
     def on_resume(self, info):            # the owner cleared the platform's latch: information, never a re-arm

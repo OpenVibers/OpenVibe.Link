@@ -309,7 +309,7 @@ AppArmor; a Link running as root with `run_as` is not affected.
 
 Every kill is SIGKILL to the whole process group and to the leader, which is PID 1 of the job's PID namespace, so its
 death also kills every process the job left behind. The watchdog kills at `ttl_ms` (from receipt), `wall_ms` (from
-start), `cpu_ms`, `mem_bytes`, at `max_output_bytes` of stdout, on `job_cancel`, and the moment the e-stop or the local
+start), `cpu_ms`, `mem_bytes`, at `max_output_bytes` of stdout, on `job_cancel`, and the moment the stop or the local
 stop latches (`openvibe-link stop`); while the latch is set every job is refused, and `openvibe-link resume` admits
 them again. A Link shutting down kills its jobs (`stopped`); a job acked but not started yet never starts and gets its
 `job_exit` (`stopped`) all the same.
@@ -463,7 +463,7 @@ Refused with `nack` (keyed by the job id; the first matching row wins, after the
 | `class not available`                 | `unsupported`              | the worker is off (disabled, not Linux, probe failed), or no declared entry has the job's class (`function`, `code` or `linux`) |
 | `job inputs not supported`            | `unsupported`              | the job carries `inputs` and `media` is off: this Link never runs a job with them silently dropped |
 | `net policy not supported`            | `unsupported`              | the job names a `net` this host cannot enforce (`public` or `openvibe-only` while `egress` is `none`) |
-| `the e-stop or local stop is latched` | `estopped` or `local_stop` | the stop latch is set                                   |
+| `the stop or local stop is latched` | `estopped` or `local_stop` | the stop latch is set                                   |
 | `class not available`                 | `shutting_down`            | the Link is stopping                                    |
 | `unknown artifact`                    | `unsupported`              | no declared entry of the job's class has that name and exact version |
 | `worker busy`                         | `not_ready`                | `max_jobs` jobs are running                             |
@@ -476,5 +476,5 @@ Accepted jobs end with `job_exit.reason`:
 | `cancelled` | `job_cancel`; a job cancelled before it started never starts                                               |
 | `ttl`       | `ttl_ms` (clamped) ran out, before or while it ran                                                         |
 | `limit`     | `wall_ms`, `cpu_ms` (sampled, or `RLIMIT_CPU`'s SIGXCPU) or `mem_bytes` (sampled, or the cgroup's OOM kill) exceeded, stdout past `max_output_bytes`, or a result over 256 KiB (over `media.max_bytes` with `media` on) |
-| `stopped`   | the e-stop or local stop latched, or the Link shut down                                                    |
+| `stopped`   | the stop or local stop latched, or the Link shut down                                                    |
 | `failed`    | the job could not run isolated: sandbox, cgroup or namespaces not set up, spawn error, working directory not made, CPU limit not set; never run with less isolation. Also: an input not fetched or not matching its digest (nothing ran), or a large result not uploaded |

@@ -27,7 +27,7 @@ ArduinoJson (7.4.2) and WebSockets (2.6.1). Nothing here has been on real hardwa
   `ptz`, `say` and `display` are valid protocol kinds this device has no driver for, so they are `nack unsupported`.
   A command id or kind over 64 bytes is rejected, and the dedup cache answers a repeated id for the spec's 10 minutes
   (across reconnects) while every cached message stays within a fixed bound: the id and kind are rejected or not
-  echoed, and a hostile e-stop reason is truncated before it is copied into an entry.
+  echoed, and a hostile stop reason is truncated before it is copied into an entry.
 - **Telemetry** — `battery`, `voltage`, `rssi` and `sensors`, at most every 500 ms (Bot's cap).
 - **Heartbeat and deadman** — a `heartbeat` every `config.heartbeat_ms` (capped at 5000 ms so a server cannot stretch
   the deadman for hours) once `hello` has arrived, both `heartbeat_ack` shapes (the newer `echo`/`t` and the older
@@ -50,7 +50,7 @@ ArduinoJson (7.4.2) and WebSockets (2.6.1). Nothing here has been on real hardwa
   ends before `hello` as the refused case and logs that the cause is uncertain; see *Limitations* below.
 - **Frame and memory bounds** — the protocol allows frames up to 1 MiB; this device bounds them at 16 KiB and a JSON
   depth of 10. A frame over either bound, or one the JSON parser cannot allocate, stops the motors and drops the link
-  (it could have been an e-stop; the reconnect re-reads `config.estop_latched`). A frame that loses fields to a failed
+  (it could have been an stop; the reconnect re-reads `config.estop_latched`). A frame that loses fields to a failed
   allocation is never sent half-formed.
 
 ## What it does not
@@ -103,7 +103,7 @@ An L298N-class dual H-bridge; change the pins in `Basic.ino` if they clash with 
 
 The two enable pins are the `ledc` PWM channels (20 kHz, 8-bit) and the four IN pins the direction. `onDrive` mixes
 `throttle ± steer` for the two wheels; the core has already clamped them. `onStop` is the only place that zeroes the
-motors, and it runs on `halt`, on a motion deadline, on two missed heartbeats, on an e-stop and whenever the link
+motors, and it runs on `halt`, on a motion deadline, on two missed heartbeats, on an stop and whenever the link
 closes.
 
 ## Building the conformance harness
@@ -113,12 +113,12 @@ sh esp32/test/run.sh
 ```
 
 It needs `g++` with C++17 and a way to fetch one file (curl, wget or python3). The harness prints one line per
-scenario and exits non-zero on a failure. Its scenarios cover the fixtures, the deadman, the e-stop latch (including
+scenario and exits non-zero on a failure. Its scenarios cover the fixtures, the deadman, the stop latch (including
 wrong-typed frames), clamping, nack codes, job refusals, close codes, heartbeat cadence, a wall clock that steps
 backwards, 64-bit monotonic time across the 32-bit `millis()` wrap, oversize/too-deep/allocation-failing frames,
 over-long ids and kinds, the dedup cache's 10-minute limit, the heartbeat cap, guarded commands while the link is
 lost, the backoff reset after a stable link, the 10 s floor after a refused reconnect, the pre-hello timer staying
-quiet while the transport is down, a hostile e-stop `by` being bounded in the latch and in every cached message, and a
+quiet while the transport is down, a hostile stop `by` being bounded in the latch and in every cached message, and a
 command or actuator value document that overflows being refused rather than reaching a driver truncated.
 
 ## Limitations
@@ -127,7 +127,7 @@ command or actuator value document that overflows being refused rather than reac
 - The library never starts SNTP (step 4). Before the sketch syncs time, `ts`, `estop_state.at` and `heartbeat.t` carry
   the monotonic clock rather than Unix milliseconds. The core's timers never read that clock, so safety is unaffected.
 - NVS is not encrypted by default: the credential and the local kill switch live in flash readable to anyone with
-  physical access unless the sketch enables NVS encryption. The remote e-stop is not stored at all; each connection's
+  physical access unless the sketch enables NVS encryption. The remote stop is not stored at all; each connection's
   `config.estop_latched` re-applies it (including after a reboot).
 - arduinoWebSockets 2.x delivers `WStype_DISCONNECTED` without the WebSocket close code or the upgrade's HTTP status.
   The transport therefore treats "disconnected before `hello`" as the 4002/401/403 case (10 s floor, logged as an

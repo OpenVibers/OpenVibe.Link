@@ -261,7 +261,7 @@ func (w *Worker) ExitAck(id string) {
 	}
 }
 
-// SetStopped follows the stop latch (the e-stop or the local stop). A fault code kills every job at once (job_exit
+// SetStopped follows the stop latch (the stop or the local stop). A fault code kills every job at once (job_exit
 // says stopped) and refuses new ones with that fault until SetStopped("").
 func (w *Worker) SetStopped(fault string) {
 	w.mu.Lock()

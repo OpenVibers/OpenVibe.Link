@@ -391,7 +391,7 @@ func TestMissedHeartbeatsStop(t *testing.T) {
 }
 
 // TestRobotEstopLatchedUntilOwnerClears: the remote latch is the server's to clear, and the owner clears it
-// with `estop latched:false`. The computer plugin is the one exception: an e-stop on a computer waits for a
+// with `estop latched:false`. The computer plugin is the one exception: an stop on a computer waits for a
 // local `openvibe-link resume` (TestComputerRemoteStopRequiresLocalResume).
 func TestRobotEstopLatchedUntilOwnerClears(t *testing.T) {
 	e := start(t)
@@ -411,7 +411,7 @@ func TestRobotEstopLatchedUntilOwnerClears(t *testing.T) {
 	// Persisted: a restarted Agent comes back latched.
 	l, _ := safety.OpenLatch(e.paths.LatchFile())
 	if !l.State().Remote {
-		t.Fatal("e-stop not persisted")
+		t.Fatal("stop not persisted")
 	}
 	// Survives a reconnect.
 	e.conn.Close()
