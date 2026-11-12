@@ -651,11 +651,16 @@ func (n *Agent) startWorker(why string) bool {
 	return true
 }
 
-// hasDeskHost says whether this machine was installed as a desk host: the computer plugin with a desk of its own.
+// hasDeskHost says whether this machine was installed as a desk host: the computer plugin with desks of its own.
+// The installer writes them as allow_desk (with desk_dir, max_desks …) on the plugin's config; an older layout nested
+// them under desk. Either one is a desk host (2026-11-12: ov-node-01, a shared desk host, said it had none).
 func (n *Agent) hasDeskHost() bool {
 	for _, p := range n.opt.Config.Plugins {
 		if p.Name != "computer" && p.Name != "computer.py" {
 			continue
+		}
+		if on, ok := p.Config["allow_desk"].(bool); ok && on {
+			return true
 		}
 		if d, ok := p.Config["desk"].(map[string]any); ok && len(d) > 0 {
 			return true
