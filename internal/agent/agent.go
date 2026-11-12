@@ -919,8 +919,11 @@ func (n *Agent) headlight(c protocol.Command, entry *safety.Entry, sentMS int64,
 		return
 	}
 	// The original expiry is what provenance.expires_at_ms says; what is left of it is the deadline's time left plus
-	// the gap between the two. At least HeadlightReserveMS of that original 300 ms must remain on receipt.
-	originalLeft := left + time.Duration(pv.ExpiresAtMS-c.DeadlineMS)*time.Millisecond
+	// the gap between the two. At least HeadlightReserveMS of that original 300 ms must remain on receipt, judged on the
+	// link's estimate of the server's clock: the clock's uncertainty is spent once, above, where the worst case decides
+	// whether the deadline has already passed. Counting it here as well refused every headlight on a connection whose
+	// fastest round trip was slow (Maticus, 2026-11-12: 164 ms of uncertainty left "136 of 300 ms" on a fresh command).
+	originalLeft := left + time.Duration(unc)*time.Millisecond + time.Duration(pv.ExpiresAtMS-c.DeadlineMS)*time.Millisecond
 	if originalLeft < HeadlightReserveMS*time.Millisecond {
 		nack(protocol.FaultExpired, fmt.Sprintf("only %d ms of the headlight's original %d ms lifetime was left on receipt (need at least %d)", max(0, originalLeft.Milliseconds()), HeadlightLifetimeMS, HeadlightReserveMS))
 		return

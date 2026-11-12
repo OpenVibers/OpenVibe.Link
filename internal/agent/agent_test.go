@@ -546,13 +546,19 @@ func TestVideoAndTelemetry(t *testing.T) {
 
 func headlightPlugin(t *testing.T) (*env, string) {
 	t.Helper()
+	return headlightPluginWith(t, nil)
+}
+
+// headlightPluginWith is headlightPlugin with prep run on the fake server first (a slow path, say).
+func headlightPluginWith(t *testing.T, prep func(*fakebot.Server)) (*env, string) {
+	t.Helper()
 	py, err := exec.LookPath("python3")
 	if err != nil {
 		t.Skip("python3 not installed")
 	}
 	root, _ := filepath.Abs("../..")
 	record := filepath.Join(t.TempDir(), "headlight.jsonl")
-	e := startWithPlugin(t, nil, true, &config.PluginConfig{
+	e := startWithPlugin(t, prep, true, &config.PluginConfig{
 		Name:    "headlight",
 		Command: []string{py, filepath.Join(root, "internal/agent/testdata/headlight_plugin.py")},
 		Config:  map[string]any{"record": record},
@@ -662,6 +668,43 @@ func TestHeadlightEnvelopeAndAckData(t *testing.T) {
 	}
 	if p.Session != e.conn.SessionID || p.ClockUncertaintyMS == nil {
 		t.Fatalf("provenance session/clock uncertainty: %+v (hello %s)", p, e.conn.SessionID)
+	}
+}
+
+// On a connection whose fastest round trip is slow (a large clock uncertainty), a fresh headlight still reaches the
+// driver: the reserve is judged on the clock estimate, the uncertainty only on whether the deadline has passed
+// (Maticus, 2026-11-12: 164 ms of uncertainty refused every headlight as "136 of 300 ms left").
+func TestHeadlightReserveOnASlowLink(t *testing.T) {
+	e, record := headlightPluginWith(t, func(s *fakebot.Server) { s.HeartbeatAckDelay = 170 * time.Millisecond })
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if d, ok := e.node.link.ClockUncertainty(); ok && d >= 160*time.Millisecond {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no slow round trip measured")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	r := headlightCommand(t, e, "hl-slow", true, HeadlightDeadlineMS, &protocol.CommandProvenance{})
+	if d := ackData(t, r); d["stage"] != "headlight_pending" {
+		t.Fatalf("a fresh headlight on a slow link was refused: %#v", r)
+	}
+	got := readHeadlight(t, record)[0]
+	if got.Provenance == nil || got.Provenance.ClockUncertaintyMS == nil || *got.Provenance.ClockUncertaintyMS < 160 {
+		t.Fatalf("the driver is told the link's uncertainty: %+v", got.Provenance)
+	}
+	// A frame that really sat 150 ms on the way is still refused.
+	cmd := protocol.Command{ID: "hl-slow-late", Kind: protocol.KindHeadlight, Value: json.RawMessage(`{"on":false}`), Provenance: &protocol.CommandProvenance{}}
+	if err := e.conn.CommandLate(cmd, HeadlightDeadlineMS, 150*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	late, err := e.conn.Reply("hl-slow-late", 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, ok := late.(protocol.Nack); !ok || n.FaultCode != protocol.FaultExpired {
+		t.Fatalf("the late headlight was not refused expired: %#v", late)
 	}
 }
 
