@@ -78,7 +78,10 @@ func (s *Server) agentRegister(w http.ResponseWriter, r *http.Request) {
 	created := body
 	created.ID = "agt_" + random()[:16]
 	created.Owner = fakeOwner
-	s.agents[created.ID] = &created
+	// The map keeps its own copy: the answer below is encoded after the unlock, while a second registration may
+	// update the stored agent's status under the lock (a data race the race detector caught in CI, 2026-11-12).
+	stored := created
+	s.agents[created.ID] = &stored
 	s.mu.Unlock()
 	w.WriteHeader(201)
 	_ = json.NewEncoder(w).Encode(created)
