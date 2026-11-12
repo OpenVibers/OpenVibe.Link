@@ -33,6 +33,11 @@ for raw in sys.stdin:
         send({"op": "ready"})
         send({"op": "telemetry", "sensors": {"p7_headlight": {
             "commanded": None, "pending": False, "physical_state_verified": False}}})
+    elif op == "stop":
+        # Why the core stopped it, beside the record (record.stops): link_lost, link_restart, shutdown...
+        if record:
+            with open(record + ".stops", "a") as f:
+                f.write((msg.get("cause") or "") + "\n")
     elif op == "command":
         on = (msg.get("value") or {}).get("on")
         note({"id": msg.get("id"), "kind": msg.get("kind"), "value": msg.get("value"),

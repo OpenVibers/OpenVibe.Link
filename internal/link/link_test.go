@@ -518,6 +518,31 @@ func TestCredentialBackoffFloor(t *testing.T) {
 	}
 }
 
+// Bot closing with 1012 (a deploy) ends the session as ErrServerRestart, and the log names the close code and reason;
+// a connection that ends with no close frame says so (Maticus, 11-12: "print the close code").
+func TestServerRestartCloseIsLogged(t *testing.T) {
+	srv, _, rec, logs, _ := setup(t, time.Second)
+	conn, err := srv.NextConn(3 * time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFrame(t, rec, protocol.TypeConfig)
+	conn.CloseWith(websocket.CloseServiceRestart, "restarting for a deploy")
+	if got := <-rec.gotDown; !errors.Is(got, ErrServerRestart) {
+		t.Fatalf("1012 ended the session with %v", got)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for !strings.Contains(logs.String(), "close_code=1012") || !strings.Contains(logs.String(), "restarting for a deploy") {
+		if time.Now().After(deadline) {
+			t.Fatalf("the close was not logged: %s", logs.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if closeErr(&websocket.CloseError{Code: websocket.CloseServiceRestart}) != ErrServerRestart {
+		t.Fatal("1012 does not map to ErrServerRestart")
+	}
+}
+
 func waitLastError(t *testing.T, l *Link, want string) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)

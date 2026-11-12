@@ -300,12 +300,15 @@ func (p *Plugin) enqueue(l line) error {
 const (
 	StopHalt     = "halt"      // Bot's halt: the controlling turn ended (release, handoff, timeout, unbind)
 	StopLinkLost = "link_lost" // the link to Bot was lost
-	StopShutdown = "shutdown"  // the Link is stopping (service stop, `openvibe-link quit`)
-	StopTimeout  = "timeout"   // a command got no answer from the driver within its window
-	EstopRemote  = "remote"    // an stop from the platform (a robot owner or staff)
-	EstopLocal   = "local"     // `openvibe-link stop` on the device
-	EstopDriver  = "driver"    // a driver's own local stop (a plugin reported one)
-	EstopLatched = "latched"   // the stop was already latched when the Link or this process started
+	// StopLinkRestart: Bot closed the link to restart (close 1012, a deploy). It reconnects within seconds; a driver
+	// stops its motors as for link_lost and need not latch anything of its own (0.62.0).
+	StopLinkRestart = "link_restart"
+	StopShutdown    = "shutdown" // the Link is stopping (service stop, `openvibe-link quit`)
+	StopTimeout     = "timeout"  // a command got no answer from the driver within its window
+	EstopRemote     = "remote"   // an stop from the platform (a robot owner or staff)
+	EstopLocal      = "local"    // `openvibe-link stop` on the device
+	EstopDriver     = "driver"   // a driver's own local stop (a plugin reported one)
+	EstopLatched    = "latched"  // the stop was already latched when the Link or this process started
 )
 
 // Stop tells the plugin to stop every actuator, saying why.

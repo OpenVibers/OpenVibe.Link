@@ -6,7 +6,9 @@
 // the server's hello arrives: OpenVibe.Bot authenticates after the upgrade and answers anything sent earlier with
 // error bot.not_paired.
 //
-// Close codes: 4000 (another connection with this credential replaced this one) reconnects with the normal backoff;
+// Close codes: 1012 (Bot is restarting, a deploy) is ErrServerRestart, so the stop it causes says so; every close is
+// logged with its code and reason, and a connection that ended with no close frame says that instead.
+// 4000 (another connection with this credential replaced this one) reconnects with the normal backoff;
 // 4002 (credential refused) and 4003 (revoked) keep retrying, never sooner than CredentialRetryMin, and log what to
 // do: pair again, or import the owner's rotation. Bot's error frames are logged, never fatal.
 //
@@ -330,6 +332,10 @@ func (l *Link) backoff(err error, attempt int) time.Duration {
 	return l.opt.BackoffMin/2 + jitter
 }
 
+// ErrServerRestart is the end of a session Bot closed with 1012 (service restart: a deploy). The link reconnects with
+// its normal backoff; the agent stops every actuator with cause link_restart instead of link_lost.
+var ErrServerRestart = errors.New("the server closed the link to restart (1012); reconnecting")
+
 var (
 	errUnauthorized = errors.New("the server refused the device credential (wrong, rotated or revoked): pair again with `openvibe-link pair <CODE>`, or, if the owner rotated it, pipe the rotate response into `openvibe-link credential import`")
 	errRevoked      = errors.New("the owner revoked this device or rotated its credential: pair again with `openvibe-link pair <CODE>`, or, if the owner rotated it, pipe the rotate response into `openvibe-link credential import`")
@@ -347,6 +353,8 @@ func closeErr(err error) error {
 		return nil
 	}
 	switch ce.Code {
+	case websocket.CloseServiceRestart:
+		return ErrServerRestart
 	case protocol.CloseReplaced:
 		return errReplaced
 	case protocol.CloseInvalid:
@@ -492,6 +500,14 @@ func (l *Link) session(ctx context.Context) error {
 		_, data, err := conn.ReadMessage()
 		if err != nil {
 			if sessCtx.Err() == nil {
+				// What ended it, on stderr (Maticus, 11-12): the server's close code and reason, or that no close
+				// frame came (the connection dropped: a network cut, or a server that exited before closing).
+				var wc *websocket.CloseError
+				if errors.As(err, &wc) {
+					l.log.Warn("the server closed the link", "close_code", wc.Code, "close_reason", scrub(wc.Text, cred))
+				} else {
+					l.log.Warn("the link dropped with no close frame", "err", scrub(err.Error(), cred))
+				}
 				if ce := closeErr(err); ce != nil {
 					end(ce)
 				} else {

@@ -24,7 +24,7 @@ __all__ = ["Plugin", "Fault", "Deferred", "Command", "StopInfo", "Runtime", "run
            "RUNTIME_CAUSES", "SHARED_CLOCK", "SHARED_CLOCK_NAME", "TIMING_UNAVAILABLE", "__version__"]
 
 # The Node release this runtime ships with (pyproject.toml carries the same).
-__version__ = "0.36.0"
+__version__ = "0.37.0"
 PROTOCOL_VERSION = 1
 HEARTBEAT_TIMEOUT_S = 1.0
 DEFAULT_DEADLINE_MS = 300
@@ -175,7 +175,7 @@ def _provenance(p):
 
 # Why a driver is stopped (StopInfo.cause). From the core: an ordinary stop revokes remote motion and latches nothing;
 # an emergency latches the platform's stop until its owner clears it.
-STOP_CAUSES = ("halt", "link_lost", "shutdown", "timeout")
+STOP_CAUSES = ("halt", "link_lost", "link_restart", "shutdown", "timeout")
 EMERGENCY_CAUSES = ("remote", "local", "driver", "latched")
 # From the runtime itself: a motion command's own deadline, the core going quiet, the handler failing, stdin closing.
 RUNTIME_CAUSES = ("setup", "deadline", "heartbeat", "handler_error", "eof")
@@ -186,7 +186,8 @@ class StopInfo:
     is stopped").
 
     cause, from the core: "halt" (Bot ended the controlling turn: a release, a handoff to the next viewer, a timeout or
-    an unbind; turn_epoch is that halt's epoch), "link_lost" (the link to Bot dropped), "shutdown" (the Node is
+    an unbind; turn_epoch is that halt's epoch), "link_lost" (the link to Bot dropped), "link_restart" (Bot closed the
+    link to restart, a deploy: back within seconds; Link 0.62.0), "shutdown" (the Node is
     stopping), "timeout" (a command got no answer within its window). From the runtime: "setup" (the stop every setup
     ends with, so all actuators start stopped), "deadline" (a motion command's
     own deadline passed; motion_only is True: stop what moves on its own), "heartbeat" (the core went quiet),

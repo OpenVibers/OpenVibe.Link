@@ -245,7 +245,7 @@ never a toggle. Bot mints one with an original 300 ms lifetime and a `deadline_m
 stamps `provenance` on the frame: `session` (the hello's id), `seq` and `issued_at_ms` (this frame's envelope seq and
 ts), `expires_at_ms` (the original 300 ms expiry) and `clock_uncertainty_ms` (Bot's last measured link round trip).
 The Link checks provenance against the frame, nacks `bad_value` when they disagree or the lifetime/deadline are not
-Bot's, nacks `expired` when less than 200 ms of the original 300 ms lifetime is left on receipt (or the deadline
+Bot's, nacks `expired` when less than 50 ms of the original 300 ms lifetime is left on receipt (200 before 0.62.0) (or the deadline
 already passed), and only then routes it to the driver. The driver gets `deadline_ms` ≤ 250,
 `expires_at_mono_ns` at the original expiry on the shared QPC/monotonic clock, the frame's `operator` and
 `turn_epoch`, and Bot's `provenance` with the Link's own measured `clock_uncertainty_ms`. A headlight is never motion:
