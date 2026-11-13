@@ -149,7 +149,7 @@ type WorkerConfig struct {
 	Caps          WorkerCaps `json:"caps,omitzero"`
 	// Egress is the most a job may reach on the network, all three enforced (docs/worker.md): none (the default; a
 	// network namespace with only a loopback that is down), public (IPv4 to public addresses, through a veth the Link
-	// NATs; private, shared, link-local and reserved ranges, EgressDeny and the host itself refused) or openvibe-only
+	// NATs, and the job's own loopback up; private, shared, link-local and reserved ranges, EgressDeny and the host itself refused) or openvibe-only
 	// (public restricted to EgressAllow). A job runs under the stricter of the net it names and this: a job naming no
 	// net (platform.job@1's declared default, deny), or deny or none, gets no network whatever this says; a job naming
 	// public or openvibe-only is refused when this is none, never run with less than was asked. A policy the host cannot

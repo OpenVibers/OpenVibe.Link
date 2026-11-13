@@ -117,7 +117,8 @@ SETUP="${OPENVIBE_SETUP_KEY:-}"
 # back to another agent when Claude Code nears its usage limit; an older runner keeps running Claude Code.
 # v0.8.0 (2026-11-13) adds `kind: 'check'` jobs: one GitHub Actions workflow job run with act in host mode, which
 # OpenVibe.Run's checks scheduler places on worker nodes (CI on shared nodes).
-CODES_VERSION="${OPENVIBE_CODES_VERSION:-v0.8.0}"
+# v0.8.1 binds act's cache server to the job's own loopback (Link v0.64.0 brings it up).
+CODES_VERSION="${OPENVIBE_CODES_VERSION:-v0.8.1}"
 CODES_DIR=/opt/openvibe-codes
 # The act release a check job runs (nektos/act, MIT): the same pin and sha256 as the Codes runner's harness/check.js.
 # It is fetched once here, checked, and named to the runner by OPENVIBE_CODES_ACT_BIN, so a check job does not download

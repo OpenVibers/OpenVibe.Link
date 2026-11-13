@@ -214,7 +214,7 @@ cgroups, no network) is that boundary.
   control, the probe and each job are refused unless the host has no swap at all; an OOM kills the whole job).
 - `egress`: the most a job may reach on the network; all three policies are enforced (see "Egress" below). `none`
   (the default): a network namespace with nothing but a loopback that is down. `public`: IPv4 to public addresses
-  only, through a veth the Link NATs; private (`10/8`, `172.16/12`, `192.168/16`), shared (`100.64/10`, most
+  only, through a veth the Link NATs, and the job's own loopback up (since v0.64.0); private (`10/8`, `172.16/12`, `192.168/16`), shared (`100.64/10`, most
   WireGuard meshes), loopback, link-local (`169.254/16`, cloud metadata included), multicast, documentation and
   reserved ranges, `egress_deny`, the host itself (every address it holds) and anything not routed through the
   host's default route (a WireGuard peer, a container bridge) are refused; there is no IPv6 (`fe80::/10` included).
@@ -332,7 +332,8 @@ In six lines:
    its control socket, nor the host's private keys.
 4. The network namespace has only a loopback that is down: no IP network, not even to the Link or `localhost`
    (`net` absent, `deny` or `none`, whatever `egress` says). Under `public` or `openvibe-only` it also holds one veth to
-   the host, through which only what that policy allows leaves (see "Egress"); the loopback stays down.
+   the host, through which only what that policy allows leaves (see "Egress"), and its own loopback is up (v0.64.0:
+   a test server or database on 127.0.0.1, act's cache server; nothing outside the namespace is on it).
 5. Nothing of the Link's environment reaches it.
 6. CPU, memory, processes and disk I/O are enforced by its cgroup v2 and rlimits; ttl, wall, CPU and output also by a
    per-job watchdog that SIGKILLs the whole group; `RLIMIT_CPU` backs the CPU cap per process.
@@ -387,8 +388,8 @@ How `public` and `openvibe-only` are enforced (`internal/worker/egress_linux.go`
 - **A veth per job.** Before the job starts, the Link makes a veth pair `ovw<n>`/`ovw<n>j` and gives the two ends a
   `/30` of `169.254.240.0/20` (link-local: an address no job may reach, so no job reaches another's). Once the
   sandbox stands, and before the function executes, it moves `ovw<n>j` into the job's network namespace, addresses it
-  with a default route through `ovw<n>` and reads the namespace back: that interface alone up (the loopback stays
-  down), that route and its `/30` alone. The job cannot change any of it: it holds no capability. Deleted when the
+  with a default route through `ovw<n>`, brings the namespace's own loopback up, and reads the namespace back: the
+  loopback and that interface alone up, that route and its `/30` alone. The job cannot change any of it: it holds no capability. Deleted when the
   job ends.
 - **NAT and filtering in the host's namespace**, in the Link's own nftables table `inet openvibe_worker`, written whole
   in one transaction each time a job's veth is made (a firewall reload that dropped it is undone by the next job;
