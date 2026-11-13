@@ -150,14 +150,16 @@ func addr4(v uint32) netip.Addr {
 }
 
 // attach moves the job end of the pair into the network namespace of pid (the sandbox init, waiting to execute the
-// function), addresses it with a default route through the host end, then reads the namespace back: the job end is
-// its only interface up (the loopback stays down) and its routes are that one and its /30's.
+// function), addresses it with a default route through the host end, brings the namespace's own loopback up, then
+// reads the namespace back: the loopback and the job end are its only interfaces up, and its routes are that one and
+// its /30's. The loopback is the job's own (a test server or database on 127.0.0.1, act's cache server): nothing
+// outside the namespace is reachable on it, and the egress rules see none of its traffic.
 func (e *egressNet) attach(pid int) error {
 	if err := runTool("", e.tools.ip, "link", "set", e.jobIf(), "netns", strconv.Itoa(pid)); err != nil {
 		return err
 	}
 	in := []string{"--net=/proc/" + strconv.Itoa(pid) + "/ns/net", "--", e.tools.ip}
-	batch := fmt.Sprintf("addr add %s/30 dev %s\nlink set %s up\nroute add default via %s dev %s\n",
+	batch := fmt.Sprintf("link set lo up\naddr add %s/30 dev %s\nlink set %s up\nroute add default via %s dev %s\n",
 		e.job, e.jobIf(), e.jobIf(), e.host, e.jobIf())
 	if err := runTool(batch, e.tools.nsenter, append(in, "-batch", "-")...); err != nil {
 		return err
@@ -173,8 +175,8 @@ func (e *egressNet) attach(pid int) error {
 			up = append(up, name)
 		}
 	}
-	if !slices.Equal(up, []string{e.jobIf()}) {
-		return fmt.Errorf("the job's interfaces up are %v, not %s alone", up, e.jobIf())
+	if !slices.Equal(up, []string{"lo", e.jobIf()}) {
+		return fmt.Errorf("the job's interfaces up are %v, not lo and %s alone", up, e.jobIf())
 	}
 	routes, err := toolOutput(e.tools.nsenter, append(in, "-4", "route", "show")...)
 	if err != nil {

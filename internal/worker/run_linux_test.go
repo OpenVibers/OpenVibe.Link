@@ -100,6 +100,17 @@ func TestHelperProcess(t *testing.T) {
 			}()
 		}
 		wg.Wait()
+		// The job's own loopback: up under a network policy (a test server on 127.0.0.1), down without one.
+		got["loopback"] = "no listener"
+		if l, err := net.Listen("tcp", "127.0.0.1:0"); err == nil {
+			if c, err := net.DialTimeout("tcp", l.Addr().String(), time.Second); err == nil {
+				c.Close()
+				got["loopback"] = "connected"
+			} else {
+				got["loopback"] = fmt.Sprint(err)
+			}
+			l.Close()
+		}
 		got["resolv.conf"] = "absent"
 		if b, err := os.ReadFile("/etc/resolv.conf"); err == nil {
 			got["resolv.conf"] = string(b)
@@ -1338,6 +1349,11 @@ func TestEgress(t *testing.T) {
 				if got[a] != want {
 					t.Errorf("%s: %s, want %s (all: %v)", a, got[a], want, got)
 				}
+			}
+			// A job with a network has its own loopback up; one without has a down loopback, as ever.
+			withNet := c.want["10.0.0.1:80"] == "refused"
+			if lo := got["loopback"]; (lo == "connected") != withNet {
+				t.Errorf("loopback: %s, want connected=%v", lo, withNet)
 			}
 		})
 	}
