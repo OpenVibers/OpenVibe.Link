@@ -42,6 +42,23 @@ import json, sys
 w = json.load(open(sys.argv[1]))['worker']
 assert len(w['functions']) == 1 and w['functions'][0]['env']['DEEPSEEK_API_KEY'] == 'kept' and w['caps']['max_jobs'] == 2
 PY
+# With act beside the runner (the installer fetched and checked it), check jobs are told where it is.
+codes="$tmp/codes"
+mkdir -p "$codes"
+: > "$codes/act"
+conf3="$tmp/act.json"
+OPENVIBE_INSTALL_WORKER_CONFIG_ONLY="$conf3" OPENVIBE_JOB_UID=2001 OPENVIBE_JOB_GID=2002 \
+	OPENVIBE_NODEJS=/usr/bin/node OPENVIBE_CODES_DIR="$codes" sh "$installer" --worker
+python3 - "$conf3" "$codes" <<'PY' || fail "act"
+import json, sys
+[f] = json.load(open(sys.argv[1]))['worker']['functions']
+assert f['env']['OPENVIBE_CODES_ACT_BIN'] == sys.argv[2] + '/act', 'a check job uses the installed act'
+PY
+python3 - "$conf" <<'PY' || fail "no act"
+import json, sys
+[f] = json.load(open(sys.argv[1]))['worker']['functions']
+assert 'OPENVIBE_CODES_ACT_BIN' not in f['env'], 'without act installed, the runner fetches its own'
+PY
 # Without Node.js the worker is on and declares no runner.
 conf2="$tmp/bare.json"
 OPENVIBE_INSTALL_WORKER_CONFIG_ONLY="$conf2" OPENVIBE_JOB_UID=2001 OPENVIBE_JOB_GID=2002 sh "$installer" --worker
