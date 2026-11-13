@@ -115,8 +115,15 @@ SETUP="${OPENVIBE_SETUP_KEY:-}"
 # conductor's turn: the `conductor` job kind, and the `openvibe-codes mcp` server it starts with the person's folder).
 # v0.7.0 (2026-11-03) lets a conductor's turn run on Codex or OpenCode with the Codes tools, so the conductor can fall
 # back to another agent when Claude Code nears its usage limit; an older runner keeps running Claude Code.
-CODES_VERSION="${OPENVIBE_CODES_VERSION:-v0.7.0}"
+# v0.8.0 (2026-11-13) adds `kind: 'check'` jobs: one GitHub Actions workflow job run with act in host mode, which
+# OpenVibe.Run's checks scheduler places on worker nodes (CI on shared nodes).
+CODES_VERSION="${OPENVIBE_CODES_VERSION:-v0.8.0}"
 CODES_DIR=/opt/openvibe-codes
+# The act release a check job runs (nektos/act, MIT): the same pin and sha256 as the Codes runner's harness/check.js.
+# It is fetched once here, checked, and named to the runner by OPENVIBE_CODES_ACT_BIN, so a check job does not download
+# it again; when it cannot be fetched, each check job fetches and checks it itself.
+ACT_VERSION=0.2.97
+ACT_SHA256=67b4976a56f33ea7870b798912e738ec44eef38e7578ae7b532f2def1c73a5ad
 
 usage() {
 	echo "usage: install.sh [--robot rob_… | --network URL --pairing pair_…] [--code CODE | CODE] [--name NAME]"
@@ -595,6 +602,9 @@ if node and codes:
         env.setdefault(k, v)
     for k in ('DEEPSEEK_API_KEY', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GITHUB_TOKEN'):
         env.setdefault(k, '')
+    # The act binary the installer fetched and checked for check jobs (kept when the owner named another).
+    if os.path.isfile(os.path.join(codes, 'act')):
+        env.setdefault('OPENVIBE_CODES_ACT_BIN', os.path.join(codes, 'act'))
     functions.append({
         'name': 'openvibe-codes', 'version': '1.0.0', 'class': 'code',
         'command': [node, os.path.join(codes, 'node_modules', 'openvibe-codes', 'bin', 'openvibe-codes.js'), 'job'],
@@ -1158,6 +1168,19 @@ if [ "$WORKER" = 1 ]; then
 		$SUDO "$(dirname "$NODEJS")/npm" install --prefix "$CODES_DIR" --omit=dev --no-audit --no-fund --no-save --loglevel=error \
 			"https://codeload.github.com/OpenVibers/OpenVibe.Codes/tar.gz/refs/tags/$CODES_VERSION" >/dev/null ||
 			die "could not install OpenVibe.Codes $CODES_VERSION into $CODES_DIR"
+		say "adding act $ACT_VERSION for check jobs (GitHub Actions workflow jobs, run in the job sandbox)"
+		act_tgz="$TMP/act.tar.gz"
+		if { if command -v curl >/dev/null 2>&1; then curl -fsSL --retry 3 -o "$act_tgz" \
+				"https://github.com/nektos/act/releases/download/v$ACT_VERSION/act_Linux_x86_64.tar.gz"
+			else wget -q -O "$act_tgz" "https://github.com/nektos/act/releases/download/v$ACT_VERSION/act_Linux_x86_64.tar.gz"; fi; } &&
+			[ "$(uname -m)" = x86_64 ] &&
+			( cd "$TMP" && printf '%s  act.tar.gz\n' "$ACT_SHA256" > act.sum &&
+			  if command -v sha256sum >/dev/null 2>&1; then sha256sum -c act.sum >/dev/null; else shasum -a 256 -c act.sum >/dev/null; fi ) &&
+			tar -xzf "$act_tgz" -C "$TMP" act; then
+			$SUDO install -m 0755 "$TMP/act" "$CODES_DIR/act"
+		else
+			say "act was not added here (no x86-64, no download or a checksum mismatch): each check job fetches and checks it itself"
+		fi
 		$SUDO chown -R root:root "$CODES_DIR"
 		$SUDO chmod -R go-w "$CODES_DIR"
 		$SUDO touch "$CONF/config.json"

@@ -20,7 +20,10 @@ one-time code: `curl -fsSL https://openvibe.link/install | sh -s -- --network â€
 - runs the service as root and every job as the unprivileged system user `openvibe-job` (`run_as`), with public egress
   (it installs `nftables`, `iproute2` and `util-linux` with apt when they are missing and turns IPv4 forwarding on);
 - installs the OpenVibe.Codes job runner (`openvibe-codes job`, artifact `openvibe-codes@1.0.0`) into
-  `/opt/openvibe-codes` when Node.js 20 or newer is installed system-wide, and declares it as a `code` entry;
+  `/opt/openvibe-codes` when Node.js 20 or newer is installed system-wide, and declares it as a `code` entry. Since
+  v0.63.0 that is Codes v0.8.0, which also runs `kind: 'check'` jobs (one GitHub Actions workflow job with act in host
+  mode, placed by OpenVibe.Run's checks scheduler), and the installer fetches the pinned act release beside it, checks
+  its sha256 and names it in `OPENVIBE_CODES_ACT_BIN`, so a check job does not download it again;
 - with `--plan-logins` (which turns the worker on too), names the coding tools' own login files that are already signed
   in on this computer as the worker's `plan_logins`, and sets the service's HOME to your home so they sit under the
   Link user's home. A tool whose login file is missing or empty is skipped with a line giving its own login command; a
