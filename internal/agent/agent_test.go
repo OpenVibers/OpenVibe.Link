@@ -675,8 +675,15 @@ func TestHeadlightEnvelopeAndAckData(t *testing.T) {
 // On a connection whose fastest round trip is slow (a large clock uncertainty), a fresh headlight still reaches the
 // driver: the reserve is judged on the clock estimate, the uncertainty only on whether the deadline has passed
 // (Maticus, 2026-11-12: 164 ms of uncertainty refused every headlight as "136 of 300 ms left").
+//
+// The heartbeat is 300 ms here, not the suite's 100 ms: the link is declared lost after two heartbeats without a frame,
+// and with acks 170 ms late the first one could land past a 200 ms deadman. The link then reconnected under the test,
+// which wrote its command on the old socket ("broken pipe", the v0.64.0 release run).
 func TestHeadlightReserveOnASlowLink(t *testing.T) {
-	e, record := headlightPluginWith(t, func(s *fakebot.Server) { s.HeartbeatAckDelay = 170 * time.Millisecond })
+	e, record := headlightPluginWith(t, func(s *fakebot.Server) {
+		s.HeartbeatAckDelay = 170 * time.Millisecond
+		s.Config.HeartbeatMS = 300
+	})
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		if d, ok := e.node.link.ClockUncertainty(); ok && d >= 160*time.Millisecond {
@@ -686,6 +693,9 @@ func TestHeadlightReserveOnASlowLink(t *testing.T) {
 			t.Fatal("no slow round trip measured")
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+	if n := e.node.link.Stats().Reconnects; n != 0 {
+		t.Fatalf("the slow link reconnected %d times: its acks must stay inside the deadman", n)
 	}
 	r := headlightCommand(t, e, "hl-slow", true, HeadlightDeadlineMS, &protocol.CommandProvenance{})
 	if d := ackData(t, r); d["stage"] != "headlight_pending" {
