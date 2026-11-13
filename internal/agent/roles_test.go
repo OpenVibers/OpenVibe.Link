@@ -108,6 +108,17 @@ func TestRoleFeatures(t *testing.T) {
 	if !n.hasAIHost() {
 		t.Error("the ai plugin serves the machine's own models")
 	}
+	// The installer's own layout: allow_desk on the plugin's config (a shared desk host writes it so).
+	flat := config.Default()
+	flat.Plugins = []config.PluginConfig{{Name: "computer", Config: map[string]any{"allow_desk": true, "desk_dir": "/var/lib/openvibe-desk/desks", "max_desks": 7}}}
+	if !(&Agent{opt: Options{Config: flat}}).hasDeskHost() {
+		t.Error("the installer's allow_desk is a desk host")
+	}
+	off := config.Default()
+	off.Plugins = []config.PluginConfig{{Name: "computer", Config: map[string]any{"allow_desk": false, "level": "trusted"}}}
+	if (&Agent{opt: Options{Config: off}}).hasDeskHost() {
+		t.Error("a computer plugin with desks off is not a desk host")
+	}
 	plain := &Agent{opt: Options{Config: config.Default()}}
 	if plain.hasDeskHost() || plain.hasAIHost() {
 		t.Error("a machine with neither plugin has neither feature")
