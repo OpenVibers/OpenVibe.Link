@@ -675,6 +675,9 @@ type Status struct {
 	EstopLatched bool           `json:"estop_latched"`
 	LocalStop    bool           `json:"local_stop"`
 	Video        string         `json:"video,omitempty"`
+	// Machine is what the machine is (Link v0.66, internal/specs): its OS and version, CPU, memory, GPUs, free disk and
+	// the virtualization it offers. Absent until the first reading (a few seconds after start).
+	Machine any `json:"machine,omitempty"`
 }
 
 type Event struct {
