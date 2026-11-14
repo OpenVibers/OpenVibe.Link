@@ -137,7 +137,14 @@ const (
 	JobUnknownArtifact = "unknown artifact"                  // not a function declared in the Link's local config
 	JobStopped         = "the stop or local stop is latched" // fault estopped or local_stop
 	JobBusy            = "worker busy"                       // worker.caps.max_jobs are running; fault not_ready
+	// JobOthersRefused: a job for someone other than the machine's owner, where the owner has not turned on
+	// worker.serve_others (fault not_allowed).
+	JobOthersRefused = "this machine does not run other people's jobs"
 )
+
+// JobForOther is a job frame's "for" when the job is another person's, not the machine owner's (Link v0.65: the owner's
+// "Run other people's jobs", worker.serve_others). Bot sends it only to a Link that reports serve_others.
+const JobForOther = "other"
 
 // job_exit reasons.
 const (
@@ -463,18 +470,29 @@ type Job struct {
 // JobRequest is the `job` frame: run Job. A body that does not decode still yields the frame, with Err set and the
 // id when it is a string, so the Link can nack it rather than drop it (the server resends a job until it is answered).
 type JobRequest struct {
-	Job Job   `json:"job"`
-	Err error `json:"-"`
+	Job Job `json:"job"`
+	// For is "" for the machine owner's own job and JobForOther for another person's: such a job runs only where the
+	// owner turned worker.serve_others on, and never with the owner's plan logins. Any other value is read as
+	// JobForOther, the stricter.
+	For string `json:"for,omitempty"`
+	// Relayed marks a job that came from another machine through an access grant (never from a frame): like another
+	// person's job it never gets the owner's plan logins.
+	Relayed bool  `json:"-"`
+	Err     error `json:"-"`
 }
 
 func (r *JobRequest) UnmarshalJSON(b []byte) error {
 	var outer struct {
 		Job json.RawMessage `json:"job"`
+		For *string         `json:"for"`
 	}
 	if err := json.Unmarshal(b, &outer); err != nil {
 		return err
 	}
 	*r = JobRequest{}
+	if outer.For != nil && *outer.For != "" {
+		r.For = JobForOther
+	}
 	if len(outer.Job) == 0 {
 		return nil
 	}
@@ -625,6 +643,10 @@ type WorkerCapabilities struct {
 	MaxCPUMS       int64    `json:"max_cpu_ms"`
 	MaxMemBytes    int64    `json:"max_mem_bytes"`
 	MaxOutputBytes int64    `json:"max_output_bytes"`
+	// ServeOthers says the owner lets this machine run other people's jobs too (worker.serve_others, Link v0.65), each in
+	// the same sandbox, never with the owner's plan logins; Egress is the most such a job may reach (worker.egress).
+	ServeOthers bool   `json:"serve_others,omitempty"`
+	Egress      string `json:"egress,omitempty"`
 }
 
 type DriverStatus struct {

@@ -84,6 +84,9 @@ Command kinds and their answers (the ack's ``data``):
   of the machine itself is offered: ``exec``, ``fs``, ``probe``, the main screen and browser, whole desks and kept
   profiles are refused, and so is ``screen_stream`` (the machine's one stream is its operator's; ``screen`` shows a desk). It runs on Linux with the Node as root (the one case the plugin runs as root) and the worker
   on, at level ``trusted`` (or ``observe``): nobody is at the machine to approve.
+  With ``desk_shared_kinds: ["browser", "desktop"]`` (Node v0.65, ``sandbox_desk.py``) it lends whole desktops too: a
+  display, a window manager, a browser and a terminal, all inside the desk's own sandbox, driven by ``screen`` and
+  ``input`` through a helper there (``desk_desktop_*`` limits); never the machine's own display.
 * ``probe`` ``{"target", "timeout_s"?}`` → for ``http(s)://…`` one GET, no redirect followed: ``{status, content_type,
   etag, last_modified, body, truncated, ms}``; for ``tcp://host:port``: ``{open, ms, error?}``. Read-only, so it runs at
   every level, and only towards the machine's own network: every address the name resolves to must be private,
@@ -120,6 +123,7 @@ from .origins import OriginError, allowed as origins_allow, parse_origins
 from .curtain import (Curtain, EnvPrintDetector, Hotkey, PasswordFieldDetector, SecretFileDetector, SiteDetector,
                       _active_window, install_sigusr1)
 from .desk import MAX_DESKS_CAP, BrowserDesk, Desks, PrivateDesk, default_max_desks
+from .sandbox_desk import SandboxDesktop
 from .egress import EgressProxy, not_public
 from .stream import PageScreencast, capture_kinds, desktop_capture
 from .files import Files, Handles
@@ -330,7 +334,7 @@ class Computer(Plugin):
     telemetry_interval_s = 2.0
 
     def __init__(self, which=shutil.which, popen=subprocess.Popen, clock=time.monotonic, env=None, platform=None, screen_size=None,
-                 browser_factory=None, resolve=None, desk=None, desk_factory=None):
+                 browser_factory=None, resolve=None, desk=None, desk_factory=None, sandbox_desktop_factory=None):
         self.which = which
         self.popen = popen
         self.screen_size = screen_size or self._screen_size
@@ -398,6 +402,11 @@ class Computer(Plugin):
         self.desk_isolation = "none"   # or "sandbox": a desk host for other people (SANDBOX_*)
         self.desk_limits = {"memory_mb": 1024, "cpu_millis": 1000, "disk_mb": 512, "pids": 512}
         self.desk_egress = "public"
+        # What a desk host for other people lends (Node v0.65): browser desks, and whole desktops too when its owner
+        # says so (desk_shared_kinds), each desktop in its own sandbox with these limits (SandboxDesktop).
+        self.desk_shared_kinds = ("browser",)
+        self.desktop_limits = {"memory_mb": 2048, "cpu_millis": 2000, "disk_mb": 1024, "pids": 1024}
+        self.sandbox_desktop_factory = sandbox_desktop_factory or self._new_sandbox_desktop
         self.egress = EgressProxy(blocked=self._egress_blocked, log=lambda *a: self.log(*a))
         self.desk_factory = desk_factory or (lambda: PrivateDesk(which=which, popen=popen))
         self.desk = desk or self.desk_factory()   # the desk named private (the first one, as before v0.9.0)
@@ -493,9 +502,25 @@ class Computer(Plugin):
         if desk_egress not in ("public", "none"):
             raise Fault("bad_value", "desk_egress is public (the default: the public internet only) or none")
         self.desk_egress = desk_egress
+        lent = config.get("desk_shared_kinds")
+        if lent is None:
+            lent = ["browser"]
+        if not isinstance(lent, list) or not lent or not all(k in ("browser", "desktop") for k in lent):
+            raise Fault("bad_value", "desk_shared_kinds is a list of browser and desktop: what a desk host for other people lends")
+        self.desk_shared_kinds = tuple(dict.fromkeys(lent))
+        self.desktop_limits = {"memory_mb": _int(config.get("desk_desktop_memory_mb"), "desk_desktop_memory_mb", 512, 32768, 2048),
+                               "cpu_millis": _int(config.get("desk_desktop_cpu_millis"), "desk_desktop_cpu_millis", 100, 16000, 2000),
+                               "disk_mb": _int(config.get("desk_desktop_disk_mb"), "desk_desktop_disk_mb", 128, 32768, 1024),
+                               "pids": _int(config.get("desk_desktop_pids"), "desk_desktop_pids", 128, 8192, 1024)}
+        # A desk host that lends desktops builds each one in a sandbox of its own: never the machine's own display.
+        self.desks.factory = self.sandbox_desktop_factory if self._lends("desktop") else self.desk_factory
 
     def _shared(self):
         return self.desk_isolation == "sandbox"
+
+    def _lends(self, kind):
+        """Whether this desk host for other people lends that kind of desk (its owner's desk_shared_kinds)."""
+        return self._shared() and kind in self.desk_shared_kinds
 
     def describe(self, config):
         try:
@@ -503,12 +528,18 @@ class Computer(Plugin):
         except Fault:
             return {}
         if self._shared():
-            # A desk host for other people offers its browser desks, sandboxed, and nothing of the machine itself.
-            if "browser" not in self._desk_kinds():
+            # A desk host for other people offers its desks, each sandboxed, and nothing of the machine itself: browser
+            # desks, and whole desktops where its owner lends them and the machine has what one needs.
+            kinds = self._desk_kinds()
+            if not kinds:
                 return {}
-            return {"desk": {"level": self.level, "window_manager": None, "input": True, "screen": True, "named": True,
-                             "max_desks": self.desks.max_desks, "kinds": ["browser"], "profiles": False,
-                             "isolation": "sandbox", "limits": dict(self.desk_limits), "egress": self.desk_egress}}
+            desk = {"level": self.level, "window_manager": None, "input": True, "screen": True, "named": True,
+                    "max_desks": self.desks.max_desks, "kinds": kinds, "profiles": False,
+                    "isolation": "sandbox", "limits": dict(self.desk_limits), "egress": self.desk_egress}
+            if "desktop" in kinds:
+                desk["window_manager"] = self.sandbox_desktop_factory().window_manager()
+                desk["desktop_limits"] = dict(self.desktop_limits)
+            return {"desk": desk}
         caps = {"files": {"level": self.level, "roots": self.roots, "max_read_bytes": self.max_read}}
         if self.allow_exec:
             caps["terminal"] = {"level": self.level, "timeout_s": self.timeout_s, "max_output_bytes": self.max_output,
@@ -544,6 +575,15 @@ class Computer(Plugin):
         """The kinds of desk this machine runs: desktop (Linux with Xvfb) and browser (a Chromium-family browser)."""
         if not self.allow_desk:
             return []
+        if self._shared():
+            # Lent desks only, each in its own sandbox: a browser, and a desktop when the owner lends them and this
+            # machine has what one needs (SandboxDesktop.missing).
+            lent = []
+            if self._lends("browser") and self._browser_binary():
+                lent.append("browser")
+            if self._lends("desktop") and self.sandbox_desktop_factory().available():
+                lent.append("desktop")
+            return lent
         kinds = []
         if self.platform.startswith("linux") and self.desks.available():
             kinds.append("desktop")
@@ -964,6 +1004,9 @@ class Computer(Plugin):
             self._shared_check(cmd.kind, v)
         if cmd.kind == "desk":
             return self._desk_op(cmd, v, level)
+        lent = self._lent_desktop(v) if cmd.kind in ("screen", "input", "browser") else None
+        if lent is not None:
+            return self._lent_desktop_cmd(cmd, v, level, lent)
         desk_env = self._desk_env(v) if cmd.kind in ("screen", "screen_stream", "input", "browser") else None
         desk_name = v.get("desk") if desk_env else None
         if desk_name:
@@ -1028,8 +1071,16 @@ class Computer(Plugin):
         """On a desk host for other people: browser desks (started without a kept profile) and the commands that act on
         one; never the machine's own screen, browser, files, programs or network."""
         if kind == "desk":
-            if v.get("action") == "start" and v.get("kind", "desktop") != "browser":
-                raise Fault("unsupported", "this desk host runs browser desks only (kind browser)")
+            if v.get("action") == "start":
+                want = v.get("kind", "desktop")
+                if want == "desktop" and self._lends("desktop"):
+                    if v.get("desk", "private") == "private":
+                        raise Fault("bad_value", "a lent desktop is named desk-<name>")
+                    missing = self.sandbox_desktop_factory().missing()
+                    if missing:
+                        raise Fault("unsupported", "this desk host lends desktops, but it lacks %s" % ", ".join(missing))
+                elif want == "desktop" or (want == "browser" and not self._lends("browser")):
+                    raise Fault("unsupported", "this desk host runs %s desks only (kind %s)" % ((self.desk_shared_kinds[0],) * 2))
             if v.get("action") == "start" and v.get("profile") is not None:
                 raise Fault("unsupported", "this desk host keeps no browser profiles: a desk's sign-ins end with it")
             return
@@ -1038,6 +1089,97 @@ class Computer(Plugin):
         if kind in ("screen_stream", "desk.stream"):
             raise Fault("not_allowed", "this desk host shows a desk as pictures (screen), not live: its one stream is its operator's")
         raise Fault("not_allowed", "this machine is a desk host for other people: only its browser desks take commands")
+
+    # ---- a desktop lent to other people (Node v0.65) -----------------------------------------------------------
+    def _new_sandbox_desktop(self):
+        return SandboxDesktop(sandbox_argv=self._desktop_sandbox_argv, apps=self._desktop_apps, which=self.which, popen=self.popen)
+
+    def _lent_desktop(self, v):
+        """The lent desktop a command names on a desk host for other people, else None."""
+        if not self._shared():
+            return None
+        name = v.get("desk", "main")
+        if name == "main":
+            return None
+        d = self.desks.get(Desks.check(name))
+        return d if getattr(d, "sandboxed", False) else None
+
+    def _lent_desktop_cmd(self, cmd, v, level, lent):
+        """screen and input on a lent desktop, through its helper inside the sandbox; nothing else reaches it."""
+        name = v["desk"]
+        self.desk_used[name] = self.clock()
+        if cmd.kind == "screen":
+            width = _int(v.get("max_width"), "max_width", 320, 3840, 1280)
+            return self._start(cmd, lambda: self._lent_shot(lent, width))
+        if cmd.kind == "input":
+            if not self.allow_input:
+                raise Fault("unsupported", "this machine does not allow mouse and keyboard input")
+            run, summary = self._input_op("xdotool", v, desk=name, lent=lent)
+            return self._act(cmd, level, self._driving(run), summary, threaded=True)
+        raise Fault("unsupported", "a lent desktop is used with its screen, mouse and keyboard: its browser is a window on it")
+
+    def _lent_shot(self, lent, max_width):
+        self._check_identity()
+        data = lent.shot()
+        fd, out = tempfile.mkstemp(prefix="openvibe-screen-", suffix=".png")
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(data)
+            return self._encode(out, max_width)
+        finally:
+            if os.path.exists(out):
+                os.unlink(out)
+
+    def _desktop_sandbox_argv(self):
+        """The `openvibe-link desk-sandbox … --` a lent desktop runs under: the desktop's own limits, the browser's install
+        directory and the fonts' configuration read-only, the public internet only (desk_egress)."""
+        node = self.env.get("OPENVIBE_LINK_EXE") or self.which("openvibe-link")
+        if not node:
+            raise Fault("unsupported", "openvibe-link was not found to sandbox the desktop (the Node sets OPENVIBE_LINK_EXE)")
+        binds = []
+        browser = self._desktop_browser()
+        if browser and browser.startswith(("/opt/", "/usr/local/")):
+            binds.append(os.path.dirname(browser))
+        if os.path.isdir("/etc/fonts"):
+            binds.append("/etc/fonts")
+        lim = self.desktop_limits
+        argv = [node, "desk-sandbox", "--memory-mb", str(lim["memory_mb"]), "--cpu-millis", str(lim["cpu_millis"]),
+                "--disk-mb", str(lim["disk_mb"]), "--pids", str(lim["pids"])]
+        if self.desk_egress == "public":
+            argv += ["--egress", "public"]
+        for b in binds:
+            argv += ["--bind", b]
+        for kv in SANDBOX_ENV:
+            argv += ["--setenv", kv]
+        return argv + ["--"]
+
+    def _desktop_browser(self):
+        """The browser a lent desktop opens, by its real path, or None (none, a snap, or outside /usr and /opt)."""
+        binary = self._browser_binary()
+        if not binary or binary.startswith("/snap/"):
+            return None
+        real = os.path.realpath(binary)
+        if os.path.basename(real) == "snap" or not real.startswith(("/usr/", "/opt/")):
+            return None
+        return real
+
+    def _desktop_apps(self, width, height):
+        """What a lent desktop opens on its display, in order: its window manager, a browser and a terminal."""
+        probe = self.sandbox_desktop_factory()
+        apps = []
+        wm = probe.window_manager()
+        if wm:
+            apps.append(["wm", [os.path.realpath(self.which(wm))]])
+        browser = self._desktop_browser()
+        if browser:
+            apps.append(["browser", [browser] + self._browser_args() + [
+                "--user-data-dir=" + SANDBOX_PROFILE, "--no-first-run", "--no-default-browser-check",
+                "--disable-background-networking", "--disable-sync", "--disable-component-update", "--password-store=basic",
+                "--window-position=0,0", "--window-size=%d,%d" % (width, max(240, height * 3 // 4)), "about:blank"]])
+        term = probe.terminal()
+        if term:
+            apps.append(["terminal", [term]])
+        return apps
 
     def _sandbox_argv(self, binary):
         """The `openvibe-link desk-sandbox … --` a desk's browser runs under on a desk host for other people, else None."""
@@ -2166,7 +2308,7 @@ class Computer(Plugin):
             return "xdotool"
         return None
 
-    def _input_op(self, tool, v, env=None, desk=None):
+    def _input_op(self, tool, v, env=None, desk=None, lent=None):
         """(run, summary) for one input action; nothing touches the screen until run() (after approval at ask). With env,
         on a desk (its display; points scale to the desk's own size). tool "page": a browser desk's page, through the
         browser's pipe (points scale to the page's size)."""
@@ -2203,6 +2345,18 @@ class Computer(Plugin):
             self._check_identity()
             if tool == "page":
                 return self._on_page(desk, lambda b: self._page_input(b, action, point, v))
+            if lent is not None:
+                # A lent desktop: the same xdotool command, run inside its sandbox by its helper.
+                at = self._desk_scale(point, desk) if point else None
+                res = lent.xdotool(self._input_argv("xdotool", action, at, v))
+                with self.mu:
+                    self.input_ended = self.clock()
+                if not res["ok"]:
+                    raise Fault("hardware", "xdotool failed: %s" % res["err"][:200])
+                out = {"done": True, "action": action}
+                if at:
+                    out["x"], out["y"] = at
+                return out
             at = (self._desk_scale(point, desk) if env else self._scale(tool, point)) if point else None
             argv = self._input_argv(tool, action, at, v)
             proc = self._spawn(argv, kind="input", stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
@@ -2230,7 +2384,7 @@ class Computer(Plugin):
                 out["x"], out["y"] = at
             return out
 
-        where = (" on the private desk" if desk == "private" else " on desk %s" % desk) if env else ""
+        where = (" on the private desk" if desk == "private" else " on desk %s" % desk) if (env or lent is not None) else ""
         if action == "type":
             text = v["text"]
             shown = _plain(text) if len(_plain(text)) <= 120 else None

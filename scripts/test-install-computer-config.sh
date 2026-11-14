@@ -68,6 +68,27 @@ python3 -c 'import json, sys; c = json.load(open(sys.argv[1])); assert c["plugin
 if OPENVIBE_INSTALL_COMPUTER_CONFIG_ONLY="$shared" OPENVIBE_COMPUTER_HOME=/x sh "$installer" --desk-host --shared --computer ask 2>/dev/null; then
 	fail "a shared desk host at level ask was accepted"
 fi
+# Desktops lent too (--desktops, Link v0.65): the kinds and the desktop's own sizes; a second run without the flag
+# keeps them; --desktops alone, or with a desk host for its owner, is refused.
+python3 -c 'import json, sys; c = json.load(open(sys.argv[1])); assert c["plugins"][0]["config"]["desk_shared_kinds"] == ["browser"], c' "$shared" ||
+	fail "a shared desk host lends browsers only by default"
+OPENVIBE_INSTALL_COMPUTER_CONFIG_ONLY="$shared" OPENVIBE_COMPUTER_HOME=/var/lib/openvibe-desk sh "$installer" --desk-host --shared --desktops
+python3 - "$shared" <<'PY' || fail "a desk host that lends desktops"
+import json, sys
+cfg = json.load(open(sys.argv[1]))['plugins'][0]['config']
+assert cfg['desk_shared_kinds'] == ['browser', 'desktop'], cfg
+assert (cfg['desk_desktop_memory_mb'], cfg['desk_desktop_cpu_millis'], cfg['desk_desktop_disk_mb'], cfg['desk_desktop_pids']) == (2048, 2000, 1024, 1024), cfg
+assert cfg['desk_memory_mb'] == 768, 'the browser desks keep their own size'
+PY
+OPENVIBE_INSTALL_COMPUTER_CONFIG_ONLY="$shared" OPENVIBE_COMPUTER_HOME=/var/lib/openvibe-desk sh "$installer" --desk-host --shared
+python3 -c 'import json, sys; c = json.load(open(sys.argv[1])); assert c["plugins"][0]["config"]["desk_shared_kinds"] == ["browser", "desktop"], c' "$shared" ||
+	fail "a second run without --desktops kept what the host lent"
+if OPENVIBE_INSTALL_COMPUTER_CONFIG_ONLY="$shared" OPENVIBE_COMPUTER_HOME=/x sh "$installer" --desktops 2>/dev/null; then
+	fail "--desktops alone was accepted"
+fi
+if OPENVIBE_INSTALL_COMPUTER_CONFIG_ONLY="$shared" OPENVIBE_COMPUTER_HOME=/x sh "$installer" --desk-host --desktops 2>/dev/null; then
+	fail "--desktops on a desk host for its owner was accepted"
+fi
 if OPENVIBE_INSTALL_COMPUTER_CONFIG_ONLY="$shared" OPENVIBE_COMPUTER_HOME=/x sh "$installer" --shared 2>/dev/null; then
 	fail "--shared without --desk-host was accepted"
 fi

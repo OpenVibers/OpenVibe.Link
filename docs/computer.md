@@ -317,6 +317,32 @@ curl -fsSL https://openvibe.link/install | sudo sh -s -- --network … --pairing
   nftables, iproute2 and IPv4 forwarding. The installer adds them, sizes `max_desks` to the machine (a desk may use
   1 GiB; a browser desk counts half) and keeps your own sizes on a second run.
 
+### Lending whole desktops too (`--desktops`, Link v0.65.0)
+
+Some agents work a whole computer, not a browser: a terminal, a file manager, any program. A desk host for other people
+may lend **desktops** as well, when its owner says so:
+```
+curl -fsSL https://openvibe.link/install | sudo sh -s -- --network … --pairing pair_… --code … --desk-host --shared --desktops
+```
+That sets `desk_shared_kinds: ["browser", "desktop"]` and installs Xvfb, openbox, xdotool, ImageMagick and xterm. On
+openvibe.link/machines the owner also turns on "Lend desktops to other people's agents"; OpenVibe.Bot leases a desktop
+only where both are on.
+
+- **The whole desktop is inside the desk's sandbox.** A desktop desk (`desk start` with `kind: "desktop"`, named
+  `desk-<name>`; never `private`, the machine's own) is the same `openvibe-link desk-sandbox` a browser desk runs in,
+  with its own limits (`desk_desktop_memory_mb` 2048, `desk_desktop_cpu_millis` 2000, `desk_desktop_disk_mb` 1024,
+  `desk_desktop_pids` 1024). Inside it, the system's own Python runs a small helper (`sandbox_desk.py`) that starts the
+  display (Xvfb, in the sandbox's own `/tmp` and network namespace), a window manager, a browser and a terminal, all as
+  `openvibe-job`. Nothing of the desktop runs on the machine itself; two desktops share no display, process, file or
+  network, and the public internet is all any of them reaches (`desk_egress`).
+- **Screen, mouse and keyboard only.** `screen` and `input` on a desktop go to the helper over the sandbox's pipe (fds 3
+  and 4): a PNG of the screen, and the same xdotool command an owner's private desk would run. The plugin trusts
+  nothing the helper answers beyond its shape, its size (32 MB) and its time. `browser` on a desktop is refused (its
+  browser is a window there), as are `exec`, `fs`, `screen_stream` and everything else of the machine.
+- **What `describe` says.** `desk.kinds` lists `desktop` when it is lent and the machine has everything a desktop needs
+  (else only `browser`, and starting one says what is missing), with `window_manager` and `desktop_limits`. A desktop
+  counts as a whole desk against `max_desks`.
+
 ## Config
 
 | key                  | default        | meaning |
@@ -342,6 +368,11 @@ curl -fsSL https://openvibe.link/install | sudo sh -s -- --network … --pairing
 | `desk_disk_mb`       | `512`          | with `sandbox`: each desk's private `/tmp`, its profile and downloads (64 to 16384) |
 | `desk_pids`          | `512`          | with `sandbox`: each desk's processes and threads (64 to 8192) |
 | `desk_egress`        | `public`       | with `sandbox`: `public` (the public internet only) or `none` |
+| `desk_shared_kinds`  | `["browser"]`  | with `sandbox` (v0.65.0): what it lends, `browser` and/or `desktop` (whole desktops, each in its own sandbox) |
+| `desk_desktop_memory_mb` | `2048`     | with `desktop` lent: each desktop's memory (512 to 32768; swap off) |
+| `desk_desktop_cpu_millis` | `2000`    | with `desktop` lent: each desktop's CPU in thousandths of a core (100 to 16000) |
+| `desk_desktop_disk_mb` | `1024`       | with `desktop` lent: each desktop's private `/tmp` (128 to 32768) |
+| `desk_desktop_pids`  | `1024`         | with `desktop` lent: each desktop's processes and threads (128 to 8192) |
 | `allow_browser`      | `true`         | `false`: no browser (no `browser` capability) |
 | `allow_screen_stream` | `true`        | `false`: never show the screen live (`screen.stream` is false) |
 | `browser_path`       | found on PATH  | the browser to drive (Chromium, Chrome, Edge or Brave) |

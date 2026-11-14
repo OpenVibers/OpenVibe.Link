@@ -68,4 +68,12 @@ w = json.load(open(sys.argv[1]))['worker']
 assert w['enabled'] is True and w['functions'] == []
 assert stat.S_IMODE(os.stat(sys.argv[1]).st_mode) == 0o600, 'the config stays private'
 PY
+# Other people's jobs too (--serve-others, Link v0.65); off by default, kept on a second run without the flag.
+python3 -c 'import json, sys; assert "serve_others" not in json.load(open(sys.argv[1]))["worker"]' "$conf2" ||
+	fail "a worker serves other people only when its owner says so"
+OPENVIBE_INSTALL_WORKER_CONFIG_ONLY="$conf2" OPENVIBE_JOB_UID=2001 OPENVIBE_JOB_GID=2002 sh "$installer" --serve-others
+python3 -c 'import json, sys; assert json.load(open(sys.argv[1]))["worker"]["serve_others"] is True' "$conf2" || fail "--serve-others"
+OPENVIBE_INSTALL_WORKER_CONFIG_ONLY="$conf2" OPENVIBE_JOB_UID=2001 OPENVIBE_JOB_GID=2002 sh "$installer" --worker
+python3 -c 'import json, sys; assert json.load(open(sys.argv[1]))["worker"]["serve_others"] is True' "$conf2" ||
+	fail "a second run without --serve-others kept the owner's choice"
 echo "install --worker config: ok"

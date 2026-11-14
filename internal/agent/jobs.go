@@ -6,6 +6,7 @@ import (
 
 	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 	"github.com/OpenVibers/OpenVibe.Link/internal/safety"
+	"github.com/OpenVibers/OpenVibe.Link/internal/worker"
 )
 
 // jobSeenMax bounds how many job ids the Agent remembers answers for.
@@ -19,7 +20,18 @@ type jobs struct {
 	answers map[string]protocol.Message // job id → the ack or nack it got, or its job_exit once it ended
 	order   []string                    // ids in answers, oldest first
 	// admit reserves an accepted job in the worker or returns the fault and reason to nack it with; nil accepts.
-	admit func(protocol.Job) (fault, reason string)
+	admit func(protocol.Job, worker.Origin) (fault, reason string)
+}
+
+// originOf is whose job a request is: a grant's relay, another person's (the frame's for), or the owner's own.
+func originOf(r protocol.JobRequest) worker.Origin {
+	switch {
+	case r.Relayed:
+		return worker.OriginRelayed
+	case r.For != "":
+		return worker.OriginOther
+	}
+	return worker.OriginOwner
 }
 
 func newJobs(classes []string) *jobs {
@@ -43,7 +55,7 @@ func (j *jobs) request(r protocol.JobRequest) (answer protocol.Message, accepted
 	}
 	fault, reason := r.Check(j.classes)
 	if fault == "" && j.admit != nil {
-		fault, reason = j.admit(r.Job)
+		fault, reason = j.admit(r.Job, originOf(r))
 	}
 	if fault != "" {
 		answer = protocol.Nack{ID: id, FaultCode: fault, Message: reason}
