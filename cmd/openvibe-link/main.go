@@ -181,6 +181,9 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 	if cmd == "desk-sandbox" { // its own flags, up to "--": a browser's flags after it are never the Link's
 		return cmdDeskSandbox(rest, stderr)
 	}
+	if cmd == "desk-display" { // inside a lent desktop's sandbox: its display, apps and pipe (internal/deskdisplay)
+		return cmdDeskDisplay(rest, stderr)
+	}
 	if cmd == "stream" { // its own flags: --probe and the latency probe's
 		return cmdStream(rest, stdin, stdout, stderr)
 	}

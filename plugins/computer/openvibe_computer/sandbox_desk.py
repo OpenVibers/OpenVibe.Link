@@ -166,7 +166,7 @@ class SandboxDesktop:
     sandboxed = True
 
     def __init__(self, sandbox_argv, apps, which, popen=subprocess.Popen, clock=time.time, python=SYSTEM_PYTHON,
-                 exists=os.path.exists):
+                 exists=os.path.exists, native=None):
         self.sandbox_argv = sandbox_argv
         self.apps = apps
         self.which = which
@@ -174,6 +174,9 @@ class SandboxDesktop:
         self.clock = clock
         self.python = python
         self.exists = exists
+        # The Go helper (`openvibe-link desk-display`, Link v0.67): the Link's own binary where the sandbox can see it
+        # (under /usr or /opt). It captures and drives the display in-process; HELPER is the fallback.
+        self.native = native
         self.mu = threading.Lock()      # one start or stop at a time
         self.call_mu = threading.Lock()  # one request on the pipe at a time
         self.proc = self.out = self.inp = None
@@ -189,7 +192,7 @@ class SandboxDesktop:
     def missing(self):
         """What this machine lacks to lend a desktop (empty: it can)."""
         out = []
-        if not self.exists(self.python):
+        if not self.native and not self.exists(self.python):
             out.append("python3")
         for name in ("Xvfb", "xdotool"):
             if not self._tool(name):
@@ -235,7 +238,8 @@ class SandboxDesktop:
                 raise Fault("unsupported", "a lent desktop needs %s on this machine (Debian/Ubuntu: apt install xvfb "
                                            "xdotool imagemagick openbox xterm)" % ", ".join(missing))
             apps = json.dumps(self.apps(width, height))
-            argv = list(self.sandbox_argv()) + [self.python, "-I", "-S", "-c", HELPER, str(width), str(height), apps]
+            head = [self.native, "desk-display"] if self.native else [self.python, "-I", "-S", "-c", HELPER]
+            argv = list(self.sandbox_argv()) + head + [str(width), str(height), apps]
             self.buf = bytearray()
             to_r, to_w = os.pipe()
             from_r, from_w = os.pipe()
@@ -303,18 +307,27 @@ class SandboxDesktop:
                 if msg.get("id") == rid:
                     return msg
 
-    def shot(self):
-        """The whole screen as PNG bytes."""
-        msg = self.call("shot", SHOT_S)
-        if not msg.get("ok") or not isinstance(msg.get("png"), str):
+    def shot(self, max_width=0, max_bytes=0):
+        """The whole screen: ("png", bytes) from the Python helper, or ("jpeg", bytes, width, height) made in the Go
+        helper at max_width and within max_bytes (nothing to re-encode)."""
+        msg = self.call("shot", SHOT_S, max_width=int(max_width or 0), max_bytes=int(max_bytes or 0))
+        if not msg.get("ok") or not isinstance(msg.get("png") or msg.get("jpeg"), str):
             raise Fault("hardware", "the desktop's screen could not be captured: %s" % str(msg.get("err") or "no picture")[:200])
+        kind = "jpeg" if isinstance(msg.get("jpeg"), str) else "png"
         try:
-            data = base64.b64decode(msg["png"], validate=True)
+            data = base64.b64decode(msg[kind], validate=True)
         except (ValueError, TypeError):
             raise Fault("hardware", "the desktop sent a picture that is not one")
-        if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        if kind == "png" and not data.startswith(b"\x89PNG\r\n\x1a\n"):
             raise Fault("hardware", "the desktop sent a picture that is not a PNG")
-        return data
+        if kind == "jpeg":
+            if not data.startswith(b"\xff\xd8\xff"):
+                raise Fault("hardware", "the desktop sent a picture that is not a JPEG")
+            w, h = msg.get("width"), msg.get("height")
+            if not (isinstance(w, int) and isinstance(h, int) and 0 < w <= 7680 and 0 < h <= 4320):
+                raise Fault("hardware", "the desktop sent a picture without its size")
+            return ("jpeg", data, w, h)
+        return ("png", data)
 
     def logs(self):
         """What each program on the desktop said lately, and which still run: {logs: {name: text}, running: {name: bool}}."""

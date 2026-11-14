@@ -1092,7 +1092,17 @@ class Computer(Plugin):
 
     # ---- a desktop lent to other people (Node v0.65) -----------------------------------------------------------
     def _new_sandbox_desktop(self):
-        return SandboxDesktop(sandbox_argv=self._desktop_sandbox_argv, apps=self._desktop_apps, which=self.which, popen=self.popen)
+        return SandboxDesktop(sandbox_argv=self._desktop_sandbox_argv, apps=self._desktop_apps, which=self.which, popen=self.popen,
+                              native=self._native_display())
+
+    def _native_display(self):
+        """The Link's own binary for the Go desktop helper (`openvibe-link desk-display`, Link v0.67), where the sandbox
+        sees it: under /usr (the system's paths) or /opt (bound with the desktop). None: the Python helper runs."""
+        exe = self.env.get("OPENVIBE_LINK_EXE") or self.which("openvibe-link")
+        if not exe:
+            return None
+        real = os.path.realpath(exe)
+        return real if real.startswith(("/usr/", "/bin/", "/opt/")) else None
 
     def _lent_desktop(self, v):
         """The lent desktop a command names on a desk host for other people, else None."""
@@ -1120,7 +1130,11 @@ class Computer(Plugin):
 
     def _lent_shot(self, lent, max_width):
         self._check_identity()
-        data = lent.shot()
+        got = lent.shot(max_width, SCREEN_MAX_BYTES)
+        if got[0] == "jpeg":   # made at size in the desk by the Go helper: nothing to re-encode here
+            _, pic, w, h = got
+            return {"format": "jpeg", "width": w, "height": h, "content_b64": base64.b64encode(pic).decode("ascii")}
+        data = got[1]
         fd, out = tempfile.mkstemp(prefix="openvibe-screen-", suffix=".png")
         try:
             with os.fdopen(fd, "wb") as f:
@@ -1140,6 +1154,9 @@ class Computer(Plugin):
         browser = self._desktop_browser()
         if browser and browser.startswith(("/opt/", "/usr/local/")):
             binds.append(os.path.dirname(browser))
+        native = self._native_display()
+        if native and native.startswith("/opt/") and os.path.dirname(native) not in binds:
+            binds.append(os.path.dirname(native))   # the Go helper, read-only
         if os.path.isdir("/etc/fonts"):
             binds.append("/etc/fonts")
         lim = self.desktop_limits
