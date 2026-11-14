@@ -63,6 +63,8 @@ jobs:
       # openvibe-link leaf and enables the controllers (its worker's probe) before any plugin starts.
       - name: shared desk host (root)
         run: |
+          # A lent desktop (Link v0.65) needs its display, window manager, input, screenshots and terminal from /usr.
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb openbox xdotool imagemagick xterm
           d=$(mktemp -d) && chmod 755 "$d"
           go build -o "$d/openvibe-link" ./cmd/openvibe-link
           mkdir -m 700 "$d/config" "$d/state"
@@ -73,7 +75,8 @@ jobs:
               mkdir "$cg/openvibe-link" && echo $$ > "$cg/openvibe-link/cgroup.procs"
               echo "+memory +pids +cpu +io" > "$cg/cgroup.subtree_control"
               : | "$OPENVIBE_LINK_EXE" desk-sandbox --memory-mb 256 -- /bin/sh -c "echo desk-sandbox runs >&4" 3<&0 4>&1 | cat
-              exec python3 plugins/computer/tests/test_shared_desks.py -v RealSharedDeskTest'
+              python3 plugins/computer/tests/test_shared_desks.py -v RealSharedDeskTest &&
+              exec python3 plugins/computer/tests/test_lent_desktops.py -v RealLentDesktopTest'
 
   build:
     name: cross-compile

@@ -174,6 +174,10 @@ type WorkerConfig struct {
 	// names them here. Each is a path under the Link user's home; the copies live in that one job's home and go with
 	// it, and their content is never sent anywhere.
 	PlanLogins []string `json:"plan_logins,omitempty"`
+	// ServeOthers lets the worker run other people's jobs too (Link v0.65, the owner's "Run other people's jobs" on
+	// openvibe.link/machines, which Bot also checks): a job Bot marks for another person runs in the same sandbox under
+	// the same caps and egress, and never gets PlanLogins. Off (the default), such a job is refused.
+	ServeOthers bool `json:"serve_others,omitempty"`
 	// LinkDirs are the Link's own directories (config, credential, state, control socket), which no job may see; the
 	// Link sets them, the config file does not.
 	LinkDirs []string `json:"-"`

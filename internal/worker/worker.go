@@ -97,7 +97,19 @@ func egressFor(host, net string) (string, bool) {
 	return "", false
 }
 
+// Origin is whose job a worker runs: the machine owner's own (from Bot), another person's (from Bot, where the owner
+// turned worker.serve_others on), or another machine's (through an access grant). Only the owner's own job may get the
+// owner's plan logins.
+type Origin int
+
+const (
+	OriginOwner Origin = iota
+	OriginOther
+	OriginRelayed
+)
+
 type job struct {
+	origin   Origin
 	req      protocol.Job
 	fn       config.FunctionConfig
 	received time.Time
@@ -127,7 +139,11 @@ func (w *Worker) Probe() error { return probe(w.cfg, w.isolate) }
 
 // Admit reserves a job, or returns the fault code and reason to nack it with. It runs nothing (Launch does, once the
 // ack is out). An id the worker already holds is admitted again without a second reservation.
-func (w *Worker) Admit(j protocol.Job) (fault, reason string) {
+func (w *Worker) Admit(j protocol.Job) (fault, reason string) { return w.AdmitFrom(j, OriginOwner) }
+
+// AdmitFrom is Admit for a job of that origin: another person's job is refused unless the owner turned
+// worker.serve_others on, and neither it nor a relayed one ever gets the owner's plan logins (execute).
+func (w *Worker) AdmitFrom(j protocol.Job, origin Origin) (fault, reason string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if _, ok := w.jobs[j.ID]; ok {
@@ -141,6 +157,9 @@ func (w *Worker) Admit(j protocol.Job) (fault, reason string) {
 	}
 	if j.Class != protocol.ClassFunction && j.Class != protocol.ClassCode && j.Class != protocol.ClassLinux {
 		return protocol.FaultUnsupported, protocol.JobNotAvailable
+	}
+	if origin == OriginOther && !w.cfg.ServeOthers {
+		return protocol.FaultNotAllowed, protocol.JobOthersRefused
 	}
 	// inputs are fetched from worker.media and checked against their digests before the job starts (platform.job@1):
 	// without it a job naming inputs is refused, never run with the files and the digest check silently dropped.
@@ -166,7 +185,7 @@ func (w *Worker) Admit(j protocol.Job) (fault, reason string) {
 	if running >= w.caps.MaxJobs {
 		return protocol.FaultNotReady, protocol.JobBusy
 	}
-	w.jobs[j.ID] = &job{req: j, fn: fn, received: time.Now(), ttl: ms(min(j.TTLMS, w.caps.MaxTTLMS)),
+	w.jobs[j.ID] = &job{origin: origin, req: j, fn: fn, received: time.Now(), ttl: ms(min(j.TTLMS, w.caps.MaxTTLMS)),
 		limits: protocol.JobLimits{WallMS: min(j.Limits.WallMS, w.caps.MaxWallMS), CPUMS: min(j.Limits.CPUMS, w.caps.MaxCPUMS),
 			MemBytes: min(j.Limits.MemBytes, w.caps.MaxMemBytes)}}
 	return "", ""
@@ -429,7 +448,13 @@ func (w *Worker) execute(jb *job) protocol.JobExit {
 		}
 		return never(protocol.ExitFailed, err)
 	}
-	planLogins, err := stageJobPlanLogins(jb.fn, w.cfg.PlanLogins, dir)
+	// The owner's plan logins go only to the owner's own job: never to another person's (worker.serve_others), nor to a
+	// job another machine sent through a grant, whose prompt could read them.
+	logins := w.cfg.PlanLogins
+	if jb.origin != OriginOwner {
+		logins = nil
+	}
+	planLogins, err := stageJobPlanLogins(jb.fn, logins, dir)
 	if err != nil {
 		return never(protocol.ExitFailed, err)
 	}
@@ -455,7 +480,7 @@ func (w *Worker) execute(jb *job) protocol.JobExit {
 	// own /tmp.
 	work := "/tmp/" + filepath.Base(dir)
 	cmd := exec.Command(jb.fn.Command[0], jb.fn.Command[1:]...)
-	cmd.Dir, cmd.Env = work, jobEnv(jb.fn, work, id)
+	cmd.Dir, cmd.Env = work, jobEnv(jb.fn, work, id, jb.origin)
 	cmd.Stdin = bytes.NewReader(append(append([]byte(nil), jb.req.Args...), '\n'))
 	cmd.Stdout, cmd.ExtraFiles = outW, []*os.File{resW}
 	egress, _ := egressFor(w.cfg.Egress, jb.req.Net) // Admit refused what the host cannot enforce
@@ -758,13 +783,22 @@ func (w *Worker) storeResult(jb *job, r []byte) (json.RawMessage, error) {
 	return json.Marshal(map[string]string{"media_id": id})
 }
 
+// othersEnv is all of a function's own env that another person's job, or a job relayed from another machine, gets
+// (Link v0.65): settings, never the owner's keys. The installer writes the owner's API keys and GitHub token into the
+// Codes runner's env (DEEPSEEK_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, GITHUB_TOKEN); such a job brings its own.
+var othersEnv = map[string]bool{"HOME": true, "PATH": true, "LANG": true, "LC_ALL": true, "TZ": true, "TMPDIR": true,
+	"GOMAXPROCS": true, "OPENVIBE_CODES_HOME": true, "OPENVIBE_CODES_ACT_BIN": true}
+
 // jobEnv is the whole environment of a job: nothing is inherited from the Link (no credential, no secrets), only a
-// fixed PATH, the working directory as HOME and TMPDIR, the job id, and the function's own env from the config.
-func jobEnv(fn config.FunctionConfig, dir, id string) []string {
+// fixed PATH, the working directory as HOME and TMPDIR, the job id, and the function's own env from the config: all
+// of it for the owner's own job, only othersEnv for anyone else's.
+func jobEnv(fn config.FunctionConfig, dir, id string, origin Origin) []string {
 	env := map[string]string{"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": dir, "TMPDIR": dir, "LANG": "C.UTF-8",
 		"OPENVIBE_JOB_ID": id}
 	for k, v := range fn.Env {
-		env[k] = v
+		if origin == OriginOwner || othersEnv[k] {
+			env[k] = v
+		}
 	}
 	out := make([]string, 0, len(env))
 	for k, v := range env {

@@ -438,6 +438,25 @@ name the new file.
   there but cannot be read, or is not a plain file, ends the job: a half-copied credential is worse than none.
 - **What the job sees.** `openvibe-codes logins` (the Codes job runner) reports each CLI as installed, signed in, and
   with the limit windows its login file carries, and nothing else: no key, no token, no account name.
+- **Whose job.** Only the owner's own (Link v0.65.0): never another person's job, nor one relayed from another
+  machine (see "Other people's jobs").
+### Other people's jobs (`worker.serve_others`, Link v0.65.0)
+
+A machine may run jobs for people other than its owner (OpenVibe's community machines): coding tasks and agents that
+OpenVibe.Run places there. Both switches must be on: `worker.serve_others` here (the installer's `--serve-others`), and
+"Run other people's coding tasks and agents" on openvibe.link/machines, which Bot checks before it sends such a job.
+Bot marks the job frame `"for": "other"` and sends it only to a Link that reports `serve_others` (an older Link never
+sees one).
+
+- **The same sandbox, caps and egress** as the owner's own jobs: nothing is widened for another person.
+- **Never the owner's sign-ins.** The plan logins are not staged, and of the function's own `env` only settings reach
+  the job (`HOME`, `PATH`, `LANG`, `LC_ALL`, `TZ`, `TMPDIR`, `GOMAXPROCS`, `OPENVIBE_CODES_HOME`,
+  `OPENVIBE_CODES_ACT_BIN`): never the API keys or the GitHub token the installer writes for the Codes runner. Such a
+  job brings its own credentials in its arguments.
+- **Off, it is refused** (`not_allowed`, `this machine does not run other people's jobs`), never run as the owner's.
+- **A job another machine sends through an access grant** (scope `worker`) also never gets the plan logins or the keys,
+  whoever owns that machine: its prompt could read them.
+
 ### Desks in the sandbox (`openvibe-link desk-sandbox`, Link v0.32.0)
 
 A desk host for other people (docs/computer.md, "Desk hosts for other people") runs each desk's browser in this same

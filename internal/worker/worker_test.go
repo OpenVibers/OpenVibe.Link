@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"sync"
 	"testing"
@@ -366,4 +367,64 @@ func TestAdmitRefusesInputs(t *testing.T) {
 	if f, r := New(cfg, s.send, quiet()).Admit(n); f != protocol.FaultUnsupported || r != protocol.JobNetUnsupported {
 		t.Fatalf("net public under egress none: %q %q", f, r)
 	}
+}
+
+// TestOtherPeoplesJobs (Link v0.65): another person's job is refused unless the owner turned worker.serve_others on,
+// and neither it nor a job relayed from another machine ever gets the owner's plan logins; the owner's own job still
+// does. The sandbox is a stub that records what it was asked to set up.
+func TestOtherPeoplesJobs(t *testing.T) {
+	home := t.TempDir()
+	setHome(t, home)
+	login := filepath.Join(home, ".codex", "auth.json")
+	if err := os.MkdirAll(filepath.Dir(login), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(login, []byte(`{"test":"login"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := helperConfig(t, config.WorkerCaps{MaxJobs: 4}, "sleep")
+	cfg.PlanLogins = []string{login}
+	cfg.Functions[0].Env["ANTHROPIC_API_KEY"] = "sk-the-owners" // as the installer writes the Codes runner's keys
+	if os.Geteuid() == 0 {
+		cfg.RunAs = nil
+		cfg.AllowSameUser = true
+	}
+	s := &sink{}
+	w := New(cfg, s.send, quiet())
+	if f, r := w.AdmitFrom(testJob(1, "sleep"), OriginOther); f != protocol.FaultNotAllowed || r != protocol.JobOthersRefused {
+		t.Fatalf("another person's job without serve_others: %q %q", f, r)
+	}
+	cfg.ServeOthers = true
+	w = New(cfg, s.send, quiet())
+	var mu sync.Mutex
+	staged := map[string][]string{}
+	envs := map[string][]string{}
+	w.isolate = func(cmd *exec.Cmd, _ config.WorkerConfig, p plan) (*sandbox, error) {
+		mu.Lock()
+		key := cmd.Args[len(cmd.Args)-1] + fmt.Sprint(len(staged))
+		staged[key], envs[key] = p.planLogins, cmd.Env
+		mu.Unlock()
+		return nil, errors.New("not in this test")
+	}
+	for i, origin := range []Origin{OriginOwner, OriginOther, OriginRelayed} {
+		j := testJob(10+i, "sleep")
+		if f, r := w.AdmitFrom(j, origin); f != "" {
+			t.Fatalf("origin %d: %q %q", origin, f, r)
+		}
+		w.Launch(j.ID)
+		s.exit(t, j.ID)
+		mu.Lock()
+		got, env := staged["sleep"+fmt.Sprint(i)], envs["sleep"+fmt.Sprint(i)]
+		mu.Unlock()
+		if want := origin == OriginOwner; (len(got) > 0) != want {
+			t.Fatalf("origin %d: plan logins %v (the owner's own job only)", origin, got)
+		}
+		if want := origin == OriginOwner; slices.Contains(env, "ANTHROPIC_API_KEY=sk-the-owners") != want {
+			t.Fatalf("origin %d: env %v (the owner's keys go to the owner's own job only)", origin, env)
+		}
+		if !slices.Contains(env, "GOMAXPROCS=2") {
+			t.Fatalf("origin %d: a setting was dropped: %v", origin, env)
+		}
+	}
+	w.Close()
 }

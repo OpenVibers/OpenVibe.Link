@@ -644,7 +644,7 @@ func (n *Agent) startWorker(why string) bool {
 	n.worker = w
 	n.mu.Unlock()
 	w.SetStopped(stopFault(n.latch.State()))
-	n.jobs.admit = w.Admit
+	n.jobs.admit = w.AdmitFrom
 	// Advertise a class only when an entry implements it, and only here, after the sandbox probe passed.
 	n.jobs.classes = w.Classes()
 	n.log.Info("worker on", "functions", len(wcfg.Functions), "why", why)
@@ -1638,7 +1638,8 @@ func (n *Agent) sendStatus() {
 		caps := n.opt.Config.Worker.Caps.WithDefaults()
 		s.Capabilities[protocol.CapWorker] = protocol.WorkerCapabilities{Capabilities: protocol.WorkerCapabilityNames(c), RuntimeClasses: c, MaxJobs: caps.MaxJobs,
 			MaxTTLMS: caps.MaxTTLMS, MaxWallMS: caps.MaxWallMS, MaxCPUMS: caps.MaxCPUMS,
-			MaxMemBytes: caps.MaxMemBytes, MaxOutputBytes: caps.MaxOutputBytes}
+			MaxMemBytes: caps.MaxMemBytes, MaxOutputBytes: caps.MaxOutputBytes,
+			ServeOthers: n.opt.Config.Worker.ServeOthers, Egress: n.opt.Config.Worker.Egress}
 	}
 	if n.pub != nil {
 		s.Video = n.pub.State()

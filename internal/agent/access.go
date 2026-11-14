@@ -780,7 +780,7 @@ func (n *Agent) dispatchRelay(session *machineRelay, scope string, request relay
 			return true, nil, errors.New("invalid job")
 		}
 		source := relaySource{to: session.Peer, scope: scope, relay: session.ID, bodyID: request.ID}
-		if err := n.jobRelayed(protocol.JobRequest{Job: job}, source); err != nil {
+		if err := n.jobRelayed(protocol.JobRequest{Job: job, Relayed: true}, source); err != nil {
 			return true, nil, err
 		}
 		return false, nil, nil

@@ -315,6 +315,11 @@ class Desks:
             raise Fault("bad_value", "desk is main, private or desk-<name> (lower-case letters, digits and dashes, at most 29 characters)")
         return name
 
+    def get(self, name):
+        """The desk object of that name, or None."""
+        with self.mu:
+            return self.desks.get(name)
+
     def kind(self, name):
         """The kind of desk that name is now (desktop or browser), or None when there is no such desk."""
         with self.mu:

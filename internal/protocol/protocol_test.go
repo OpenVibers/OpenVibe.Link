@@ -521,3 +521,22 @@ func TestDocsSayStopNotEStop(t *testing.T) {
 		}
 	}
 }
+
+// TestJobFrameFor (Link v0.65): a job frame's "for" marks another person's job; any value but none or "" is read as
+// another person's, the stricter.
+func TestJobFrameFor(t *testing.T) {
+	for raw, want := range map[string]string{
+		`{"job":{"id":"job_01J8Z4M2Q0R7T9YV3K6N8P1W2X","class":"code"}}`:                      "",
+		`{"job":{"id":"job_01J8Z4M2Q0R7T9YV3K6N8P1W2X","class":"code"},"for":""}`:             "",
+		`{"job":{"id":"job_01J8Z4M2Q0R7T9YV3K6N8P1W2X","class":"code"},"for":"other"}`:        JobForOther,
+		`{"job":{"id":"job_01J8Z4M2Q0R7T9YV3K6N8P1W2X","class":"code"},"for":"someone-else"}`: JobForOther,
+	} {
+		var r JobRequest
+		if err := json.Unmarshal([]byte(raw), &r); err != nil {
+			t.Fatalf("%s: %v", raw, err)
+		}
+		if r.For != want || r.Relayed {
+			t.Fatalf("%s: for %q relayed %v, want %q", raw, r.For, r.Relayed, want)
+		}
+	}
+}

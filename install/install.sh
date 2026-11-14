@@ -43,6 +43,10 @@
 #                    line saying how to sign it in. The installer never reads, copies or prints a login's content, and
 #                    sets the Link service's HOME to your home (the logins must sit under it). Linux only.
 #                    docs/worker.md has the details.
+#   --serve-others   with --worker (implied): the worker runs other people's jobs too (Link v0.65; the owner's "Run other
+#                    people's coding tasks and agents" on openvibe.link/machines must be on as well): each in the same
+#                    sandbox, the public internet only, never with this computer's plan logins or the keys in its
+#                    Codes runner's env. Linux only.
 #   --desk-host      this machine hosts desks for its owner's agents (docs/computer.md "Desk hosts"; the Desks plan's
 #                    step D5): an old laptop, a mini PC or a spare workstation, no screen or login needed. The
 #                    service runs as its own account (openvibe-desk), the installer adds what desks need (Xvfb, a
@@ -55,6 +59,9 @@
 #                    one core at most, the public internet only), and nothing of the machine itself offered. The
 #                    service runs as root, which the sandbox needs; the installer adds Google Chrome's .deb (amd64) or
 #                    Debian's Chromium, nftables and iproute2. Linux only.
+#   --desktops       with --desk-host --shared: lend whole desktops too, not only browsers (Link v0.65): each one an X
+#                    display with a window manager, a browser and a terminal, all inside that desk's own sandbox (2 GiB
+#                    and two cores at most by default). The installer adds Xvfb, openbox, xdotool, ImageMagick and xterm.
 #   --computer LEVEL this machine's terminal, files and screen for its owner's agents (the computer plugin,
 #                    docs/computer.md), at LEVEL observe, ask, trusted or full. The service then runs as YOUR account
 #                    (the one that ran sudo), never root, and its folders are your home. Linux only; not with --worker.
@@ -100,9 +107,11 @@ LOCAL=""
 TAG="latest"
 WORKER=0
 PLAN_LOGINS=0
+SERVE_OTHERS=0
 COMPUTER=""
 DESK_HOST=0
 SHARED=0
+DESKTOPS=0
 AI=0
 AI_ENDPOINT=""
 CLAIM_OK=1
@@ -128,8 +137,8 @@ ACT_SHA256=67b4976a56f33ea7870b798912e738ec44eef38e7578ae7b532f2def1c73a5ad
 
 usage() {
 	echo "usage: install.sh [--robot rob_… | --network URL --pairing pair_…] [--code CODE | CODE] [--name NAME]"
-	echo "                  [--driver adeept|adeept-mecanum|cozmo|looi|ros2|ros2-holonomic|none] [--worker [--plan-logins]]"
-	echo "                  [--computer observe|ask|trusted|full] [--desk-host [--shared]] [--ai] [--ai-endpoint URL]"
+	echo "                  [--driver adeept|adeept-mecanum|cozmo|looi|ros2|ros2-holonomic|none] [--worker [--plan-logins] [--serve-others]]"
+	echo "                  [--computer observe|ask|trusted|full] [--desk-host [--shared [--desktops]]] [--ai] [--ai-endpoint URL]"
 	echo "                  [--no-service] [--no-claim] [--setup osk_…]"
 	echo "                  [--local DIR] [--version TAG]"
 	echo "  curl -fsSL https://openvibe.link/install | sh      (finds the kit, then shows a code to approve on openvibe.bot/link)"
@@ -163,8 +172,10 @@ while [ $# -gt 0 ]; do
 	--pairing=*) PAIRING="${1#*=}"; shift ;;
 	--worker) WORKER=1; shift ;;
 	--plan-logins) PLAN_LOGINS=1; WORKER=1; shift ;;
+	--serve-others) SERVE_OTHERS=1; WORKER=1; shift ;;
 	--desk-host) DESK_HOST=1; shift ;;
 	--shared) SHARED=1; shift ;;
+	--desktops) DESKTOPS=1; shift ;;
 	--ai) AI=1; shift ;;
 	--ai-endpoint) AI=1; AI_ENDPOINT="${2:-}"; shift 2 ;;
 	--ai-endpoint=*) AI=1; AI_ENDPOINT="${1#*=}"; shift ;;
@@ -191,6 +202,10 @@ if [ "$SHARED" = 1 ]; then
 	case "$COMPUTER" in ""|trusted|observe) ;; *) die "a shared desk host runs at level trusted (or observe): nobody is at it to approve" ;; esac
 	DESK_HOST=shared
 fi
+[ "$DESKTOPS" = 0 ] || [ "$SHARED" = 1 ] || die "--desktops goes with --desk-host --shared (desktops lent to other people)"
+# What write_computer_config is told a shared host lends: browsers, or browsers and desktops.
+DESK_LENDS="$DESK_HOST"
+[ "$DESKTOPS" = 0 ] || DESK_LENDS=shared+desktops
 # --pairing takes the pair_… id; with no --code, anything else there is the code itself.
 case "$PAIRING" in ""|pair_*) ;; *) [ -z "$CODE" ] || die "--pairing must be a pair_… id"; CODE="$PAIRING"; PAIRING="" ;; esac
 if [ -n "$PAIRING" ] && [ -z "$NETWORK" ]; then die "--pairing needs --network, the OpenVibe.Network URL"; fi
@@ -489,13 +504,15 @@ fi
 # write_computer_config <config.json> <level> <home> [desk-host]: add the computer plugin at that level (replacing an
 # earlier entry), its folder the owner's home; the rest of the config is kept. A desk host (4th argument 1) keeps its
 # desks under <home>/desks, shows no notifications (nobody sits at it) and turns the camera off; a shared one (4th
-# argument shared) sandboxes every desk (desk_isolation sandbox) and offers nothing else.
+# argument shared) sandboxes every desk (desk_isolation sandbox) and offers nothing else; shared+desktops lends whole
+# desktops too (desk_shared_kinds), each in its own sandbox.
 write_computer_config() {
 	${SUDO:-} python3 - "$@" <<'PY'
 import json, os, sys
 path, level, home = sys.argv[1], sys.argv[2], sys.argv[3]
-desk_host = len(sys.argv) > 4 and sys.argv[4] in ('1', 'shared')
-shared = len(sys.argv) > 4 and sys.argv[4] == 'shared'
+desk_host = len(sys.argv) > 4 and sys.argv[4] in ('1', 'shared', 'shared+desktops')
+shared = len(sys.argv) > 4 and sys.argv[4] in ('shared', 'shared+desktops')
+desktops = len(sys.argv) > 4 and sys.argv[4] == 'shared+desktops'
 with open(path) as f:
     conf = json.load(f)
 plugins = [p for p in conf.get('plugins') or [] if p.get('name') not in ('computer', 'dryrun')]
@@ -510,6 +527,11 @@ if shared:
                      'allow_screen_stream': False})
     for k, v in {'desk_memory_mb': 1024, 'desk_cpu_millis': 1000, 'desk_disk_mb': 512, 'desk_pids': 512}.items():
         computer[k] = previous.get(k, v)   # an operator's own sizes are kept on a second run
+    # Desktops lent too (--desktops); a second run without it keeps what the host lent before.
+    computer['desk_shared_kinds'] = ['browser', 'desktop'] if desktops else previous.get('desk_shared_kinds', ['browser'])
+    if 'desktop' in computer['desk_shared_kinds']:
+        for k, v in {'desk_desktop_memory_mb': 2048, 'desk_desktop_cpu_millis': 2000, 'desk_desktop_disk_mb': 1024, 'desk_desktop_pids': 1024}.items():
+            computer[k] = previous.get(k, v)
     if previous.get('max_desks'):
         computer['max_desks'] = previous['max_desks']
 plugins.append({'name': 'computer', 'config': computer})
@@ -567,7 +589,8 @@ PY
 }
 
 write_worker_config() {
-	${SUDO:-} python3 - "$@" <<'PY'
+	# sudo keeps no environment: the one switch the config needs goes through env.
+	${SUDO:-} env OPENVIBE_SERVE_OTHERS="${SERVE_OTHERS:-0}" python3 - "$@" <<'PY'
 import json, os, sys
 path, uid, gid = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 node = sys.argv[4] if len(sys.argv) > 4 else ''
@@ -612,6 +635,9 @@ if node and codes:
         'artifact_dir': codes, 'env': env,
     })
 worker['functions'] = functions
+# Other people's jobs too (--serve-others); a second run without the flag keeps the owner's earlier choice.
+if os.environ.get('OPENVIBE_SERVE_OTHERS') == '1':
+    worker['serve_others'] = True
 conf['worker'] = worker
 old = os.umask(0o077)
 with open(path + '.tmp', 'w') as f:
@@ -637,7 +663,7 @@ fi
 if [ -n "${OPENVIBE_INSTALL_COMPUTER_CONFIG_ONLY:-}" ]; then
 	[ "$DESK_HOST" = 0 ] || [ -n "$COMPUTER" ] || COMPUTER=trusted
 	case "$COMPUTER" in observe|ask|trusted|full) ;; *) die "--computer is observe, ask, trusted or full" ;; esac
-	write_computer_config "$OPENVIBE_INSTALL_COMPUTER_CONFIG_ONLY" "$COMPUTER" "${OPENVIBE_COMPUTER_HOME:?}" "$DESK_HOST"
+	write_computer_config "$OPENVIBE_INSTALL_COMPUTER_CONFIG_ONLY" "$COMPUTER" "${OPENVIBE_COMPUTER_HOME:?}" "$DESK_LENDS"
 	[ "$DESK_HOST" != shared ] || write_worker_config "$OPENVIBE_INSTALL_COMPUTER_CONFIG_ONLY" "${OPENVIBE_JOB_UID:-999}" "${OPENVIBE_JOB_GID:-999}"
 	exit 0
 fi
@@ -1018,6 +1044,13 @@ if [ "$DESK_HOST" = shared ]; then
 		say "installing what shared desks need (a browser, fonts, nftables, iproute2)"
 		$SUDO apt-get install -y nftables iproute2 util-linux fonts-dejavu-core fonts-noto-color-emoji fonts-liberation >/dev/null 2>&1 ||
 			say "warning: apt-get could not install nftables iproute2 util-linux and fonts; install them yourself"
+		if [ "$DESKTOPS" = 1 ]; then
+			# A lent desktop: its display, a window manager, input, screenshots and a terminal, all from /usr (the sandbox
+			# sees the system's own paths only).
+			say "installing what lent desktops need (Xvfb, openbox, xdotool, ImageMagick, xterm)"
+			$SUDO apt-get install -y xvfb openbox xdotool imagemagick xterm >/dev/null 2>&1 ||
+				say "warning: apt-get could not install xvfb openbox xdotool imagemagick xterm; install them yourself"
+		fi
 		if [ ! -x /opt/google/chrome/chrome ] && [ "$(dpkg --print-architecture 2>/dev/null)" = amd64 ]; then
 			say "installing Google Chrome (its .deb from dl.google.com)"
 			if ! curl -fsSL -o "$TMP/chrome.deb" https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb ||
@@ -1074,7 +1107,7 @@ if [ "$DESK_HOST" = shared ]; then
 	# The worker is on (no functions: no jobs are offered) so the Link sets up its cgroup before any desk starts, and
 	# its sandbox, run_as and egress are the desks'.
 	write_worker_config "$CONF/config.json" "$(id -u openvibe-job)" "$(id -g openvibe-job)"
-	write_computer_config "$CONF/config.json" "$COMPUTER" "$COMPUTER_HOME" shared
+	write_computer_config "$CONF/config.json" "$COMPUTER" "$COMPUTER_HOME" "$DESK_LENDS"
 	mem_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
 	# A browser desk counts as half a desk against max_desks and may use 1 GiB: keep 1 GiB for the system.
 	desks=$(( (mem_kb / 1048576 - 1) / 2 )); [ "$desks" -ge 1 ] || desks=1; [ "$desks" -le 10 ] || desks=10
