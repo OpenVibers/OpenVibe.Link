@@ -1096,7 +1096,7 @@ class Computer(Plugin):
                               native=self._native_display())
 
     def _native_display(self):
-        """The Link's own binary for the Go desktop helper (`openvibe-link desk-display`, Link v0.66), where the sandbox
+        """The Link's own binary for the Go desktop helper (`openvibe-link desk-display`, Link v0.67), where the sandbox
         sees it: under /usr (the system's paths) or /opt (bound with the desktop). None: the Python helper runs."""
         exe = self.env.get("OPENVIBE_LINK_EXE") or self.which("openvibe-link")
         if not exe:

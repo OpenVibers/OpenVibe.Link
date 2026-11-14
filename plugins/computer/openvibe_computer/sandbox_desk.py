@@ -174,7 +174,7 @@ class SandboxDesktop:
         self.clock = clock
         self.python = python
         self.exists = exists
-        # The Go helper (`openvibe-link desk-display`, Link v0.66): the Link's own binary where the sandbox can see it
+        # The Go helper (`openvibe-link desk-display`, Link v0.67): the Link's own binary where the sandbox can see it
         # (under /usr or /opt). It captures and drives the display in-process; HELPER is the fallback.
         self.native = native
         self.mu = threading.Lock()      # one start or stop at a time

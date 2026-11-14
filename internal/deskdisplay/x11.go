@@ -24,7 +24,7 @@ type key struct {
 }
 
 // Display is one X display, driven in-process: its screen read with GetImage, its mouse and keyboard through XTest.
-// No program is started per action (Link v0.66: ImageMagick and xdotool were forked for every picture and click).
+// No program is started per action (Link v0.67: ImageMagick and xdotool were forked for every picture and click).
 type Display struct {
 	conn   *xgb.Conn
 	root   xproto.Window
