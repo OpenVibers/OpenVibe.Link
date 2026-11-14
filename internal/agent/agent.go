@@ -39,6 +39,7 @@ import (
 	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 	"github.com/OpenVibers/OpenVibe.Link/internal/safety"
 	"github.com/OpenVibers/OpenVibe.Link/internal/send"
+	"github.com/OpenVibers/OpenVibe.Link/internal/specs"
 	"github.com/OpenVibers/OpenVibe.Link/internal/stream"
 	"github.com/OpenVibers/OpenVibe.Link/internal/video"
 	"github.com/OpenVibers/OpenVibe.Link/internal/worker"
@@ -84,9 +85,12 @@ type Agent struct {
 	// fleet is what this machine's coding agents have left (Codes C9c): the Codes runner's own logins probe, sent
 	// with every heartbeat. Nil when the machine has no OpenVibe.Codes runner declared.
 	fleet *fleet.Prober
-	mgr   *plugins.Manager
-	link  *link.Link
-	pub   *video.Publisher
+	// machine is what the machine is (internal/specs), read off the start path and every half hour; nil until then.
+	machineMu sync.Mutex
+	machine   *specs.Machine
+	mgr       *plugins.Manager
+	link      *link.Link
+	pub       *video.Publisher
 	// screen is the owner's live view of the machine's screen (screen.go), apart from a robot's camera.
 	screen screenState
 	// deskStream is the agent's desk stream (stream.go, Agent Streams S1); one at a time.
@@ -368,6 +372,10 @@ func (n *Agent) Run(parent context.Context) error {
 		n.shares.StartAll()
 	}
 	n.startPanel(ctx)
+
+	// What the machine is: read away from the start (lspci, nvidia-smi or system_profiler can take seconds), sent with
+	// the next status, read again every half hour (the free disk moves).
+	go n.readMachine(ctx)
 
 	n.mgr.Start(pctx)
 
@@ -1615,6 +1623,22 @@ func (n *Agent) reporting() bool {
 	return n.configured
 }
 
+// readMachine reads what the machine is now and every half hour, and sends it with a status.
+func (n *Agent) readMachine(ctx context.Context) {
+	for {
+		m := specs.Read(n.opt.Paths.StateDir)
+		n.machineMu.Lock()
+		n.machine = &m
+		n.machineMu.Unlock()
+		n.sendStatus()
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(30 * time.Minute):
+		}
+	}
+}
+
 func (n *Agent) sendStatus() {
 	if !n.reporting() {
 		return
@@ -1623,6 +1647,11 @@ func (n *Agent) sendStatus() {
 	s := protocol.Status{Firmware: "openvibe-link-" + n.opt.Version, Capabilities: map[string]any{}, AgentVersion: n.opt.Version,
 		DeviceKind: n.opt.Config.DeviceKind, OS: runtime.GOOS, Arch: runtime.GOARCH, EstopLatched: st.Stopped(), LocalStop: st.Local,
 		Drivers: []protocol.DriverStatus{}, Faults: []protocol.Fault{}}
+	n.machineMu.Lock()
+	if n.machine != nil {
+		s.Machine = *n.machine
+	}
+	n.machineMu.Unlock()
 	for _, i := range n.mgr.Infos() {
 		d := protocol.DriverStatus{Name: i.Name, State: i.State}
 		if i.Describe != nil {
