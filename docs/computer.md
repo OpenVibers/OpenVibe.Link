@@ -334,7 +334,10 @@ only where both are on.
   `desk_desktop_pids` 1024). Inside it, the system's own Python runs a small helper (`sandbox_desk.py`) that starts the
   display (Xvfb, in the sandbox's own `/tmp` and network namespace), a window manager, a browser and a terminal, all as
   `openvibe-job`. Nothing of the desktop runs on the machine itself; two desktops share no display, process, file or
-  network, and the public internet is all any of them reaches (`desk_egress`).
+  network, and the public internet is all any of them reaches (`desk_egress`). Its terminal gets pseudo-terminals of its own
+  (`desk-sandbox --ptys`, v0.65.1: a new devpts instance and `/dev/tty`, nothing of the host's terminals) and a real
+  shell (the sandbox user's login shell is nologin); each program's output is kept in the desk's `/tmp` (the helper's
+  `logs`), so a desktop that shows nothing says why.
 - **Screen, mouse and keyboard only.** `screen` and `input` on a desktop go to the helper over the sandbox's pipe (fds 3
   and 4): a PNG of the screen, and the same xdotool command an owner's private desk would run. The plugin trusts
   nothing the helper answers beyond its shape, its size (32 MB) and its time. `browser` on a desktop is refused (its

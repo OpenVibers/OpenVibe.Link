@@ -1144,7 +1144,7 @@ class Computer(Plugin):
             binds.append("/etc/fonts")
         lim = self.desktop_limits
         argv = [node, "desk-sandbox", "--memory-mb", str(lim["memory_mb"]), "--cpu-millis", str(lim["cpu_millis"]),
-                "--disk-mb", str(lim["disk_mb"]), "--pids", str(lim["pids"])]
+                "--disk-mb", str(lim["disk_mb"]), "--pids", str(lim["pids"]), "--ptys"]   # its terminal needs ptys of its own
         if self.desk_egress == "public":
             argv += ["--egress", "public"]
         for b in binds:
@@ -1170,15 +1170,26 @@ class Computer(Plugin):
         wm = probe.window_manager()
         if wm:
             apps.append(["wm", [os.path.realpath(self.which(wm))]])
+        # The browser across the top three quarters, the terminal along the bottom: both in view at the start (on
+        # ov-node-01 the terminal opened behind the browser, 11-14). --test-type drops the bar that warns of
+        # --no-sandbox: the desk's own sandbox stands in for Chrome's.
+        top = max(240, height * 3 // 4)
         browser = self._desktop_browser()
         if browser:
             apps.append(["browser", [browser] + self._browser_args() + [
-                "--user-data-dir=" + SANDBOX_PROFILE, "--no-first-run", "--no-default-browser-check",
+                "--test-type", "--user-data-dir=" + SANDBOX_PROFILE, "--no-first-run", "--no-default-browser-check",
                 "--disable-background-networking", "--disable-sync", "--disable-component-update", "--password-store=basic",
-                "--window-position=0,0", "--window-size=%d,%d" % (width, max(240, height * 3 // 4)), "about:blank"]])
+                "--window-position=0,0", "--window-size=%d,%d" % (width, top), "about:blank"]])
         term = probe.terminal()
         if term:
-            apps.append(["terminal", [term]])
+            argv = [term]
+            if os.path.basename(term) == "xterm":   # the fixed font is 6×13: as wide as the screen, the rest of its height
+                argv += ["-geometry", "%dx%d+0-0" % (max(40, width // 6 - 2), max(5, (height - top) // 13 - 2))]
+            # A shell of its own: the sandbox's user logs in to nothing (its passwd shell is nologin, which ends the
+            # terminal at once).
+            shell = "/bin/bash" if os.path.exists("/bin/bash") else "/bin/sh"
+            argv += ["-e", shell]
+            apps.append(["terminal", argv])
         return apps
 
     def _sandbox_argv(self, binary):

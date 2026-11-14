@@ -177,13 +177,17 @@ class LentDesktopTest(unittest.TestCase):
         self.boot(desk_shared_kinds=["browser", "desktop"], desk_desktop_memory_mb=4096, desk_desktop_pids=2000)
         argv = self.plugin._desktop_sandbox_argv()
         self.assertEqual(argv[:10], [NODE, "desk-sandbox", "--memory-mb", "4096", "--cpu-millis", "2000", "--disk-mb", "1024", "--pids", "2000"])
-        pairs = list(zip(argv[10:-1:2], argv[11:-1:2]))
+        self.assertEqual(argv[10], "--ptys", "its terminal needs pseudo-terminals of its own")
+        pairs = list(zip(argv[11:-1:2], argv[12:-1:2]))
         self.assertIn(("--egress", "public"), pairs)
         self.assertIn(("--setenv", "HOME=/tmp/desk"), pairs)
         self.assertEqual(argv[-1], "--")
         apps = self.plugin._desktop_apps(1280, 800)
         self.assertEqual([a[0] for a in apps], ["wm", "browser", "terminal"])
         browser = apps[1][1]
+        self.assertEqual(apps[2][1][:3], ["/usr/bin/xterm", "-geometry", "211x13+0-0"], "the terminal along the bottom, in view")
+        self.assertEqual(apps[2][1][3], "-e", "with a shell of its own: the sandbox user's login shell is nologin")
+        self.assertIn("--window-size=1280,600", browser)
         self.assertIn("--user-data-dir=/tmp/desk/profile", browser)
         self.assertIn("--no-sandbox", browser, "the desk's sandbox replaces Chrome's own")
         self.assertNotIn("--headless=new", browser, "a window on the desktop")
@@ -301,6 +305,10 @@ class RealLentDesktopTest(unittest.TestCase):
             self.assertEqual(cmd("input", {"action": "click", "x": 400, "y": 300, "desk": "desk-a"})["op"], "ack")
             self.assertEqual(cmd("input", {"action": "type", "text": "echo sandboxed", "desk": "desk-a"})["op"], "ack")
             self.assertEqual(lent.xdotool(["xdotool", "getdisplaygeometry"])["out"].split(), ["800", "600"], "its own display")
+            # Its programs run (the terminal needs the desk's own ptys, Link v0.65.1), and say why when they do not.
+            info = lent.logs()
+            self.assertTrue(info["running"].get("display") and info["running"].get("wm"), info)
+            self.assertTrue(info["running"].get("terminal"), "the terminal runs: %r" % info)
             proc = lent.proc
         finally:
             cmd("desk", {"action": "stop", "desk": "desk-a"})

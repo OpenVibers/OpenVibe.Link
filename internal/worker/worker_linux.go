@@ -177,6 +177,7 @@ func jobAttr(cfg config.WorkerConfig) (*syscall.SysProcAttr, error) {
 // sandbox is a job's sandbox as the Link holds it: the status pipe of its init, the pipe that lets it execute the
 // function, the descriptors the child inherits (closed once it started), its cgroup and its veth (nil under none).
 type sandbox struct {
+	ptys   bool // the desk has its own devpts at /dev/pts (sandboxSpec.Ptys), which ready() then allows
 	cg     *jobCgroup
 	egress *egressNet
 	status *os.File
@@ -222,7 +223,7 @@ func (s *sandbox) ready(pid int) error {
 	if st := string(st); !strings.Contains(st, "\nNoNewPrivs:\t1\n") || !strings.Contains(st, "\nSeccomp:\t2\n") {
 		return errors.New("the job is not confined: no no_new_privs or seccomp filter")
 	}
-	rw, err := writableMounts(pid)
+	rw, err := writableMounts(pid, s.ptys)
 	if err != nil {
 		return err
 	}

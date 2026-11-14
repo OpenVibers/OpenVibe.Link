@@ -18,6 +18,7 @@ type DeskSpec struct {
 	MemBytes, CPUMillis, DiskBytes, Pids int64
 	Egress                               string
 	In, Out, Stderr                      *os.File
+	Ptys                                 bool
 }
 
 // CheckDeskBinds refuses every bind off Linux: there is no sandbox to bind into.
