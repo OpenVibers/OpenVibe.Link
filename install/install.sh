@@ -1050,6 +1050,11 @@ if [ "$DESK_HOST" = shared ]; then
 			say "installing what lent desktops need (Xvfb, openbox, xdotool, ImageMagick, xterm)"
 			$SUDO apt-get install -y xvfb openbox xdotool imagemagick xterm >/dev/null 2>&1 ||
 				say "warning: apt-get could not install xvfb openbox xdotool imagemagick xterm; install them yourself"
+			# Its pictures are encoded by libjpeg-turbo, loaded at run time (Link v0.68; about eight times faster than the
+			# built-in encoder, which runs where it is missing). The package is libturbojpeg0 on Debian and Ubuntu 26.04,
+			# libturbojpeg on Ubuntu 24.04.
+			$SUDO apt-get install -y libturbojpeg0 >/dev/null 2>&1 || $SUDO apt-get install -y libturbojpeg >/dev/null 2>&1 ||
+				say "note: libjpeg-turbo is not installed; lent desktops' pictures use the slower built-in encoder"
 		fi
 		if [ ! -x /opt/google/chrome/chrome ] && [ "$(dpkg --print-architecture 2>/dev/null)" = amd64 ]; then
 			say "installing Google Chrome (its .deb from dl.google.com)"

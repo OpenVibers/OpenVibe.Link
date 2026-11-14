@@ -2,6 +2,7 @@ package deskdisplay
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"image"
@@ -23,8 +24,9 @@ type key struct {
 	shift bool
 }
 
-// Display is one X display, driven in-process: its screen read with GetImage, its mouse and keyboard through XTest.
-// No program is started per action (Link v0.67: ImageMagick and xdotool were forked for every picture and click).
+// Display is one X display, driven in-process: its screen read through MIT-SHM (else GetImage), its mouse and keyboard
+// through XTest. No program is started per action (Link v0.67: ImageMagick and xdotool were forked for every picture
+// and click).
 type Display struct {
 	conn   *xgb.Conn
 	root   xproto.Window
@@ -32,6 +34,8 @@ type Display struct {
 	height int
 	keys   map[uint32]key
 	shiftK xproto.Keycode
+	shm    *shmFrame // nil: the screen comes over the socket
+	scaled []byte    // the last shrunk frame's pixels, reused
 }
 
 // Open connects to the display (":0") and reads its size and keyboard map.
@@ -69,38 +73,79 @@ func Open(name string) (*Display, error) {
 	if k, ok := d.keys[0xffe1]; ok {
 		d.shiftK = k.code
 	}
+	if bitsPerPixel(setup, scr.RootDepth) == 32 {
+		d.shm, _ = openShm(c, d.width, d.height)
+	}
 	return d, nil
 }
 
+// bitsPerPixel is how many bits a pixel of this depth takes in a ZPixmap picture (0: the server has no such format).
+func bitsPerPixel(setup *xproto.SetupInfo, depth byte) byte {
+	for _, f := range setup.PixmapFormats {
+		if f.Depth == depth {
+			return f.BitsPerPixel
+		}
+	}
+	return 0
+}
+
 // Close ends the connection.
-func (d *Display) Close() { d.conn.Close() }
+func (d *Display) Close() {
+	if d.shm != nil {
+		d.shm.close()
+	}
+	d.conn.Close()
+}
+
+// Paths says how pictures are made here: the screen read ("shm" or "socket") and the encoder ("libjpeg-turbo" or "go").
+func (d *Display) Paths() (capture, encoder string) {
+	capture, encoder = "socket", "go"
+	if d.shm != nil {
+		capture = "shm"
+	}
+	if t, _ := loadTurbo(); t != nil {
+		encoder = "libjpeg-turbo"
+	}
+	return
+}
 
 // Size is the screen's width and height in pixels.
 func (d *Display) Size() (int, int) { return d.width, d.height }
 
 // Shot is the whole screen as a JPEG no wider than maxWidth (0: its own width) and, by lowering the quality and then
 // the width, no larger than maxBytes (0: no bound). It answers the picture and its size.
+//
+// Link v0.68: the frame is X's own 32-bit BGRX pixels end to end. It is read through MIT-SHM, shrunk (when it must be)
+// as BGRX, and handed to libjpeg-turbo as it is; only where the library is missing is it turned into RGBA for Go's
+// encoder. A 1280×800 frame went from about 28 ms (GetImage, convert, image/jpeg) to about 3.3 ms.
 func (d *Display) Shot(maxWidth, maxBytes int) ([]byte, int, int, error) {
-	img, err := xproto.GetImage(d.conn, xproto.ImageFormatZPixmap, xproto.Drawable(d.root), 0, 0, uint16(d.width), uint16(d.height), 0xffffffff).Reply()
+	frame, err := d.read()
 	if err != nil {
-		return nil, 0, 0, fmt.Errorf("the screen could not be read: %w", err)
-	}
-	if len(img.Data) < d.width*d.height*4 {
-		return nil, 0, 0, fmt.Errorf("the screen came back short (%d bytes for %d×%d: depth %d)", len(img.Data), d.width, d.height, img.Depth)
+		return nil, 0, 0, err
 	}
 	w := d.width
 	if maxWidth > 0 && maxWidth < w {
 		w = maxWidth
 	}
-	quality := 75
+	quality, madeW := 75, -1
+	var pix []byte
+	var fw, fh, pitch int
 	for {
-		frame := scaleBGRX(img.Data, d.width, d.height, w)
-		var buf bytes.Buffer
-		if err := jpeg.Encode(&buf, frame, &jpeg.Options{Quality: quality}); err != nil {
+		if w != madeW {
+			madeW = w
+			if w < d.width {
+				d.scaled, fh = shrinkBGRX(d.scaled, frame, d.width, d.height, w)
+				pix, fw, pitch = d.scaled, w, w*4
+			} else {
+				pix, fw, fh, pitch = frame, d.width, d.height, d.width*4
+			}
+		}
+		pic, err := encodeBGRX(pix, fw, fh, pitch, quality)
+		if err != nil {
 			return nil, 0, 0, err
 		}
-		if maxBytes <= 0 || buf.Len() <= maxBytes || w <= 320 {
-			return buf.Bytes(), frame.Bounds().Dx(), frame.Bounds().Dy(), nil
+		if maxBytes <= 0 || len(pic) <= maxBytes || w <= 320 {
+			return pic, fw, fh, nil
 		}
 		if quality > 45 {
 			quality -= 15
@@ -110,38 +155,109 @@ func (d *Display) Shot(maxWidth, maxBytes int) ([]byte, int, int, error) {
 	}
 }
 
-// scaleBGRX turns the X server's 32-bit BGRX pixels into an RGBA image w wide, averaging the source pixels each one
-// covers (a picture of text stays legible when it shrinks).
-func scaleBGRX(src []byte, sw, sh, w int) *image.RGBA {
-	if w >= sw {
-		out := image.NewRGBA(image.Rect(0, 0, sw, sh))
-		for i := 0; i < sw*sh; i++ {
-			out.Pix[i*4], out.Pix[i*4+1], out.Pix[i*4+2], out.Pix[i*4+3] = src[i*4+2], src[i*4+1], src[i*4], 0xff
+// read is the whole screen as X's 32-bit pixels: through the shared segment, or (where that is not set up, or once it
+// fails) over the socket.
+func (d *Display) read() ([]byte, error) {
+	if d.shm != nil {
+		if data, err := d.shm.read(d.root, d.width, d.height); err == nil {
+			return data, nil
 		}
-		return out
+		d.shm.close()
+		d.shm = nil
 	}
-	h := max(1, sh*w/sw)
+	img, err := xproto.GetImage(d.conn, xproto.ImageFormatZPixmap, xproto.Drawable(d.root), 0, 0, uint16(d.width), uint16(d.height), 0xffffffff).Reply()
+	if err != nil {
+		return nil, fmt.Errorf("the screen could not be read: %w", err)
+	}
+	if len(img.Data) < d.width*d.height*4 {
+		return nil, fmt.Errorf("the screen came back short (%d bytes for %d×%d: depth %d)", len(img.Data), d.width, d.height, img.Depth)
+	}
+	return img.Data, nil
+}
+
+// encodeBGRX is a BGRX frame (w×h, pitch bytes a row) as a JPEG: libjpeg-turbo where it is installed, else Go's encoder.
+func encodeBGRX(pix []byte, w, h, pitch, quality int) ([]byte, error) {
+	if t, _ := loadTurbo(); t != nil {
+		if pic, err := t.encode(pix, w, h, pitch, quality); err == nil {
+			return pic, nil
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, rgbaFromBGRX(pix, w, h, pitch), &jpeg.Options{Quality: quality}); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// rgbaFromBGRX turns X's 32-bit BGRX pixels into the RGBA image Go's encoder reads.
+func rgbaFromBGRX(src []byte, w, h, pitch int) *image.RGBA {
 	out := image.NewRGBA(image.Rect(0, 0, w, h))
 	for y := 0; y < h; y++ {
-		y0, y1 := y*sh/h, max(y*sh/h+1, (y+1)*sh/h)
-		for x := 0; x < w; x++ {
-			x0, x1 := x*sw/w, max(x*sw/w+1, (x+1)*sw/w)
-			var r, g, b, n int
-			for yy := y0; yy < y1; yy++ {
-				row := yy * sw * 4
-				for xx := x0; xx < x1; xx++ {
-					p := row + xx*4
-					b += int(src[p])
-					g += int(src[p+1])
-					r += int(src[p+2])
-					n++
-				}
-			}
-			o := (y*w + x) * 4
-			out.Pix[o], out.Pix[o+1], out.Pix[o+2], out.Pix[o+3] = byte(r/n), byte(g/n), byte(b/n), 0xff
+		s, o := src[y*pitch:y*pitch+w*4], out.Pix[y*out.Stride:y*out.Stride+w*4]
+		for i := 0; i < w*4; i += 4 {
+			o[i], o[i+1], o[i+2], o[i+3] = s[i+2], s[i+1], s[i], 0xff
 		}
 	}
 	return out
+}
+
+// shrinkBGRX shrinks a BGRX frame (sw×sh, tightly packed) to w wide, keeping its shape, into dst (grown when it is too
+// small). Each output pixel averages the source pixels it covers, so a picture of text stays legible. It answers the
+// pixels and the new height. A source pixel is one 32-bit load and two adds, and each average a multiply by a
+// reciprocal, not a division (1280→1024: 11 ms down to about 5). The default picture is the desk's own width: no shrink.
+func shrinkBGRX(dst, src []byte, sw, sh, w int) ([]byte, int) {
+	if w >= sw {
+		return append(dst[:0], src[:sw*sh*4]...), sh
+	}
+	h := max(1, sh*w/sw)
+	if cap(dst) < w*h*4 {
+		dst = make([]byte, w*h*4)
+	}
+	dst = dst[:w*h*4]
+	// The spans tile the source: output x covers source columns [xs[x], xs[x+1]), output y rows [y*sh/h, (y+1)*sh/h).
+	xs := make([]int, w+1)
+	for x := range w + 1 {
+		xs[x] = x * sw / w
+	}
+	maxN := (sw/w + 1) * (sh/h + 1)
+	inv := make([]uint64, maxN+1) // inv[n] = 2^24/n, rounded
+	for n := 1; n <= maxN; n++ {
+		inv[n] = (1<<24 + uint64(n)/2) / uint64(n)
+	}
+	// Each pixel is read as one 32-bit word (B G R X, low byte first); blue and red add up in the two 32-bit halves of
+	// one 64-bit sum and green in another, so a source pixel is one load and two adds.
+	br := make([]uint64, w)
+	gg := make([]uint64, w)
+	for y := range h {
+		y0, y1 := y*sh/h, (y+1)*sh/h
+		clear(br)
+		clear(gg)
+		for yy := y0; yy < y1; yy++ {
+			row := src[yy*sw*4 : (yy+1)*sw*4]
+			for x := range w {
+				seg := row[xs[x]*4 : xs[x+1]*4]
+				var a, b uint64
+				for len(seg) >= 4 {
+					v := binary.LittleEndian.Uint32(seg)
+					a += uint64(v&0xff) | uint64(v&0xff0000)<<16
+					b += uint64(v>>8) & 0xff
+					seg = seg[4:]
+				}
+				br[x] += a
+				gg[x] += b
+			}
+		}
+		out := dst[y*w*4 : (y+1)*w*4]
+		for x := range w {
+			r := inv[(xs[x+1]-xs[x])*(y1-y0)]
+			o := out[x*4 : x*4+4 : x*4+4]
+			o[0] = byte(min(255, ((br[x]&0xffffffff)*r+1<<23)>>24))
+			o[1] = byte(min(255, (gg[x]*r+1<<23)>>24))
+			o[2] = byte(min(255, ((br[x]>>32)*r+1<<23)>>24))
+			o[3] = 0xff
+		}
+	}
+	return dst, h
 }
 
 // Move puts the pointer at (x, y), clamped to the screen.

@@ -45,7 +45,7 @@ func TestParseApps(t *testing.T) {
 	}
 }
 
-func TestScaleBGRX(t *testing.T) {
+func TestShrinkBGRX(t *testing.T) {
 	// 4×2 BGRX: the left half blue, the right half red; at width 2 each output pixel averages a 2×2 block.
 	src := make([]byte, 4*2*4)
 	for y := 0; y < 2; y++ {
@@ -58,19 +58,58 @@ func TestScaleBGRX(t *testing.T) {
 			}
 		}
 	}
-	img := scaleBGRX(src, 4, 2, 2)
-	if b := img.Bounds(); b.Dx() != 2 || b.Dy() != 1 {
-		t.Fatalf("size %v", b)
+	px, h := shrinkBGRX(nil, src, 4, 2, 2)
+	if h != 1 || len(px) != 2*4 {
+		t.Fatalf("size 2×%d, %d bytes", h, len(px))
 	}
-	if r, g, bl := img.Pix[0], img.Pix[1], img.Pix[2]; r != 0 || g != 0 || bl != 200 {
-		t.Fatalf("left %d %d %d", r, g, bl)
+	if b, g, r := px[0], px[1], px[2]; b != 200 || g != 0 || r != 0 {
+		t.Fatalf("left %d %d %d", b, g, r)
 	}
-	if r, bl := img.Pix[4], img.Pix[6]; r != 100 || bl != 0 {
-		t.Fatalf("right %d %d", r, bl)
+	if b, r := px[4], px[6]; b != 0 || r != 100 {
+		t.Fatalf("right %d %d", b, r)
 	}
-	full := scaleBGRX(src, 4, 2, 4)
-	if full.Bounds().Dx() != 4 || full.Pix[2] != 200 || full.Pix[3] != 0xff {
-		t.Fatal("full size: BGRX to RGBA")
+	again, _ := shrinkBGRX(px, src, 4, 2, 2)
+	if &again[0] != &px[0] {
+		t.Fatal("a buffer big enough is reused")
+	}
+	// Go's encoder reads RGBA: a padded row (pitch 20 for 4 pixels) is read to its width only.
+	padded := make([]byte, 20*2)
+	copy(padded[0:16], src[0:16])
+	copy(padded[20:36], src[16:32])
+	img := rgbaFromBGRX(padded, 4, 2, 20)
+	if img.Pix[2] != 200 || img.Pix[3] != 0xff || img.Pix[img.Stride+8] != 100 {
+		t.Fatal("BGRX to RGBA")
+	}
+}
+
+// TestEncodeBGRX makes a JPEG of a real-looking frame with whichever encoder is here (OPENVIBE_TURBOJPEG names the
+// library for a run that has it unpacked somewhere), and with Go's: both decode to the frame's size and colour.
+func TestEncodeBGRX(t *testing.T) {
+	const w, h = 320, 200
+	frame := make([]byte, w*h*4)
+	for i := 0; i < w*h; i++ {
+		frame[i*4], frame[i*4+1], frame[i*4+2] = 40, 120, 220 // B G R: an orange
+	}
+	ok, why := TurboJPEG()
+	t.Logf("libjpeg-turbo: %v (%s)", ok, why)
+	pic, err := encodeBGRX(frame, w, h, w*4, 75)
+	if err != nil {
+		t.Fatal(err)
+	}
+	img, err := jpeg.Decode(bytes.NewReader(pic))
+	if err != nil || img.Bounds().Dx() != w || img.Bounds().Dy() != h {
+		t.Fatalf("decode %v %v", img, err)
+	}
+	r, g, b, _ := img.At(w/2, h/2).RGBA()
+	if d := int(r>>8) - 220; d < -8 || d > 8 || int(g>>8) < 112 || int(g>>8) > 128 || int(b>>8) > 48 || int(b>>8) < 32 {
+		t.Fatalf("colour %d %d %d", r>>8, g>>8, b>>8)
+	}
+	if ok {
+		t0 := time.Now()
+		for i := 0; i < 20; i++ {
+			_, _ = encodeBGRX(frame, w, h, w*4, 75)
+		}
+		t.Logf("libjpeg-turbo %v a frame of %d×%d", time.Since(t0)/20, w, h)
 	}
 }
 
@@ -100,6 +139,18 @@ func TestRealDisplay(t *testing.T) {
 	if w, h := d.Size(); w != 800 || h != 600 {
 		t.Fatalf("size %d×%d", w, h)
 	}
+	capture, encoder := d.Paths()
+	t.Logf("capture %s, encoder %s", capture, encoder)
+	if os.Getenv("OPENVIBE_EXPECT_FAST") == "1" && (capture != "shm" || encoder != "libjpeg-turbo") {
+		t.Fatalf("expected MIT-SHM and libjpeg-turbo, got %s and %s", capture, encoder)
+	}
+	t0 := time.Now()
+	for i := 0; i < 10; i++ {
+		if _, _, _, err := d.Shot(0, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Logf("a full 800×600 picture: %v", time.Since(t0)/10)
 	pic, w, h, err := d.Shot(400, 20000)
 	if err != nil || w != 400 || h != 300 || len(pic) > 20000 {
 		t.Fatalf("shot %d×%d %d bytes %v", w, h, len(pic), err)
