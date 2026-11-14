@@ -1252,8 +1252,12 @@ if [ -n "$CODE" ]; then
 	else
 		pair_with $SUDO "$BIN_DIR/openvibe-link"
 	fi
+elif $SUDO "$BIN_DIR/openvibe-link" status --json 2>/dev/null | grep -q '"paired":true'; then
+	# An update of a paired machine (no code given): it keeps its pairing, and says so (11-12: an update said "not
+	# paired yet" on a machine that was).
+	say "paired already; the update keeps it"
 else
-	say "not paired yet: get a code on openvibe.bot and run: sudo openvibe-link pair <CODE>"
+	say "not paired yet: get a code on openvibe.link/pair (a computer) or openvibe.bot (a robot) and run: sudo openvibe-link pair <CODE>"
 fi
 
 # ---- the one command: is it driving and streaming? ----
