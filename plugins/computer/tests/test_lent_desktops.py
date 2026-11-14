@@ -76,8 +76,8 @@ class FakeLent:
     def env(self):
         raise Fault("unsupported", "a lent desktop is used through its screen, mouse and keyboard only")
 
-    def shot(self):
-        return tiny_png()
+    def shot(self, max_width=0, max_bytes=0):
+        return ("png", tiny_png())
 
     def xdotool(self, argv):
         self.calls.append(list(argv))
@@ -229,7 +229,7 @@ class HelperPipeTest(unittest.TestCase):
             """)
         st = d.start(800, 600)
         self.assertEqual((st["running"], st["width"], st["sandboxed"]), (True, 800, True))
-        self.assertEqual(d.shot(), tiny_png())
+        self.assertEqual(d.shot(), ("png", tiny_png()))
         self.assertEqual(d.xdotool(["xdotool", "key", "--", "Return"])["ok"], True)
         self.assertEqual(d.xdotool(["xdotool", "type", "--", "x"])["ok"], False)
         with self.assertRaises(Fault):
@@ -238,6 +238,22 @@ class HelperPipeTest(unittest.TestCase):
             d.env()
         self.assertEqual(d.stop(), {"running": False, "stopped": True})
         self.assertFalse(d.running())
+
+    def test_the_go_helper_answers_a_jpeg_at_size(self):
+        jpeg = b"\xff\xd8\xff\xe0" + b"x" * 20
+        d = self.stand_in("""
+            say({"ready": True, "native": True})
+            for line in rd:
+                req = json.loads(line)
+                if req["op"] == "shot":
+                    ok = req.get("max_width") == 640 and req.get("max_bytes") == 1000
+                    say({"id": req["id"], "ok": ok, "jpeg": base64.b64encode(%r).decode(), "width": 640, "height": 400})
+                    say({"id": -1, "ok": True})
+                    break
+            """ % jpeg)
+        d.start()
+        self.assertEqual(d.shot(640, 1000), ("jpeg", jpeg, 640, 400), "the size and the budget go to the helper; its JPEG comes back whole")
+        d.stop()
 
     def test_it_trusts_no_answer(self):
         d = self.stand_in("""
@@ -306,6 +322,7 @@ class RealLentDesktopTest(unittest.TestCase):
             self.assertEqual(cmd("input", {"action": "type", "text": "echo sandboxed", "desk": "desk-a"})["op"], "ack")
             self.assertEqual(lent.xdotool(["xdotool", "getdisplaygeometry"])["out"].split(), ["800", "600"], "its own display")
             # Its programs run (the terminal needs the desk's own ptys, Link v0.65.1), and say why when they do not.
+            self.assertTrue(lent.native, "CI installs the Link under /usr: the Go helper runs (Link v0.67)")
             info = lent.logs()
             self.assertTrue(info["running"].get("display") and info["running"].get("wm"), info)
             self.assertTrue(info["running"].get("terminal"), "the terminal runs: %r" % info)

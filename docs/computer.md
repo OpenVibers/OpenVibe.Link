@@ -339,7 +339,12 @@ only where both are on.
   shell (the sandbox user's login shell is nologin); each program's output is kept in the desk's `/tmp` (the helper's
   `logs`), so a desktop that shows nothing says why.
 - **Screen, mouse and keyboard only.** `screen` and `input` on a desktop go to the helper over the sandbox's pipe (fds 3
-  and 4): a PNG of the screen, and the same xdotool command an owner's private desk would run. The plugin trusts
+  and 4). Where the sandbox sees the Link's own binary (installed under /usr or /opt), the helper is Go
+  (`openvibe-link desk-display`, v0.67): it reads the screen with X11 GetImage and sends a JPEG already at the asked
+  width and size, and does the mouse and keyboard through XTest in-process (measured on one machine: a click 3.7 ms
+  and a screenshot 19-29 ms, against 103 ms and 74-82 ms for the Python helper forking xdotool and ImageMagick); a
+  character with no key on the keymap still goes to xdotool. Elsewhere the Python helper (a PNG, the same xdotool
+  commands) runs. The plugin trusts
   nothing the helper answers beyond its shape, its size (32 MB) and its time. `browser` on a desktop is refused (its
   browser is a window there), as are `exec`, `fs`, `screen_stream` and everything else of the machine.
 - **What `describe` says.** `desk.kinds` lists `desktop` when it is lent and the machine has everything a desktop needs

@@ -67,10 +67,13 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq xvfb openbox xdotool imagemagick xterm
           d=$(mktemp -d) && chmod 755 "$d"
           go build -o "$d/openvibe-link" ./cmd/openvibe-link
+          # Where a desk host installs it: under /usr the sandbox sees it, so a lent desktop runs the Go helper
+          # (openvibe-link desk-display, Link v0.67) rather than the Python one.
+          sudo install -m 0755 "$d/openvibe-link" /usr/local/bin/openvibe-link
           mkdir -m 700 "$d/config" "$d/state"
           echo '{"worker":{"enabled":true,"run_as":{"uid":65534,"gid":65534}}}' > "$d/config/config.json"
           sudo systemd-run --scope --quiet -p Delegate=yes env OPENVIBE_DESK_SANDBOX_TESTS=require \
-            OPENVIBE_LINK_EXE="$d/openvibe-link" OPENVIBE_LINK_CONFIG="$d/config" OPENVIBE_LINK_STATE="$d/state" sh -c '
+            OPENVIBE_LINK_EXE=/usr/local/bin/openvibe-link OPENVIBE_LINK_CONFIG="$d/config" OPENVIBE_LINK_STATE="$d/state" sh -c '
               cg=/sys/fs/cgroup$(sed -n "s/^0:://p" /proc/self/cgroup)
               mkdir "$cg/openvibe-link" && echo $$ > "$cg/openvibe-link/cgroup.procs"
               echo "+memory +pids +cpu +io" > "$cg/cgroup.subtree_control"
