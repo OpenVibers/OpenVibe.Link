@@ -40,6 +40,8 @@ type DeskSpec struct {
 	In, Out *os.File
 	// Stderr receives the program's stderr (nil: discarded).
 	Stderr *os.File
+	// Ptys gives the desk its own pseudo-terminals (a lent desktop's terminal, Link v0.65.1).
+	Ptys bool
 }
 
 // deskBindRoots are where a desk's extra read-only binds may come from: an install directory (a browser in /opt, a
@@ -112,7 +114,7 @@ func RunDesk(ctx context.Context, cfg config.WorkerConfig, d DeskSpec) (int, err
 
 	caps := cfg.Caps.WithDefaults()
 	caps.MaxPids, caps.MaxCPUMillis, caps.MaxDiskBytes = d.Pids, d.CPUMillis, d.DiskBytes
-	sb := &sandbox{}
+	sb := &sandbox{ptys: d.Ptys}
 	defer sb.close()
 	sr, sw, err := os.Pipe()
 	if err != nil {
@@ -148,7 +150,7 @@ func RunDesk(ctx context.Context, cfg config.WorkerConfig, d DeskSpec) (int, err
 		// These mandatory flags are last: no caller-supplied flag can override the proxy or leak protection.
 		d.Argv = append(d.Argv, egress.BrowserArgs(address)...)
 	}
-	spec := sandboxSpec{Root: root, Work: "/tmp/desk", Disk: d.DiskBytes, Links: links, Argv: d.Argv, Env: d.Env, Pipe: true,
+	spec := sandboxSpec{Root: root, Work: "/tmp/desk", Disk: d.DiskBytes, Links: links, Argv: d.Argv, Env: d.Env, Pipe: true, Ptys: d.Ptys,
 		Limits: []rlimit{{rlimitCORE, 0, 0}, {rlimitNOFILE, 8192, 8192}, {rlimitNPROC, uint64(d.Pids), uint64(d.Pids)},
 			{rlimitFSIZE, uint64(d.DiskBytes), uint64(d.DiskBytes)}}}
 	if d.Egress != "" && d.Proxy == nil {
@@ -159,6 +161,11 @@ func RunDesk(ctx context.Context, cfg config.WorkerConfig, d DeskSpec) (int, err
 	}
 	for _, p := range extra {
 		spec.Binds = append(spec.Binds, bindSpec{Path: p})
+	}
+	if d.Ptys {
+		// A terminal opens /dev/tty, which is always the opener's own controlling terminal (here a pty of the desk's
+		// own devpts): it shows nothing of the host's terminals. xterm stopped at "open ttydev" without it.
+		spec.Binds = append(spec.Binds, bindSpec{Path: "/dev/tty", Dev: true})
 	}
 	sf, err := specFile(spec)
 	if err != nil {

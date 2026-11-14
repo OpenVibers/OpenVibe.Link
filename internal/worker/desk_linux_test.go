@@ -214,3 +214,19 @@ func TestDeskRunsARealBrowser(t *testing.T) {
 	}
 	t.Logf("Chrome %s ran confined", res["product"])
 }
+
+// TestMountType reads a mountinfo line's filesystem type past its optional fields: a desk's own devpts is allowed
+// writable only when it is one (writableMounts with ptys, Link v0.65.1).
+func TestMountType(t *testing.T) {
+	cases := map[string]string{
+		"36 35 0:31 / /dev/pts rw,nosuid,noexec,relatime shared:5 - devpts devpts rw,mode=620,ptmxmode=666": "devpts",
+		"40 35 0:33 / /tmp rw,nosuid,nodev - tmpfs tmpfs rw,size=1024k":                                     "tmpfs",
+		"41 35 0:34 / /dev/pts rw master:1 shared:7 - tmpfs none rw":                                        "tmpfs",
+		"42 35 0:35 / /x rw": "",
+	}
+	for line, want := range cases {
+		if got := mountType(strings.Fields(line)); got != want {
+			t.Fatalf("%q: %q, want %q", line, got, want)
+		}
+	}
+}

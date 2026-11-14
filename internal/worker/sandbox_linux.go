@@ -59,6 +59,9 @@ type sandboxSpec struct {
 	// Pipe: a desk's program (RunDesk) talks both ways, as a browser's --remote-debugging-pipe does: it reads on fd 3
 	// and writes on fd 4, which arrives on artifactFD (a desk has no artifact) and takes fd 4 just before execve.
 	Pipe bool `json:"pipe,omitempty"`
+	// Ptys gives the sandbox a pseudo-terminal instance of its own (a new devpts at /dev/pts, /dev/ptmx leading to it):
+	// a lent desktop's terminal needs one (Link v0.65.1). Nothing of the host's terminals is visible through it.
+	Ptys bool `json:"ptys,omitempty"`
 }
 
 // statusOut is where the init reports: statusFD, until a desk's pipe takes fd 4 (enterSandbox).
@@ -194,6 +197,19 @@ func enterSandbox() error {
 	}
 	if err := step("mounting /proc", syscall.Mount("proc", r+"/proc", "proc", syscall.MS_NOSUID|syscall.MS_NODEV|syscall.MS_NOEXEC, "")); err != nil {
 		return err
+	}
+	if s.Ptys {
+		// A new devpts instance, the sandbox's own (newinstance): the ptys made in it are the only ones it sees.
+		if err := os.MkdirAll(r+"/dev/pts", 0o755); err != nil {
+			return err
+		}
+		if err := step("mounting /dev/pts", syscall.Mount("devpts", r+"/dev/pts", "devpts", syscall.MS_NOSUID|syscall.MS_NOEXEC,
+			"newinstance,ptmxmode=0666,mode=0620")); err != nil {
+			return err
+		}
+		if err := step("linking /dev/ptmx", os.Symlink("pts/ptmx", r+"/dev/ptmx")); err != nil {
+			return err
+		}
 	}
 	// The private root becomes /; the host's root, stacked on it by pivot_root, is detached with everything under it.
 	if err := step("entering the private root", syscall.Chdir(r)); err != nil {
@@ -1032,8 +1048,8 @@ func resolved(p string) []string {
 }
 
 // writableMounts lists the mounts of the process pid that are not read-only, except its /tmp, its /proc and the
-// device nodes: what a job could write to besides its own scratch space.
-func writableMounts(pid int) ([]string, error) {
+// device nodes, and with ptys its own devpts at /dev/pts: what a job could write to besides its own scratch space.
+func writableMounts(pid int, ptys bool) ([]string, error) {
 	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/mountinfo")
 	if err != nil {
 		return nil, err
@@ -1047,11 +1063,28 @@ func writableMounts(pid int) ([]string, error) {
 		if f[4] == "/tmp" || f[4] == "/proc" || slices.Contains(devPaths, f[4]) {
 			continue
 		}
+		// A desk's own pseudo-terminals (sandboxSpec.Ptys): a devpts at /dev/pts, and nothing else there.
+		if ptys && f[4] == "/dev/pts" && mountType(f) == "devpts" {
+			continue
+		}
+		if ptys && f[4] == "/dev/tty" && mountType(f) == "devtmpfs" {
+			continue // the device node /dev/tty, bound as the other device nodes are
+		}
 		if !slices.Contains(strings.Split(f[5], ","), "ro") {
 			rw = append(rw, f[4])
 		}
 	}
 	return rw, nil
+}
+
+// mountType is a mountinfo line's filesystem type: the field after the "-" that ends the optional fields.
+func mountType(f []string) string {
+	for i := 6; i < len(f)-1; i++ {
+		if f[i] == "-" {
+			return f[i+1]
+		}
+	}
+	return ""
 }
 
 // under reports whether p is one of dirs or lies inside one.

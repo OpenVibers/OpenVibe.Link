@@ -41,7 +41,8 @@ HELPER = r'''
 import base64, json, os, shutil, signal, subprocess, sys, time
 W, H, APPS = int(sys.argv[1]), int(sys.argv[2]), json.loads(sys.argv[3])
 HOME = os.environ.get("HOME") or "/tmp/desk"
-ENV = {"DISPLAY": ":0", "HOME": HOME, "TMPDIR": HOME, "PATH": "/usr/bin:/bin", "LANG": "C.UTF-8",
+ENV = {"DISPLAY": ":0", "HOME": HOME, "TMPDIR": HOME, "PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "TERM": "xterm-256color",
+       "SHELL": "/bin/bash" if os.path.exists("/bin/bash") else "/bin/sh",
        "DBUS_SESSION_BUS_ADDRESS": "disabled:", "XDG_RUNTIME_DIR": HOME + "/run", "NO_AT_BRIDGE": "1"}
 os.makedirs(ENV["XDG_RUNTIME_DIR"], mode=0o700, exist_ok=True)
 rd = os.fdopen(3, "rb", buffering=0)
@@ -66,8 +67,15 @@ def end(code):
                 pass
     os._exit(code)
 signal.signal(signal.SIGTERM, lambda *a: end(0))
-quiet = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=HOME)
-x = subprocess.Popen(["Xvfb", ":0", "-screen", "0", "%dx%dx24" % (W, H), "-nolisten", "tcp", "-noreset"], env=ENV, **quiet)
+LOGS = HOME + "/.logs"
+os.makedirs(LOGS, mode=0o700, exist_ok=True)
+def logged(name):
+    f = open("%s/%s.log" % (LOGS, name), "ab")
+    return dict(stdin=subprocess.DEVNULL, stdout=f, stderr=f, cwd=HOME)
+# Xvfb is not root in here, so it will not make the socket's directory itself.
+os.makedirs("/tmp/.X11-unix", exist_ok=True)
+os.chmod("/tmp/.X11-unix", 0o1777)
+x = subprocess.Popen(["Xvfb", ":0", "-screen", "0", "%dx%dx24" % (W, H), "-nolisten", "tcp", "-noreset"], env=ENV, **logged("display"))
 procs.append(x)
 for _ in range(300):
     if os.path.exists("/tmp/.X11-unix/X0") or x.poll() is not None:
@@ -80,7 +88,7 @@ if x.poll() is not None or not os.path.exists("/tmp/.X11-unix/X0"):
 started = []
 for name, argv in APPS:
     try:
-        procs.append(subprocess.Popen(argv, env=ENV, start_new_session=True, **quiet))
+        procs.append(subprocess.Popen(argv, env=ENV, start_new_session=True, **logged(name)))
         started.append(name)
         if name == "wm":
             time.sleep(0.5)
@@ -116,6 +124,16 @@ for line in rd:
             p = run(argv, 30)
             say({"id": rid, "ok": p.returncode == 0, "out": p.stdout.decode("utf-8", "replace")[:4000],
                  "err": p.stderr.decode("utf-8", "replace")[:400]})
+        elif op == "logs":
+            # What each program said (its last 2 KB) and whether it still runs: why a desktop shows nothing.
+            tails = {}
+            for f in sorted(os.listdir(LOGS))[:8]:
+                with open("%s/%s" % (LOGS, f), "rb") as fh:
+                    fh.seek(0, 2)
+                    fh.seek(max(0, fh.tell() - 2048))
+                    tails[f[:-4]] = fh.read().decode("utf-8", "replace")
+            alive = {n: p.poll() is None for n, p in zip(["display"] + started, procs)}
+            say({"id": rid, "ok": True, "logs": tails, "running": alive})
         elif op == "stop":
             say({"id": rid, "ok": True})
             end(0)
@@ -297,6 +315,14 @@ class SandboxDesktop:
         if not data.startswith(b"\x89PNG\r\n\x1a\n"):
             raise Fault("hardware", "the desktop sent a picture that is not a PNG")
         return data
+
+    def logs(self):
+        """What each program on the desktop said lately, and which still run: {logs: {name: text}, running: {name: bool}}."""
+        msg = self.call("logs", SHOT_S)
+        logs = msg.get("logs") if isinstance(msg.get("logs"), dict) else {}
+        running = msg.get("running") if isinstance(msg.get("running"), dict) else {}
+        return {"logs": {str(k)[:40]: str(v)[-2048:] for k, v in list(logs.items())[:8]},
+                "running": {str(k)[:40]: v is True for k, v in list(running.items())[:8]}}
 
     def xdotool(self, argv):
         """Run one xdotool command on the desktop's display: {ok, out, err}."""
