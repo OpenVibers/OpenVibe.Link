@@ -576,6 +576,15 @@ func runConfined(argv []string) (uint32, error) {
 
 	app, _ := windows.UTF16PtrFromString(prog)
 	line, _ := windows.UTF16PtrFromString(windows.ComposeCommandLine(append([]string{prog}, argv[1:]...)))
+	// Windows reads LOCALAPPDATA and APPDATA from this process as well as from the child's block when it sets up the
+	// container, so they are set here too (the runner starts this launcher with an empty environment).
+	for k, id := range map[string]*windows.KNOWNFOLDERID{"LOCALAPPDATA": windows.FOLDERID_LocalAppData, "APPDATA": windows.FOLDERID_RoamingAppData} {
+		if os.Getenv(k) == "" {
+			if p, err := windows.KnownFolderPath(id, 0); err == nil {
+				_ = os.Setenv(k, p)
+			}
+		}
+	}
 	env := containerEnv(os.Environ())
 	var pi windows.ProcessInformation
 	flags := uint32(windows.EXTENDED_STARTUPINFO_PRESENT | windows.CREATE_SUSPENDED | windows.CREATE_NO_WINDOW | windows.CREATE_UNICODE_ENVIRONMENT)
