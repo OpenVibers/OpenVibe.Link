@@ -82,7 +82,18 @@ removes the entry and keeps the script, so `on` is instant again.
 **On macOS** (v0.70.0) the job worker runs this runner and nothing else: macOS has no namespaces, so the whole job runs
 under `sandbox-exec` with a profile that denies the network and every file write outside the job's folder, on top of
 Node's permission model below; `worker.egress` must be none, and the job is bounded by its wall time. `skills on`
-finds Homebrew's Node (`/opt/homebrew/bin/node`, `/usr/local/bin/node`). Windows comes next.
+finds Homebrew's Node (`/opt/homebrew/bin/node`, `/usr/local/bin/node`).
+
+**On Windows** (v0.71.0) the job worker runs this runner and nothing else too, in two layers. The whole job (the runner
+and everything it starts) is one Job Object: the job's memory limit (job memory) and CPU limit (per-job user time), at
+most 16 processes, and kill-on-close, so a kill or the end of the job leaves nothing running. The tool itself runs in an
+AppContainer (`OpenVibe.Link.Job`, Windows' app sandbox) with no capabilities: no network at all, loopback included,
+and no file it may read or write but its job folder and what every app may read (the system, Program Files), on top of
+Node's permission model below. The runner starts the tool through `openvibe-link job-sandbox -- node …`, the command the
+worker names in `OPENVIBE_CONFINE`, and writes its result to `OPENVIBE_RESULT_FILE` (Windows passes no fd 3), a file
+outside the job folder. A runner from before this (no `OPENVIBE_CONFINE`) is refused until `skills on` or the Link's
+refresh writes the current one; the probe runs a confined process that must write in its folder and fail to write or
+read outside it and to reach a loopback listener, or the class is not offered. `worker.egress` must be none.
 
 **1.1.0: a tool's code in the job itself.** OpenVibe.Tools runs the code tools people make on any machine that offers
 the runner (the person's own Link, a machine someone shares, or OpenVibe's own): the job's args are then

@@ -156,6 +156,15 @@ jobs:
       - name: plugin process tree (verbose)
         if: runner.os == 'Windows'
         run: go test -count=1 -v -run TestPluginKillEndsTheWholeTree ./internal/plugins
+      # Code tools on this OS (plan §AD.13 (2)): the skill runner's job in the OS sandbox (an AppContainer and a Job
+      # Object on Windows, sandbox-exec on macOS), required here so a sandbox that does not hold fails instead of skipping.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: code tools in the OS sandbox (verbose)
+        env:
+          OPENVIBE_WORKER_TESTS: require
+        run: go test -count=1 -v -run "TestSkillRunnerJobOn|TestJobSandboxCommandRuns" ./internal/worker
       - run: go test -count=1 ./...
 
   python:

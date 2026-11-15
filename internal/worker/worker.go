@@ -60,6 +60,9 @@ type Worker struct {
 // isolateFunc turns a job's command into the start of its sandbox.
 type isolateFunc func(*exec.Cmd, config.WorkerConfig, plan) (*sandbox, error)
 
+// SandboxArg is the Link's command that starts a job's tool in the Windows sandbox (SandboxMain; worker_windows.go).
+const SandboxArg = "job-sandbox"
+
 // plan is what isolate needs to know of a job besides its command.
 type plan struct {
 	root   string                // the host directory (empty, the job's) its private root is mounted on
@@ -552,6 +555,12 @@ func (w *Worker) execute(jb *job) protocol.JobExit {
 	go func() { defer readers.Done(); result = w.readResult(jb, resR) }()
 	readers.Wait()
 	_ = cmd.Wait()
+	if f := sb.resultFile(); f != "" && len(result) == 0 { // Windows: no fd 3, the runner wrote its result to a file
+		if fh, err := os.Open(f); err == nil {
+			result = w.readResult(jb, fh)
+			fh.Close()
+		}
+	}
 	wall := time.Since(start)
 	close(stop)
 	acc := <-watched

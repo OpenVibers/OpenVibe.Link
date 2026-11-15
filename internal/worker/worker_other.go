@@ -1,4 +1,4 @@
-//go:build !linux && !darwin
+//go:build !linux && !darwin && !windows
 
 package worker
 
@@ -25,6 +25,8 @@ func (*sandbox) ready(int) error { return errNotLinux }
 func (*sandbox) run() error      { return errNotLinux }
 func (*sandbox) oomKilled() bool { return false }
 func (*sandbox) close()          {}
+
+func (*sandbox) resultFile() string { return "" }
 
 func killGroup(p *os.Process) { _ = p.Kill() }
 

@@ -181,6 +181,16 @@ func TestRefreshBringsAnOlderRunnerUpToDate(t *testing.T) {
 	if changed, err := Refresh(config.Default()); err != nil || changed {
 		t.Fatalf("a runner that is off is left alone: %v (changed %v)", err, changed)
 	}
+	// The same version with other bytes (an earlier build of it) is written again; the config stays as it is.
+	if err := os.WriteFile(RunnerPath(dir), []byte("// 1.1.0 before the Windows sandbox\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := Refresh(cfg); err != nil || changed {
+		t.Fatalf("same version: %v (changed %v)", err, changed)
+	}
+	if got, _ := os.ReadFile(RunnerPath(dir)); !bytes.Equal(got, runnerJS) {
+		t.Fatal("a same-version script with other bytes was not written again")
+	}
 	// Windows has no read-only folder by mode bits, and root writes anywhere: the refusal is checked elsewhere.
 	if runtime.GOOS != "windows" && os.Geteuid() != 0 {
 		ro := t.TempDir()

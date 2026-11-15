@@ -256,6 +256,9 @@ func (s *sandbox) run() error {
 func (s *sandbox) oomKilled() bool { return s.cg != nil && s.cg.oomKilled() }
 
 // close releases the sandbox once its process ended: it kills what is left in its cgroup and removes it.
+// resultFile: the result comes on fd 3 here.
+func (*sandbox) resultFile() string { return "" }
+
 func (s *sandbox) close() {
 	s.started()
 	for _, f := range []*os.File{s.status, s.goW} {

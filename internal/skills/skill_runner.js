@@ -35,6 +35,11 @@
  *
  * A failed tool is still a job result: this process exits 0 whenever it wrote the result (the worker keeps a result
  * only from a function that exited 0), so the person sees what happened instead of a bare job failure.
+ *
+ * On Windows (Link v0.71.0) the worker sets two variables: OPENVIBE_RESULT_FILE, where the result goes instead of fd 3
+ * (Windows passes no fd 3), and OPENVIBE_CONFINE, the command (a JSON array) the tool is started through: the Link's
+ * job-sandbox, which runs it in an AppContainer with no network and no file but its own folder. Without it, a job on
+ * Windows runs no tool at all.
  */
 
 const fs = require('fs');
@@ -52,9 +57,18 @@ const TOOL_NAME = /^[a-z][a-z0-9_]{0,31}$/;
 // A job input's name (platform.job@1's file-name pattern): one path component, no traversal, no absolute path.
 const ENTRY_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
-/** The result on fd 3 (the worker's result channel), or one JSON line on stdout outside a job (tests). */
+/** The result on fd 3 (the worker's result channel; OPENVIBE_RESULT_FILE on Windows), or one JSON line on stdout
+ * outside a job (tests). */
 function writeResult(doc) {
     const text = JSON.stringify(doc);
+    if (process.env.OPENVIBE_RESULT_FILE) {
+        try {
+            fs.writeFileSync(process.env.OPENVIBE_RESULT_FILE, text);
+            return true;
+        } catch {
+            return false;
+        }
+    }
     try {
         fs.writeSync(3, text);
         return true;
@@ -126,9 +140,28 @@ function sourceFile(source) {
     return { dir, file };
 }
 
+/** The command the job sandbox starts a tool through (OPENVIBE_CONFINE, Windows), or none. */
+function confinement() {
+    const raw = process.env.OPENVIBE_CONFINE;
+    if (!raw) {
+        if (process.platform === 'win32' && process.argv[2] === 'job') throw new Error('on Windows a tool runs only inside the Link\'s job sandbox (OPENVIBE_CONFINE)');
+        return [];
+    }
+    const prefix = JSON.parse(raw);
+    if (!Array.isArray(prefix) || !prefix.length || !prefix.every((x) => typeof x === 'string' && x)) throw new Error('OPENVIBE_CONFINE is not a command');
+    return prefix;
+}
+
 /** Runs the tool and resolves with its result document (never rejects). */
 function runTool(tool, file, input, dir) {
     return new Promise((resolve) => {
+        let prefix;
+        try {
+            prefix = confinement();
+        } catch (e) {
+            resolve({ ok: false, error: e.message, exit: null });
+            return;
+        }
         const out = [];
         let outLen = 0;
         const err = [];
@@ -137,12 +170,9 @@ function runTool(tool, file, input, dir) {
         let overLimit = false;
         let spawnError = null;
 
-        const child = spawn(process.execPath, [
-            '--permission',
-            `--allow-fs-read=${dir}`,
-            '--disallow-code-generation-from-strings',
-            file,
-        ], { cwd: dir, env: {}, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+        const argv = [process.execPath, '--permission', `--allow-fs-read=${dir}`, '--disallow-code-generation-from-strings', file];
+        const [command, ...rest] = [...prefix, ...argv];
+        const child = spawn(command, rest, { cwd: dir, env: {}, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
 
         child.on('error', (e) => {
             spawnError = e.message;
