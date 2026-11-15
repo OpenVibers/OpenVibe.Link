@@ -340,10 +340,16 @@ only where both are on.
   `logs`), so a desktop that shows nothing says why.
 - **Screen, mouse and keyboard only.** `screen` and `input` on a desktop go to the helper over the sandbox's pipe (fds 3
   and 4). Where the sandbox sees the Link's own binary (installed under /usr or /opt), the helper is Go
-  (`openvibe-link desk-display`, v0.67): it reads the screen with X11 GetImage and sends a JPEG already at the asked
-  width and size, and does the mouse and keyboard through XTest in-process (measured on one machine: a click 3.7 ms
-  and a screenshot 19-29 ms, against 103 ms and 74-82 ms for the Python helper forking xdotool and ImageMagick); a
-  character with no key on the keymap still goes to xdotool. Elsewhere the Python helper (a PNG, the same xdotool
+  (`openvibe-link desk-display`, v0.67): it sends a JPEG already at the asked width and size, and does the mouse and
+  keyboard through XTest in-process (measured on one machine: a click 3.7 ms against 103 ms for the Python helper
+  forking xdotool); a character with no key on the keymap still goes to xdotool. Since v0.68 it reads the screen
+  through MIT-SHM (the X server writes the picture into memory it shares with the helper inside the sandbox: 0.44 ms
+  for 1280×800, against 3.2 ms over the socket) and encodes X's own BGRX pixels with libjpeg-turbo, loaded at run time
+  so the Link stays one binary without cgo (2.6 ms against 24 ms for Go's encoder). A whole 1280×800 picture is about
+  3 ms; the Python helper took 74-82 ms. Where libjpeg-turbo is missing (the installer adds `libturbojpeg0`, or
+  `libturbojpeg` on Ubuntu 24.04, with `--desktops`) Go's encoder runs, and where MIT-SHM is refused the socket does;
+  the helper's ready message says which (`capture`: `shm` or `socket`, `encoder`: `libjpeg-turbo` or `go`). A narrower
+  picture than the desk is shrunk by averaging, so text stays legible. Elsewhere the Python helper (a PNG, the same xdotool
   commands) runs. The plugin trusts
   nothing the helper answers beyond its shape, its size (32 MB) and its time. `browser` on a desktop is refused (its
   browser is a window there), as are `exec`, `fs`, `screen_stream` and everything else of the machine.

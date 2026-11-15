@@ -323,6 +323,8 @@ class RealLentDesktopTest(unittest.TestCase):
             self.assertEqual(lent.xdotool(["xdotool", "getdisplaygeometry"])["out"].split(), ["800", "600"], "its own display")
             # Its programs run (the terminal needs the desk's own ptys, Link v0.65.1), and say why when they do not.
             self.assertTrue(lent.native, "CI installs the Link under /usr: the Go helper runs (Link v0.67)")
+            # Link v0.68: the screen read through MIT-SHM inside the sandbox, and libjpeg-turbo (CI installs it) encoding.
+            self.assertEqual(lent.paths, {"capture": "shm", "encoder": "libjpeg-turbo"}, "the fast picture path")
             info = lent.logs()
             self.assertTrue(info["running"].get("display") and info["running"].get("wm"), info)
             self.assertTrue(info["running"].get("terminal"), "the terminal runs: %r" % info)

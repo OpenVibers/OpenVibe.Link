@@ -1,11 +1,13 @@
 module github.com/OpenVibers/OpenVibe.Link
 
-go 1.24.7
+go 1.25.0
 
 require (
 	fyne.io/systray v1.12.2
+	github.com/ebitengine/purego v0.11.3
 	github.com/godbus/dbus/v5 v5.1.0
 	github.com/gorilla/websocket v1.5.3
+	github.com/jezek/xgb v1.3.1
 	github.com/kardianos/service v1.3.0
 	github.com/makiuchi-d/gozxing v0.1.1
 	github.com/pion/ice/v4 v4.4.4
@@ -18,7 +20,6 @@ require (
 
 require (
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/jezek/xgb v1.3.1 // indirect
 	github.com/pion/datachannel v1.6.3 // indirect
 	github.com/pion/dtls/v3 v3.1.9 // indirect
 	github.com/pion/logging v0.2.4 // indirect

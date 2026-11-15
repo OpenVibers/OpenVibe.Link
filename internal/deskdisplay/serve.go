@@ -131,7 +131,8 @@ func Serve(width, height int, apps []App, in io.Reader, out io.Writer) error {
 			time.Sleep(300 * time.Millisecond)
 		}
 	}
-	write(map[string]any{"ready": true, "apps": started, "native": true})
+	capture, encoder := d.Paths()
+	write(map[string]any{"ready": true, "apps": started, "native": true, "capture": capture, "encoder": encoder})
 
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 64*1024), 1<<20)
