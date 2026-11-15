@@ -993,6 +993,110 @@ $SUDO "$PIP" install --quiet --upgrade pip >/dev/null 2>&1 || true
 $SUDO "$PIP" install --quiet "$STATE/plugins/sdk" "$STATE/plugins/dryrun" "$STATE/plugins/relay"
 # driver_setup: the plugin of $DRIVER into the venv, and its PLUGINS, KIND and VIDEO for the config. Run again when the
 # owner chose another model on openvibe.bot/link than the one the bus suggested.
+# Browser desks run chrome-headless-shell (Link v0.69: about 40% less memory than full Chrome headless, and three
+# times quicker to start), Chrome for Testing's Linux x86-64 build. Each version is unpacked into a folder of its own
+# under /opt/openvibe-link and the link chrome-headless-shell is moved onto it in one step, so a desk already running
+# keeps the files it started with; a daily timer brings each Chrome stable release (its security fixes) within a day.
+install_headless_shell() {
+	say "installing chrome-headless-shell for browser desks (Chrome for Testing; a daily timer keeps it current)"
+	$SUDO mkdir -p /usr/local/lib/openvibe-link
+	$SUDO sh -c "cat > /usr/local/lib/openvibe-link/update-headless-shell && chmod 0755 /usr/local/lib/openvibe-link/update-headless-shell" <<'PY'
+#!/usr/bin/env python3
+"""chrome-headless-shell for OpenVibe Link's browser desks, kept current: Chrome for Testing's last-known-good Stable
+build for Linux x86-64, unpacked into ROOT/chrome-headless-shell-<version>, then ROOT/chrome-headless-shell (a link)
+moved onto it in one step. The two newest versions are kept, so a desk started on the one before keeps its files."""
+import io, json, os, shutil, subprocess, sys, tempfile, urllib.request, zipfile
+
+ROOT = os.environ.get("OPENVIBE_HEADLESS_SHELL_ROOT", "/opt/openvibe-link")
+LINK = os.path.join(ROOT, "chrome-headless-shell")
+LKG = "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json"
+FROM = "https://storage.googleapis.com/chrome-for-testing-public/"
+
+
+def fetch(url, limit):
+    with urllib.request.urlopen(url, timeout=300) as r:
+        data = r.read(limit + 1)
+    if len(data) > limit:
+        sys.exit("too large: %s" % url)
+    return data
+
+
+def main():
+    stable = json.loads(fetch(LKG, 4_000_000))["channels"]["Stable"]
+    version = stable["version"]
+    if not version.replace(".", "").isdigit():
+        sys.exit("an unexpected version: %r" % version)
+    url = next(d["url"] for d in stable["downloads"]["chrome-headless-shell"] if d["platform"] == "linux64")
+    if not url.startswith(FROM):
+        sys.exit("an unexpected download address: %s" % url)
+    target = os.path.join(ROOT, "chrome-headless-shell-" + version)
+    if os.path.realpath(LINK) == target and os.path.isfile(os.path.join(target, "chrome-headless-shell")):
+        return
+    os.makedirs(ROOT, mode=0o755, exist_ok=True)
+    tmp = tempfile.mkdtemp(prefix=".chs-", dir=ROOT)
+    try:
+        with zipfile.ZipFile(io.BytesIO(fetch(url, 600_000_000))) as z:
+            for info in z.infolist():
+                parts = info.filename.split("/")
+                if info.filename.startswith("/") or ".." in parts or parts[0] != "chrome-headless-shell-linux64":
+                    sys.exit("an unexpected path in the archive: %s" % info.filename)
+            z.extractall(tmp)
+            for info in z.infolist():   # zipfile drops the modes: put the archive's back (the executables)
+                mode = (info.external_attr >> 16) & 0o777
+                if mode and not info.is_dir():
+                    os.chmod(os.path.join(tmp, info.filename), mode & 0o755)
+        unpacked = os.path.join(tmp, "chrome-headless-shell-linux64")
+        os.chmod(unpacked, 0o755)
+        subprocess.run([os.path.join(unpacked, "chrome-headless-shell"), "--version"], check=True, timeout=60,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        shutil.rmtree(target, ignore_errors=True)
+        os.rename(unpacked, target)
+        step = LINK + ".new"
+        if os.path.lexists(step):
+            os.unlink(step)
+        os.symlink(os.path.basename(target), step)
+        os.replace(step, LINK)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    kept = sorted((d for d in os.listdir(ROOT) if d.startswith("chrome-headless-shell-")),
+                  key=lambda d: [int(x) for x in d.rsplit("-", 1)[1].split(".")])
+    for old in kept[:-2]:
+        shutil.rmtree(os.path.join(ROOT, old), ignore_errors=True)
+    print("chrome-headless-shell %s" % version)
+
+
+if __name__ == "__main__":
+    main()
+PY
+	$SUDO sh -c "cat > /etc/systemd/system/openvibe-link-headless-shell.service" <<'EOF'
+[Unit]
+Description=Keep chrome-headless-shell current for OpenVibe Link's browser desks
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/openvibe-link/update-headless-shell
+EOF
+	$SUDO sh -c "cat > /etc/systemd/system/openvibe-link-headless-shell.timer" <<'EOF'
+[Unit]
+Description=Keep chrome-headless-shell current for OpenVibe Link's browser desks, daily
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=2h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+	$SUDO systemctl daemon-reload >/dev/null 2>&1
+	$SUDO systemctl enable --now openvibe-link-headless-shell.timer >/dev/null 2>&1 ||
+		say "warning: the daily chrome-headless-shell timer could not be turned on"
+	$SUDO /usr/local/lib/openvibe-link/update-headless-shell >/dev/null 2>&1 ||
+		say "warning: chrome-headless-shell could not be installed now: browser desks use Chrome until the timer installs it"
+}
+
 driver_setup() {
 PLUGINS='[{"name": "dryrun"}]'
 KIND=onboard
@@ -1066,6 +1170,9 @@ if [ "$DESK_HOST" = shared ]; then
 			# No Chrome for Linux on ARM: Debian's Chromium is a .deb (Ubuntu's is a snap, which cannot run sandboxed).
 			$SUDO apt-get install -y chromium >/dev/null 2>&1 ||
 				say "warning: no Chromium .deb here (Ubuntu's is a snap): use Debian on an ARM desk host, or a Chromium build under /opt"
+		fi
+		if [ "$(dpkg --print-architecture 2>/dev/null)" = amd64 ]; then
+			install_headless_shell
 		fi
 	else
 		say "install Google Chrome (or a Chromium that is not a snap), fonts, nftables and iproute2: shared desks need them"
