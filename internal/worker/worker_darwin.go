@@ -94,6 +94,9 @@ func (*sandbox) run() error      { return nil }
 func (*sandbox) oomKilled() bool { return false }
 func (*sandbox) close()          {}
 
+// resultFile: the result comes on fd 3 here.
+func (*sandbox) resultFile() string { return "" }
+
 func killGroup(p *os.Process) {
 	if err := syscall.Kill(-p.Pid, syscall.SIGKILL); err != nil {
 		_ = p.Kill()

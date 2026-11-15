@@ -50,6 +50,7 @@ import (
 	"github.com/OpenVibers/OpenVibe.Link/internal/safety"
 	"github.com/OpenVibers/OpenVibe.Link/internal/service"
 	"github.com/OpenVibers/OpenVibe.Link/internal/skills"
+	"github.com/OpenVibers/OpenVibe.Link/internal/worker"
 )
 
 // version is set at build time: -ldflags "-X main.version=v0.1.0".
@@ -181,6 +182,9 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 	}
 	if cmd == "desk-sandbox" { // its own flags, up to "--": a browser's flags after it are never the Link's
 		return cmdDeskSandbox(rest, stderr)
+	}
+	if cmd == worker.SandboxArg { // Windows: a job's tool, started by the skill runner, in the AppContainer
+		return worker.SandboxMain(rest, stderr)
 	}
 	if cmd == "desk-display" { // inside a lent desktop's sandbox: its display, apps and pipe (internal/deskdisplay)
 		return cmdDeskDisplay(rest, stderr)

@@ -3,6 +3,7 @@
 package skills
 
 import (
+	"bytes"
 	_ "embed"
 	"errors"
 	"fmt"
@@ -79,7 +80,8 @@ func FindNode(explicit string) (Node, error) {
 			continue
 		}
 		st, err := os.Stat(abs)
-		if err != nil || !st.Mode().IsRegular() || st.Mode().Perm()&0o111 == 0 {
+		// Windows has no execute bit: a regular file there is judged by running it (nodeVersion) below.
+		if err != nil || !st.Mode().IsRegular() || (runtime.GOOS != "windows" && st.Mode().Perm()&0o111 == 0) {
 			tried = append(tried, fmt.Sprintf("%s (not an executable file)", abs))
 			continue
 		}
@@ -209,10 +211,21 @@ func Enable(cfg *config.Config, dir string, node Node) (config.FunctionConfig, b
 // OpenVibe.Tools) reach a machine as soon as its Link is updated, without `skills on` again. It reports whether the
 // config changed; a runner that is off, or already current, is left alone. A directory this process cannot write
 // (the runner was turned on with sudo and the Link runs unprivileged) is an error and the entry keeps its version.
+// At the same version, a script whose bytes differ from this Link's (an earlier build of the version: v0.71.0's adds
+// the Windows sandbox) is written again too, leaving the config as it is.
 func Refresh(cfg *config.Config) (bool, error) {
 	for i, f := range cfg.Worker.Functions {
-		if f.Name != Name || f.Class != config.ClassFunction || f.Version == Version {
+		if f.Name != Name || f.Class != config.ClassFunction {
 			continue
+		}
+		if f.Version == Version {
+			if f.ArtifactDir == "" {
+				continue
+			}
+			if b, err := os.ReadFile(RunnerPath(f.ArtifactDir)); err == nil && bytes.Equal(b, runnerJS) {
+				continue
+			}
+			return false, writeRunner(f.ArtifactDir)
 		}
 		dir := f.ArtifactDir
 		if dir == "" {
