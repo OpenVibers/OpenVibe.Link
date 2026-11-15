@@ -433,30 +433,52 @@ func grantDir(dir string, sid *windows.SID, mask windows.ACCESS_MASK) error {
 	return windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION, nil, nil, acl, nil)
 }
 
-// containerEnv is the environment block a confined process starts with: this launcher's own (the skill runner starts a
-// tool with an empty one, to which Node adds the system's required variables) plus LOCALAPPDATA and APPDATA when they
-// are missing, which Windows needs to set up an AppContainer process (it points them at the container's own folders;
-// without them CreateProcess fails with ERROR_ENVVAR_NOT_FOUND). UTF-16, sorted, double-NUL terminated.
-func containerEnv(base []string) []uint16 {
-	have := map[string]bool{}
-	for _, kv := range base {
-		k, _, _ := strings.Cut(kv, "=")
-		have[strings.ToUpper(k)] = true
+// identityVars name the machine and its network; a tool on a machine someone shares gets none of them.
+var identityVars = map[string]bool{"COMPUTERNAME": true, "LOGONSERVER": true, "USERDOMAIN_ROAMINGPROFILE": true, "CLIENTNAME": true,
+	"SESSIONNAME": true, "ONEDRIVE": true, "ONEDRIVECONSUMER": true, "ONEDRIVECOMMERCIAL": true}
+
+// userEnvironment sets this process's environment to the user's default one (their profile's folders, the system's
+// variables), keeping TEMP and TMP as they are (the job's).
+func userEnvironment() error {
+	var tok windows.Token
+	if err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_QUERY|windows.TOKEN_DUPLICATE, &tok); err != nil {
+		return err
 	}
-	env := append([]string(nil), base...)
-	for k, id := range map[string]*windows.KNOWNFOLDERID{"LOCALAPPDATA": windows.FOLDERID_LocalAppData, "APPDATA": windows.FOLDERID_RoamingAppData} {
-		if have[k] {
+	defer tok.Close()
+	def, err := tok.Environ(false)
+	if err != nil {
+		return err
+	}
+	keep := map[string]string{"TEMP": os.Getenv("TEMP"), "TMP": os.Getenv("TMP")}
+	for _, kv := range def {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok || k == "" {
 			continue
 		}
-		if p, err := windows.KnownFolderPath(id, 0); err == nil {
-			env = append(env, k+"="+p)
+		if t, held := keep[strings.ToUpper(k)]; held && t != "" {
+			continue
 		}
+		_ = os.Setenv(k, v)
+	}
+	return nil
+}
+
+// containerEnv is the environment block a confined process starts with: this launcher's (the user's default, see
+// userEnvironment) without what names the machine. UTF-16, sorted, double-NUL terminated.
+func containerEnv(base []string) []uint16 {
+	env := make([]string, 0, len(base))
+	for _, kv := range base {
+		k, _, _ := strings.Cut(kv, "=")
+		if k == "" || identityVars[strings.ToUpper(k)] {
+			continue // also the drive-letter entries (=C:=C:\...)
+		}
+		env = append(env, kv)
 	}
 	sort.Slice(env, func(i, j int) bool { return strings.ToUpper(env[i]) < strings.ToUpper(env[j]) })
 	var block []uint16
 	for _, kv := range env {
-		if strings.HasPrefix(kv, "=") || strings.IndexByte(kv, 0) >= 0 {
-			continue // the drive-letter entries (=C:=C:\...) and anything with a NUL
+		if strings.IndexByte(kv, 0) >= 0 {
+			continue
 		}
 		u, err := windows.UTF16FromString(kv)
 		if err != nil {
@@ -576,20 +598,24 @@ func runConfined(argv []string) (uint32, error) {
 
 	app, _ := windows.UTF16PtrFromString(prog)
 	line, _ := windows.UTF16PtrFromString(windows.ComposeCommandLine(append([]string{prog}, argv[1:]...)))
-	// Windows reads LOCALAPPDATA and APPDATA from this process as well as from the child's block when it sets up the
-	// container, so they are set here too (the runner starts this launcher with an empty environment).
-	for k, id := range map[string]*windows.KNOWNFOLDERID{"LOCALAPPDATA": windows.FOLDERID_LocalAppData, "APPDATA": windows.FOLDERID_RoamingAppData} {
-		if os.Getenv(k) == "" {
-			if p, err := windows.KnownFolderPath(id, 0); err == nil {
-				_ = os.Setenv(k, p)
-			}
-		}
+	// Windows sets an AppContainer process up from the user's profile (its folders under LOCALAPPDATA and the variables
+	// that point at them); the runner starts this launcher with an almost empty environment, its profile folder pointed
+	// at the job's. So this launcher takes the user's own default environment back (CreateEnvironmentBlock) for itself
+	// and for the child, keeping the job's TEMP and TMP.
+	if err := userEnvironment(); err != nil {
+		return 0, fmt.Errorf("the user's environment: %w", err)
 	}
 	env := containerEnv(os.Environ())
 	var pi windows.ProcessInformation
 	flags := uint32(windows.EXTENDED_STARTUPINFO_PRESENT | windows.CREATE_SUSPENDED | windows.CREATE_NO_WINDOW | windows.CREATE_UNICODE_ENVIRONMENT)
 	if err := windows.CreateProcess(app, line, nil, nil, len(handles) > 0, flags, &env[0], nil, &si.StartupInfo, &pi); err != nil {
-		return 0, fmt.Errorf("start %s in the sandbox: %w", prog, err)
+		var have []string // which profile variables were there, never their values: what a failure needs to be read
+		for _, k := range []string{"USERPROFILE", "LOCALAPPDATA", "APPDATA", "SystemDrive", "ProgramData", "TEMP"} {
+			if os.Getenv(k) != "" {
+				have = append(have, k)
+			}
+		}
+		return 0, fmt.Errorf("start %s in the sandbox: %w (set: %s)", prog, err, strings.Join(have, " "))
 	}
 	runtime.KeepAlive(caps)
 	runtime.KeepAlive(handles)
