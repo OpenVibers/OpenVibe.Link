@@ -80,7 +80,8 @@ func FindNode(explicit string) (Node, error) {
 			continue
 		}
 		st, err := os.Stat(abs)
-		if err != nil || !st.Mode().IsRegular() || st.Mode().Perm()&0o111 == 0 {
+		// Windows has no execute bit: a regular file there is judged by running it (nodeVersion) below.
+		if err != nil || !st.Mode().IsRegular() || (runtime.GOOS != "windows" && st.Mode().Perm()&0o111 == 0) {
 			tried = append(tried, fmt.Sprintf("%s (not an executable file)", abs))
 			continue
 		}
