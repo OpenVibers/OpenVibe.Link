@@ -29,6 +29,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -432,6 +433,43 @@ func grantDir(dir string, sid *windows.SID, mask windows.ACCESS_MASK) error {
 	return windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION, nil, nil, acl, nil)
 }
 
+// containerEnv is the environment block a confined process starts with: this launcher's own (the skill runner starts a
+// tool with an empty one, to which Node adds the system's required variables) plus LOCALAPPDATA and APPDATA when they
+// are missing, which Windows needs to set up an AppContainer process (it points them at the container's own folders;
+// without them CreateProcess fails with ERROR_ENVVAR_NOT_FOUND). UTF-16, sorted, double-NUL terminated.
+func containerEnv(base []string) []uint16 {
+	have := map[string]bool{}
+	for _, kv := range base {
+		k, _, _ := strings.Cut(kv, "=")
+		have[strings.ToUpper(k)] = true
+	}
+	env := append([]string(nil), base...)
+	for k, id := range map[string]*windows.KNOWNFOLDERID{"LOCALAPPDATA": windows.FOLDERID_LocalAppData, "APPDATA": windows.FOLDERID_RoamingAppData} {
+		if have[k] {
+			continue
+		}
+		if p, err := windows.KnownFolderPath(id, 0); err == nil {
+			env = append(env, k+"="+p)
+		}
+	}
+	sort.Slice(env, func(i, j int) bool { return strings.ToUpper(env[i]) < strings.ToUpper(env[j]) })
+	var block []uint16
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "=") || strings.IndexByte(kv, 0) >= 0 {
+			continue // the drive-letter entries (=C:=C:\...) and anything with a NUL
+		}
+		u, err := windows.UTF16FromString(kv)
+		if err != nil {
+			continue
+		}
+		block = append(block, u...) // ends with its own NUL
+	}
+	if len(block) == 0 {
+		return []uint16{0, 0}
+	}
+	return append(block, 0)
+}
+
 // procThreadAttributeSecurityCapabilities is PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES (not in x/sys/windows).
 const procThreadAttributeSecurityCapabilities = 0x00020009
 
@@ -538,13 +576,15 @@ func runConfined(argv []string) (uint32, error) {
 
 	app, _ := windows.UTF16PtrFromString(prog)
 	line, _ := windows.UTF16PtrFromString(windows.ComposeCommandLine(append([]string{prog}, argv[1:]...)))
+	env := containerEnv(os.Environ())
 	var pi windows.ProcessInformation
 	flags := uint32(windows.EXTENDED_STARTUPINFO_PRESENT | windows.CREATE_SUSPENDED | windows.CREATE_NO_WINDOW | windows.CREATE_UNICODE_ENVIRONMENT)
-	if err := windows.CreateProcess(app, line, nil, nil, len(handles) > 0, flags, nil, nil, &si.StartupInfo, &pi); err != nil {
+	if err := windows.CreateProcess(app, line, nil, nil, len(handles) > 0, flags, &env[0], nil, &si.StartupInfo, &pi); err != nil {
 		return 0, fmt.Errorf("start %s in the sandbox: %w", prog, err)
 	}
 	runtime.KeepAlive(caps)
 	runtime.KeepAlive(handles)
+	runtime.KeepAlive(env)
 	defer windows.CloseHandle(pi.Process)
 	defer windows.CloseHandle(pi.Thread)
 	if err := windows.AssignProcessToJobObject(job, pi.Process); err != nil {
