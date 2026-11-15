@@ -79,6 +79,11 @@ removes the entry and keeps the script, so `on` is instant again.
 
 ### What a job of the runner runs
 
+**On macOS** (v0.70.0) the job worker runs this runner and nothing else: macOS has no namespaces, so the whole job runs
+under `sandbox-exec` with a profile that denies the network and every file write outside the job's folder, on top of
+Node's permission model below; `worker.egress` must be none, and the job is bounded by its wall time. `skills on`
+finds Homebrew's Node (`/opt/homebrew/bin/node`, `/usr/local/bin/node`). Windows comes next.
+
 **1.1.0: a tool's code in the job itself.** OpenVibe.Tools runs the code tools people make on any machine that offers
 the runner (the person's own Link, a machine someone shares, or OpenVibe's own): the job's args are then
 `{"tool", "source", "sha256", "input"}`, with at most 64 KiB of JavaScript and its lowercase hex SHA-256. The runner

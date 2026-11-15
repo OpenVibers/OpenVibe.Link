@@ -65,6 +65,9 @@ func FindNode(explicit string) (Node, error) {
 		if runtime.GOOS == "linux" {
 			candidates = append(candidates, "/usr/bin/node", "/usr/local/bin/node")
 		}
+		if runtime.GOOS == "darwin" { // Homebrew on Apple silicon, then on Intel and the nodejs.org installer
+			candidates = append(candidates, "/opt/homebrew/bin/node", "/usr/local/bin/node")
+		}
 		if p, err := exec.LookPath("node"); err == nil {
 			candidates = append(candidates, p)
 		}

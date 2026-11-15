@@ -478,7 +478,7 @@ func (w *Worker) execute(jb *job) protocol.JobExit {
 	defer resR.Close()
 	// dir is only the mount point of the job's private root; it works in a fresh directory of the same name in its
 	// own /tmp.
-	work := "/tmp/" + filepath.Base(dir)
+	work := workDir(dir)
 	cmd := exec.Command(jb.fn.Command[0], jb.fn.Command[1:]...)
 	cmd.Dir, cmd.Env = work, jobEnv(jb.fn, work, id, jb.origin)
 	cmd.Stdin = bytes.NewReader(append(append([]byte(nil), jb.req.Args...), '\n'))
