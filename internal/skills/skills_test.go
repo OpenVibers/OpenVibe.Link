@@ -181,7 +181,8 @@ func TestRefreshBringsAnOlderRunnerUpToDate(t *testing.T) {
 	if changed, err := Refresh(config.Default()); err != nil || changed {
 		t.Fatalf("a runner that is off is left alone: %v (changed %v)", err, changed)
 	}
-	if os.Geteuid() != 0 {
+	// Windows has no read-only folder by mode bits, and root writes anywhere: the refusal is checked elsewhere.
+	if runtime.GOOS != "windows" && os.Geteuid() != 0 {
 		ro := t.TempDir()
 		cfg2 := config.Default()
 		if _, _, err := Enable(cfg2, ro, testNode(t)); err != nil {
