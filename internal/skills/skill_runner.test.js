@@ -61,7 +61,7 @@ process.stdin.on('data', (d) => input += d).on('end', () => {
     t('write', () => fs.writeFileSync('written.txt', 'x'));
     t('eval', () => eval('1+1'));
     t('function', () => Function('return 1')());
-    t('read_entry', () => fs.readFileSync('tool.js', 'utf8'));
+    t('read_entry', () => fs.readFileSync(__filename, 'utf8'));
     out.read_outside = (() => { try { fs.readFileSync(out.input.outside, 'utf8'); return 'ALLOWED'; } catch (e) { return e.code || e.name; } })();
     out.write_outside = (() => { try { fs.writeFileSync(out.input.outside + '.written', 'x'); return 'ALLOWED'; } catch (e) { return e.code || e.name; } })();
     process.stdout.write(JSON.stringify(out));

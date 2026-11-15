@@ -135,7 +135,9 @@ function entryFile(dir, entry) {
 /** Inline code (1.1.0): written once, read-only, into a new folder of its own under the job's scratch /tmp. */
 function sourceFile(source) {
     const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ov-tool-')));
-    const file = path.join(dir, 'tool.js');
+    // .cjs: CommonJS by its name, so Node looks for no package.json above it (in a Windows AppContainer the folders
+    // above the job's cannot be read).
+    const file = path.join(dir, 'tool.cjs');
     fs.writeFileSync(file, source, { mode: 0o400, flag: 'wx' });
     return { dir, file };
 }
@@ -170,7 +172,9 @@ function runTool(tool, file, input, dir) {
         let overLimit = false;
         let spawnError = null;
 
-        const argv = [process.execPath, '--permission', `--allow-fs-read=${dir}`, '--disallow-code-generation-from-strings', file];
+        // --preserve-symlinks-main: the main file is taken as given, not resolved folder by folder from the drive's root
+        // (which a Windows AppContainer may not read; the path is already real: sourceFile and entryFile resolve it).
+        const argv = [process.execPath, '--permission', `--allow-fs-read=${dir}`, '--disallow-code-generation-from-strings', '--preserve-symlinks-main', file];
         const [command, ...rest] = [...prefix, ...argv];
         const child = spawn(command, rest, { cwd: dir, env: {}, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
 
