@@ -18,7 +18,7 @@ import (
 const (
 	// Name and Version are the artifact the job names (platform.job@1 artifact.name/version).
 	Name    = "openvibe-skill-runner"
-	Version = "1.0.0"
+	Version = "1.1.0"
 	// File is the runner script inside the artifact directory.
 	File = "openvibe-skill-runner.js"
 	// MinNode is the first Node.js whose permission model is stable behind --permission (v22.13.0).
@@ -198,6 +198,30 @@ func Enable(cfg *config.Config, dir string, node Node) (config.FunctionConfig, b
 		return config.FunctionConfig{}, false, err
 	}
 	return entry, true, nil
+}
+
+// Refresh brings a skill runner that is on up to this Link's own: when worker.functions declares
+// openvibe-skill-runner at another version, the embedded script is written again into the entry's artifact
+// directory and the entry takes this Version, so jobs that name the new version (1.1.0: a made tool's inline source,
+// OpenVibe.Tools) reach a machine as soon as its Link is updated, without `skills on` again. It reports whether the
+// config changed; a runner that is off, or already current, is left alone. A directory this process cannot write
+// (the runner was turned on with sudo and the Link runs unprivileged) is an error and the entry keeps its version.
+func Refresh(cfg *config.Config) (bool, error) {
+	for i, f := range cfg.Worker.Functions {
+		if f.Name != Name || f.Class != config.ClassFunction || f.Version == Version {
+			continue
+		}
+		dir := f.ArtifactDir
+		if dir == "" {
+			return false, errors.New("the skill runner entry names no artifact directory")
+		}
+		if err := writeRunner(dir); err != nil {
+			return false, err
+		}
+		cfg.Worker.Functions[i].Version = Version
+		return true, nil
+	}
+	return false, nil
 }
 
 // Off removes every worker.functions entry named openvibe-skill-runner (of any version or class) and reports whether

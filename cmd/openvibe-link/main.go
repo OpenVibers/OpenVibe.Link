@@ -49,6 +49,7 @@ import (
 	"github.com/OpenVibers/OpenVibe.Link/internal/protocol"
 	"github.com/OpenVibers/OpenVibe.Link/internal/safety"
 	"github.com/OpenVibers/OpenVibe.Link/internal/service"
+	"github.com/OpenVibers/OpenVibe.Link/internal/skills"
 )
 
 // version is set at build time: -ldflags "-X main.version=v0.1.0".
@@ -99,7 +100,7 @@ Usage:
                     into each tool's own folders, inside one marked block
   openvibe-link skills on|off|status [--dir DIR] [--node PATH] [--json]
                     run a skill's code as a sandboxed job on this machine
-                    (openvibe-skill-runner@1.0.0; off until "on")
+                    (openvibe-skill-runner@1.1.0; off until "on")
   openvibe-link exchange serve --model <id> [--public-url URL]
                     serve a local model as an OpenVibe.Exchange seller offer
   openvibe-link stream --probe --whip-url URL [--seconds N] [--size WxH] [--json]
@@ -671,6 +672,18 @@ func cmdRun(g *globals, dryRun bool) error {
 	cfg, err := loadConfig(g)
 	if err != nil {
 		return err
+	}
+	// A skill runner that is on follows this Link's version (skills.Refresh): the new script, the new artifact version.
+	if !dryRun {
+		if changed, rerr := skills.Refresh(cfg); rerr != nil {
+			g.log.Warn("skill runner not refreshed; run `sudo openvibe-link skills on`", "err", rerr)
+		} else if changed {
+			if serr := config.Save(g.paths.ConfigFile(), cfg); serr != nil {
+				g.log.Warn("skill runner refreshed but the config was not saved", "err", serr)
+			} else {
+				g.log.Info("skill runner refreshed", "version", skills.Version)
+			}
+		}
 	}
 	if dryRun {
 		var keep []config.PluginConfig
