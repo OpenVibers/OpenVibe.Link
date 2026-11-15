@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * openvibe-skill-runner@1.0.0: run one tool of a declared skill as an OpenVibe Run job.
+ * openvibe-skill-runner@1.1.0: run one tool of a declared skill, or one tool a person made, as an OpenVibe Run job.
  *
  * The Node's job worker runs this file as the job's function (declared in worker.functions by
  * `openvibe-link skills on`). The job's args are one JSON line on stdin:
@@ -11,6 +11,11 @@
  * `tool` is the skill tool's name (for the error it reports), `entry` the name of the job input holding the tool's
  * code, and `input` the JSON the tool gets on its own stdin. Nothing is fetched and no path comes from the server:
  * the entry must be a regular file in the job's working directory, where the worker staged the inputs it checked.
+ *
+ * 1.1.0: or the code itself, `{ tool, source, sha256, input }` (OpenVibe.Tools' made code tools, plan §AD.13 (2)): at
+ * most 64 KiB of JavaScript and its lowercase hex SHA-256, which must match before anything is written or run. The
+ * runner writes it once, read-only, into a new folder of its own under the job's scratch /tmp (the only place a job
+ * may write) and runs it from there with read access to that folder alone: the same flags, the same limits.
  *
  * The tool runs with this Node's own node binary, cwd the job directory, an empty environment, and:
  *
@@ -36,7 +41,12 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 
+const crypto = require('crypto');
+const os = require('os');
+
 const MAX_STDOUT = 64 * 1024;
+const MAX_SOURCE = 64 * 1024;
+const SHA256 = /^[0-9a-f]{64}$/;
 const MAX_STDERR = 16 * 1024;
 const TOOL_NAME = /^[a-z][a-z0-9_]{0,31}$/;
 // A job input's name (platform.job@1's file-name pattern): one path component, no traversal, no absolute path.
@@ -84,7 +94,11 @@ function parseArgs(raw) {
     }
     if (!a || typeof a !== 'object' || Array.isArray(a)) throw new Error('the job args must be an object');
     if (typeof a.tool !== 'string' || !TOOL_NAME.test(a.tool)) throw new Error('tool must be a tool name');
-    if (typeof a.entry !== 'string' || !ENTRY_NAME.test(a.entry) || a.entry === '.' || a.entry === '..') {
+    if (Object.prototype.hasOwnProperty.call(a, 'source')) {
+        if (typeof a.source !== 'string' || !a.source || Buffer.byteLength(a.source) > MAX_SOURCE) throw new Error(`source must be the tool's code, at most ${MAX_SOURCE} bytes`);
+        if (typeof a.sha256 !== 'string' || !SHA256.test(a.sha256)) throw new Error('sha256 must be the source\'s lowercase hex SHA-256');
+        if (crypto.createHash('sha256').update(a.source).digest('hex') !== a.sha256) throw new Error('the source does not match its sha256');
+    } else if (typeof a.entry !== 'string' || !ENTRY_NAME.test(a.entry) || a.entry === '.' || a.entry === '..') {
         throw new Error('entry must be the name of one of the job inputs');
     }
     if (!Object.prototype.hasOwnProperty.call(a, 'input')) throw new Error('input is missing');
@@ -102,6 +116,14 @@ function entryFile(dir, entry) {
     }
     if (!st.isFile()) throw new Error(`entry ${entry} is not a regular file input`);
     return file;
+}
+
+/** Inline code (1.1.0): written once, read-only, into a new folder of its own under the job's scratch /tmp. */
+function sourceFile(source) {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ov-tool-')));
+    const file = path.join(dir, 'tool.js');
+    fs.writeFileSync(file, source, { mode: 0o400, flag: 'wx' });
+    return { dir, file };
 }
 
 /** Runs the tool and resolves with its result document (never rejects). */
@@ -184,8 +206,11 @@ async function main() {
     }
     let dir, file;
     try {
-        dir = fs.realpathSync(process.cwd());
-        file = entryFile(dir, args.entry);
+        if (typeof args.source === 'string') ({ dir, file } = sourceFile(args.source));
+        else {
+            dir = fs.realpathSync(process.cwd());
+            file = entryFile(dir, args.entry);
+        }
     } catch (e) {
         fail(e.message);
         return;

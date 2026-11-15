@@ -52,7 +52,7 @@ with a token from this `env`. Codes CLI 0.6.1 and later sends it to git as an `A
 alone, through `GIT_CONFIG_*` variables: it is never on a command line, in the clone's remote URL or in its
 `.git/config`, and it never passes through OpenVibe.
 
-## Skills that run code (`openvibe-skill-runner@1.0.0`)
+## Skills that run code (`openvibe-skill-runner@1.1.0`)
 
 A skill that declares `runs: "sandbox"` has tools whose code runs as a **function job** on a Link that declared the
 skill runner. The runner is a declared function like the Codes runner, and it is **off until the owner turns it on**:
@@ -69,7 +69,7 @@ once before writing anything), writes the runner script into `--dir` (default `/
 this entry to `worker.functions`:
 
 ```json
-{"name": "openvibe-skill-runner", "version": "1.0.0", "class": "function",
+{"name": "openvibe-skill-runner", "version": "1.1.0", "class": "function",
  "command": ["/usr/bin/node", "/opt/openvibe-skill-runner/openvibe-skill-runner.js", "job"],
  "artifact_dir": "/opt/openvibe-skill-runner"}
 ```
@@ -78,6 +78,20 @@ It does not turn `worker.enabled` on: the installer's `--worker` does. Restart t
 removes the entry and keeps the script, so `on` is instant again.
 
 ### What a job of the runner runs
+
+**On macOS** (v0.70.0) the job worker runs this runner and nothing else: macOS has no namespaces, so the whole job runs
+under `sandbox-exec` with a profile that denies the network and every file write outside the job's folder, on top of
+Node's permission model below; `worker.egress` must be none, and the job is bounded by its wall time. `skills on`
+finds Homebrew's Node (`/opt/homebrew/bin/node`, `/usr/local/bin/node`). Windows comes next.
+
+**1.1.0: a tool's code in the job itself.** OpenVibe.Tools runs the code tools people make on any machine that offers
+the runner (the person's own Link, a machine someone shares, or OpenVibe's own): the job's args are then
+`{"tool", "source", "sha256", "input"}`, with at most 64 KiB of JavaScript and its lowercase hex SHA-256. The runner
+checks the digest before anything is written, writes the code once, read-only, into a new folder of its own under the
+job's scratch `/tmp` (the only place a job may write), and runs it from there with read access to that folder alone,
+under the same flags and limits as below. A Link updated to a version with a newer runner refreshes the script and the
+declared version when it starts (`skills on` is not needed again; a runner turned on with sudo needs the Link to be
+able to write its folder, else it says so in the log and keeps the old version).
 
 The job's `args` are `{"tool": "<tool name>", "entry": "<input name>", "input": <JSON>}`. `entry` must be the name of
 one of the job's `inputs` (the contract's file-name pattern), which the worker staged in the job directory before the

@@ -16,7 +16,7 @@ var skillsRunnerUsage = "openvibe-link skills on [--dir DIR] [--node PATH]\n" +
 	"openvibe-link skills status [--json]\n" +
 	"\n" +
 	"  Runs one tool of a declared skill as a sandboxed function job on this\n" +
-	"  machine (artifact openvibe-skill-runner@1.0.0, docs/worker.md). The job's\n" +
+	"  machine (artifact openvibe-skill-runner@1.1.0, docs/worker.md). The job's\n" +
 	"  code is the job's own checked input; it runs with this machine's Node.js,\n" +
 	"  no environment, no child processes or workers, no addons, no eval, and\n" +
 	"  reads nothing outside the job directory. The network and every kernel\n" +

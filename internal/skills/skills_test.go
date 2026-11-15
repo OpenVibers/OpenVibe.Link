@@ -151,3 +151,50 @@ func TestDefaultDirIsNotAWorkerRefusedPath(t *testing.T) {
 		}
 	}
 }
+
+// TestRefreshBringsAnOlderRunnerUpToDate: a runner turned on by an older Link (1.0.0, an older script) takes this
+// Link's script and Version at start; one already current, or off, is left alone; an unwritable folder keeps the old
+// version and says why.
+func TestRefreshBringsAnOlderRunnerUpToDate(t *testing.T) {
+	cfg := config.Default()
+	dir := t.TempDir()
+	if _, _, err := Enable(cfg, dir, testNode(t)); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Worker.Functions[0].Version = "1.0.0"
+	if err := os.WriteFile(RunnerPath(dir), []byte("// an older runner\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := Refresh(cfg)
+	if err != nil || !changed {
+		t.Fatalf("Refresh: %v (changed %v)", err, changed)
+	}
+	if cfg.Worker.Functions[0].Version != Version {
+		t.Fatalf("version %q, want %q", cfg.Worker.Functions[0].Version, Version)
+	}
+	if got, _ := os.ReadFile(RunnerPath(dir)); !bytes.Equal(got, runnerJS) {
+		t.Fatal("the script on disk is not this Link's")
+	}
+	if changed, err := Refresh(cfg); err != nil || changed {
+		t.Fatalf("a current runner is left alone: %v (changed %v)", err, changed)
+	}
+	if changed, err := Refresh(config.Default()); err != nil || changed {
+		t.Fatalf("a runner that is off is left alone: %v (changed %v)", err, changed)
+	}
+	// Windows has no read-only folder by mode bits, and root writes anywhere: the refusal is checked elsewhere.
+	if runtime.GOOS != "windows" && os.Geteuid() != 0 {
+		ro := t.TempDir()
+		cfg2 := config.Default()
+		if _, _, err := Enable(cfg2, ro, testNode(t)); err != nil {
+			t.Fatal(err)
+		}
+		cfg2.Worker.Functions[0].Version = "1.0.0"
+		if err := os.Chmod(ro, 0o555); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(ro, 0o755) })
+		if changed, err := Refresh(cfg2); err == nil || changed || cfg2.Worker.Functions[0].Version != "1.0.0" {
+			t.Fatalf("an unwritable folder: err %v, changed %v, version %q", err, changed, cfg2.Worker.Functions[0].Version)
+		}
+	}
+}

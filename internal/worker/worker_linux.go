@@ -395,6 +395,9 @@ func probeSandbox(cfg config.WorkerConfig, isolate isolateFunc, egress string) e
 
 // killGroup SIGKILLs the job's process group while its leader lives, then the leader; the leader is PID 1 of the
 // job's PID namespace, so its death also kills anything that left the group.
+// workDir: the job works in a fresh directory of the same name in its private root's /tmp.
+func workDir(dir string) string { return "/tmp/" + filepath.Base(dir) }
+
 func killGroup(p *os.Process) {
 	if p.Signal(syscall.Signal(0)) == nil {
 		_ = syscall.Kill(-p.Pid, syscall.SIGKILL)

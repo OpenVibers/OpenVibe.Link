@@ -1,6 +1,6 @@
 'use strict';
 
-// Tests for openvibe-skill-runner@1.0.0: the declared function that runs one skill tool in the Node's job sandbox.
+// Tests for openvibe-skill-runner@1.1.0: the declared function that runs one skill tool in the Node's job sandbox.
 //
 // Each test runs the runner as the job worker would: the args are one JSON line on stdin, the result is read from fd 3,
 // the entry is a file in the job directory, and the runner is the parent of the tool. The runner is exercised directly,
@@ -107,6 +107,46 @@ test('the tool cannot spawn a process, start a worker, write a file, read outsid
     assert.equal(o.read_entry, 'ALLOWED'); // its own entry is readable: the job directory is the one allowed tree
     assert.equal(fs.existsSync(path.join(r.dir, 'written.txt')), false);
     assert.equal(fs.existsSync(out + '.written'), false);
+});
+
+// 1.1.0: the tool's code in the job's args (OpenVibe.Tools' made code tools), checked against its SHA-256.
+const sha = (text) => require('node:crypto').createHash('sha256').update(text).digest('hex');
+
+test('1.1.0: inline source with its sha256 runs under the same flags, from a folder of its own', (t) => {
+    const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ov-skill-')), 'outside.txt');
+    fs.writeFileSync(out, 'not yours');
+    t.after(() => fs.rmSync(path.dirname(out), { recursive: true, force: true }));
+    const r = runJob(t, { args: { tool: 'made_report', source: REPORT, sha256: sha(REPORT), input: { outside: out, n: 3 } } });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.result.ok, true, r.raw);
+    const o = r.result.output;
+    assert.equal(o.input.n, 3);
+    assert.deepEqual(o.env, []);
+    assert.equal(o.spawn, 'ERR_ACCESS_DENIED');
+    assert.equal(o.worker, 'ERR_ACCESS_DENIED');
+    assert.equal(o.write, 'ERR_ACCESS_DENIED');
+    assert.equal(o.read_outside, 'ERR_ACCESS_DENIED');
+    assert.equal(o.eval, 'EvalError');
+    assert.equal(o.read_entry, 'ALLOWED', 'its own code is readable');
+    assert.notEqual(o.cwd, fs.realpathSync(r.dir), 'it runs from a folder of its own, not the job directory');
+    assert.match(path.basename(o.cwd), /^ov-tool-/);
+    assert.equal(fs.existsSync(path.join(r.dir, 'tool.js')), false, 'nothing is written into the job directory');
+});
+
+test('1.1.0: a source that does not match its sha256, or is too large, never runs', (t) => {
+    const touched = path.join(os.tmpdir(), `ov-skill-touched-${process.pid}`);
+    t.after(() => fs.rmSync(touched, { force: true }));
+    const evil = `require('fs').writeFileSync(${JSON.stringify(touched)}, 'x'); process.stdout.write('1');`;
+    let r = runJob(t, { args: { tool: 'made_evil', source: evil, sha256: sha('something else'), input: {} } });
+    assert.equal(r.status, 0);
+    assert.deepEqual([r.result.ok, r.result.error], [false, 'the source does not match its sha256']);
+    assert.equal(fs.existsSync(touched), false);
+    const big = `process.stdout.write('1');//${'x'.repeat(70 * 1024)}`;
+    r = runJob(t, { args: { tool: 'made_big', source: big, sha256: sha(big), input: {} } });
+    assert.equal(r.result.ok, false);
+    assert.match(r.result.error, /at most 65536 bytes/);
+    r = runJob(t, { args: { tool: 'made_x', source: 'process.stdout.write("1")', sha256: 'NOTHEX', input: {} } });
+    assert.match(r.result.error, /sha256 must be/);
 });
 
 test('more than 64 KiB on stdout is stopped and the result says limit', (t) => {

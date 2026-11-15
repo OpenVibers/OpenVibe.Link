@@ -1,4 +1,4 @@
-//go:build !linux
+//go:build !linux && !darwin
 
 package worker
 
@@ -27,6 +27,8 @@ func (*sandbox) oomKilled() bool { return false }
 func (*sandbox) close()          {}
 
 func killGroup(p *os.Process) { _ = p.Kill() }
+
+func workDir(dir string) string { return dir }
 
 func limitCPU(int, int64) error { return errNotLinux }
 
