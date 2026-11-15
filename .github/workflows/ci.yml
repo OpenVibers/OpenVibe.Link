@@ -178,6 +178,15 @@ jobs:
       - run: python -m pytest -q plugins/relay/tests
       - run: python -m pytest -q plugins/ros2/tests
       - run: python -m pytest -q plugins/computer/tests
+      # The real browser tests again on chrome-headless-shell (Link v0.69: browser desks run it where it is installed),
+      # unpacked from Chrome for Testing the way a desk host's updater does.
+      - name: computer plugin on chrome-headless-shell
+        if: matrix.python == '3.11'
+        run: |
+          d=$(mktemp -d)
+          OPENVIBE_HEADLESS_SHELL_ROOT="$d" python3 -I <(awk '/update-headless-shell && chmod 0755/{f=1;next} /^PY$/{if(f){exit}} f' install/install.sh)
+          OPENVIBE_HEADLESS_SHELL="$d/chrome-headless-shell/chrome-headless-shell" python -m pytest -q plugins/computer/tests/test_browser.py -k RealHeadlessShellTest -rs | tee /tmp/chs.log
+          grep -qE '[0-9]+ passed' /tmp/chs.log && ! grep -q skipped /tmp/chs.log
       - run: python -m pytest -q plugins/voice/tests
       # The machine-pool tests run llama.cpp RPC's stand-ins in their own user and network namespaces.
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true

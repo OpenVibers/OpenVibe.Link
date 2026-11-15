@@ -48,7 +48,9 @@ Command kinds and their answers (the ack's ``data``):
   way; ``screenshot`` → ``{format, width, height, content_b64}``; ``close``. Reading, screenshots and closing run at every
   level; the rest are acting commands. Below level full, ``open`` refuses an address on the machine's own network and
   every download is denied; at full a desk's downloads folder is used only when it resolves inside the roots.
-  Config ``allow_browser: false`` turns it off; ``browser_path``, ``browser_headless`` (default true).
+  Config ``allow_browser: false`` turns it off; ``browser_path``, ``browser_headless`` (default true);
+  ``browser_headless_shell`` (``auto``, the default: chrome-headless-shell for a headless browser where it is installed
+  and no ``browser_path`` is set; ``off``; or its path).
 * ``desk`` ``{"action": "start"|"stop"|"status"|"list", "desk"?, "width"?, "height"?}``: a private desk (``desk.py``): an Xvfb display with a
   window manager and a D-Bus session of its own, where the agent works without touching the owner's screen. ``screen``,
   ``screen_stream``, ``input`` and ``browser`` take ``"desk": "private"`` to act there (the browser shown on the desk, in a
@@ -118,7 +120,7 @@ import urllib.parse
 
 from openvibe_plugin import Deferred, Fault, Plugin
 
-from .browser import KEY_CODES, Browser, BrowserError, find_binary
+from .browser import KEY_CODES, Browser, BrowserError, find_binary, find_headless_shell
 from .origins import OriginError, allowed as origins_allow, parse_origins
 from .curtain import (Curtain, EnvPrintDetector, Hotkey, PasswordFieldDetector, SecretFileDetector, SiteDetector,
                       _active_window, install_sigusr1)
@@ -380,6 +382,7 @@ class Computer(Plugin):
         self.browser_path = None
         self.browser_profile = None
         self.browser_headless = True
+        self.headless_shell = "auto"
         self.browser_idle_s = 600
         self.browser = None
         self.allow_screen_stream = True
@@ -480,6 +483,12 @@ class Computer(Plugin):
         self.browser_path = config.get("browser_path") or None
         self.browser_profile = os.path.normpath(os.path.expanduser(config.get("browser_profile") or os.path.join(node_data_dir(), "browser")))
         self.browser_headless = config.get("browser_headless", True) is not False
+        shell = config.get("browser_headless_shell", "auto")
+        if shell is False:
+            shell = "off"
+        if not isinstance(shell, str) or not shell.strip() or (shell not in ("auto", "off") and not shell.startswith("/")):
+            raise Fault("bad_value", "browser_headless_shell is auto, off or an absolute path")
+        self.headless_shell = shell.strip()
         self.browser_idle_s = _int(config.get("browser_idle_s"), "browser_idle_s", 60, 86400, 600)
         egress = str(config.get("browser_egress") or "public").strip().lower()
         if egress not in ("public", "open"):
@@ -555,8 +564,9 @@ class Computer(Plugin):
             caps["input"] = {"level": self.level, "tool": itool, "scroll": itool == "xdotool"}
         binary = self._browser_binary()
         if binary:
+            shell = self._headless_binary(binary, True)
             caps["browser"] = {"level": self.level, "browser": os.path.basename(binary), "headless": self.browser_headless,
-                               "egress": self.browser_egress}
+                               "egress": self.browser_egress, "headless_shell": shell != binary}
         kinds = self._desk_kinds()
         if self.allow_desk_stream and (kinds or tool):
             caps["desk.stream"] = {"capture": capture_kinds(self.platform), "browser": "browser" in kinds,
@@ -1238,7 +1248,16 @@ class Computer(Plugin):
             argv += ["--setenv", kv]
         return argv + ["--"]
 
+    def _headless_binary(self, binary, headless):
+        """The browser a headless start runs: chrome-headless-shell where it is installed (lighter and quicker, Link
+        v0.69), unless browser_path names the browser or browser_headless_shell is off; else binary."""
+        if not headless or self.browser_path or self.headless_shell == "off":
+            return binary
+        shell = find_headless_shell(self.which, None if self.headless_shell == "auto" else self.headless_shell)
+        return shell or binary
+
     def _new_browser(self, binary, profile, headless, env=None):
+        binary = self._headless_binary(binary, headless)
         sandbox = self._sandbox_argv(binary)
         if sandbox:
             binary = os.path.realpath(binary)   # the sandbox shows the install directory, not the links that lead to it

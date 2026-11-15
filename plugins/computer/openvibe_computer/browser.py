@@ -219,6 +219,28 @@ class BrowserError(Exception):
         self.message = message
 
 
+# chrome-headless-shell (Chrome for Testing's headless build, Link v0.69): a browser desk and the agent's headless
+# browser run it where it is installed. Measured 11-14 on one machine against full Chrome with --headless=new: started
+# in 92 ms against 290, a page in 15 ms against 105, a screenshot in 49 ms against 69, and 177 MB against 300 MB (PSS)
+# in 5 processes against 10. A desk host's installer puts it here and keeps it current (a daily timer).
+HEADLESS_SHELL_PATHS = ("/opt/openvibe-link/chrome-headless-shell/chrome-headless-shell",)
+
+
+def find_headless_shell(which, configured=None):
+    """chrome-headless-shell's path: the configured one, else where the installer puts it, else on PATH; or None."""
+    if configured:
+        return configured if os.path.isfile(configured) and os.access(configured, os.X_OK) else None
+    for path in HEADLESS_SHELL_PATHS:
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return which("chrome-headless-shell")
+
+
+def is_headless_shell(binary):
+    """Whether binary is chrome-headless-shell: always headless, and it takes no --headless flag."""
+    return bool(binary) and os.path.basename(os.path.realpath(binary)) == "chrome-headless-shell"
+
+
 def find_binary(which, platform, configured=None):
     """The Chromium-family browser to drive: the configured path, else the first one on PATH (or a macOS app)."""
     if configured:
@@ -293,7 +315,7 @@ class Browser:
         argv = [self.binary, "--remote-debugging-pipe", "--user-data-dir=%s" % self.profile, "--no-first-run",
                 "--no-default-browser-check", "--disable-background-networking", "--disable-sync",
                 "--disable-component-update", "--password-store=basic", "--window-size=%d,%d" % self.window, "about:blank"]
-        if self.headless:
+        if self.headless and not is_headless_shell(self.binary):
             argv.insert(1, "--headless=new")
         argv[1:1] = self.extra_args
         if self.sandbox:

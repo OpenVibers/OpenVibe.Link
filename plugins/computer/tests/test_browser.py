@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), "sdk"))
 sys.path.insert(0, HERE)
 
 from openvibe_computer import Computer  # noqa: E402
-from openvibe_computer.browser import Browser, BrowserError, find_binary  # noqa: E402
+from openvibe_computer.browser import Browser, BrowserError, find_binary, find_headless_shell, is_headless_shell  # noqa: E402
 from openvibe_plugin import Runtime  # noqa: E402
 from test_computer import Out, reply  # noqa: E402
 
@@ -133,9 +133,31 @@ class BrowserKindTest(unittest.TestCase):
 
     def test_described_with_its_level(self):
         caps = self.boot("ask")[0]["capabilities"]
-        self.assertEqual(caps["browser"], {"level": "ask", "browser": "chromium", "headless": True, "egress": "public"})
+        self.assertEqual(caps["browser"], {"level": "ask", "browser": "chromium", "headless": True, "egress": "public",
+                                           "headless_shell": False})
         caps = self.boot("ask", allow_browser=False)[0]["capabilities"]
         self.assertNotIn("browser", caps)
+
+    def test_a_headless_start_runs_chrome_headless_shell_where_it_is_installed(self):
+        # Link v0.69: lighter and quicker than full Chrome headless; never for a browser on a display, never over the
+        # owner's browser_path, and off with browser_headless_shell: off.
+        paths = {"chromium": "/usr/bin/chromium", "chrome-headless-shell": "/usr/bin/chrome-headless-shell"}
+
+        def boot(**config):
+            plugin = Computer(env={}, platform="linux", which=paths.get, resolve=lambda h: PUBLIC.get(h, []))
+            out = Out()
+            rt = Runtime(plugin, infile=__import__("io").StringIO(""), outfile=out)
+            rt.dispatch({"op": "hello", "config": {"level": "ask", "roots": [HERE], **config}})
+            return plugin, out.msgs()
+
+        plugin, msgs = boot()
+        self.assertEqual(plugin._headless_binary("/usr/bin/chromium", True), "/usr/bin/chrome-headless-shell")
+        self.assertEqual(plugin._headless_binary("/usr/bin/chromium", False), "/usr/bin/chromium", "a browser on a display")
+        self.assertTrue(msgs[0]["capabilities"]["browser"]["headless_shell"])
+        self.assertEqual(boot(browser_headless_shell="off")[0]._headless_binary("/usr/bin/chromium", True), "/usr/bin/chromium")
+        self.assertEqual(boot(browser_path=HERE)[0]._headless_binary(HERE, True), HERE, "the owner's browser_path wins")
+        bad = boot(browser_headless_shell="sometimes")[1]
+        self.assertNotEqual(bad[-1].get("op"), "ready", bad)
 
     def test_reading_runs_at_observe_and_acting_does_not(self):
         self.boot("observe")
@@ -409,6 +431,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 @unittest.skipUnless(find_binary(shutil.which, sys.platform), "no Chromium-family browser on this machine")
 class RealBrowserTest(unittest.TestCase):
+    def binary(self):
+        return find_binary(shutil.which, sys.platform)
+
     def test_a_real_browser_over_the_pipe(self):
         srv = socketserver.TCPServer(("127.0.0.1", 0), Handler)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -418,7 +443,7 @@ class RealBrowserTest(unittest.TestCase):
         self.addCleanup(lambda: shutil.rmtree(profile, ignore_errors=True))
         # CI runners (Ubuntu 24.04) refuse the unprivileged user namespaces Chrome's sandbox needs; a person's machine does
         # not, and the plugin never turns the sandbox off.
-        b = Browser(find_binary(shutil.which, sys.platform), profile, extra_args=["--no-sandbox"] if os.environ.get("CI") else [])
+        b = Browser(self.binary(), profile, extra_args=["--no-sandbox"] if os.environ.get("CI") else [])
         self.addCleanup(b.close)
         page = b.open(base + "/")
         self.assertEqual((page["title"], [l["text"] for l in page["links"]]), ("Home", ["Second page"]))
@@ -458,7 +483,7 @@ class RealBrowserTest(unittest.TestCase):
         profile = __import__("tempfile").mkdtemp(prefix="ov-browser-")
         self.addCleanup(lambda: shutil.rmtree(profile, ignore_errors=True))
         extra = ["--no-sandbox"] if os.environ.get("CI") else []
-        b = Browser(find_binary(shutil.which, sys.platform), profile, extra_args=extra)
+        b = Browser(self.binary(), profile, extra_args=extra)
         self.addCleanup(b.close)
         self.assertEqual(b.open(base + "/pop")["title"], "Pop")
         opened = b.click(selector="#open")
@@ -469,7 +494,7 @@ class RealBrowserTest(unittest.TestCase):
         # A cookie survives a graceful close.
         b.open(base + "/cookie")
         b.close(graceful=True)
-        again = Browser(find_binary(shutil.which, sys.platform), profile, extra_args=extra)
+        again = Browser(self.binary(), profile, extra_args=extra)
         self.addCleanup(again.close)
         again.open(base + "/cookie")
         self.assertIn("kept=yes", again._eval("document.cookie"))
@@ -478,7 +503,7 @@ class RealBrowserTest(unittest.TestCase):
         session = again.session_cookies()
         self.assertEqual([c["name"] for c in session], ["sid"])
         again.close(graceful=True)
-        third = Browser(find_binary(shutil.which, sys.platform), profile, extra_args=extra)
+        third = Browser(self.binary(), profile, extra_args=extra)
         self.addCleanup(third.close)
         third.after_start = lambda: third.restore_cookies(session)
         third.open(base + "/two")
@@ -537,6 +562,20 @@ class RealBrowserTest(unittest.TestCase):
             self.assertEqual(f.read(2), b"\xff\xd8")
         cmd("desk", {"action": "stop"})
         self.assertFalse(b.alive())
+
+
+
+@unittest.skipUnless(find_headless_shell(shutil.which, os.environ.get("OPENVIBE_HEADLESS_SHELL")),
+                     "no chrome-headless-shell here (OPENVIBE_HEADLESS_SHELL names one)")
+class RealHeadlessShellTest(RealBrowserTest):
+    """Every real browser test again on chrome-headless-shell (Link v0.69: browser desks run it where it is installed);
+    CI downloads Chrome for Testing's and names it."""
+    def binary(self):
+        return find_headless_shell(shutil.which, os.environ.get("OPENVIBE_HEADLESS_SHELL"))
+
+    def test_it_takes_no_headless_flag(self):
+        self.assertTrue(is_headless_shell(self.binary()))
+        self.assertFalse(is_headless_shell(find_binary(shutil.which, sys.platform) or "/usr/bin/google-chrome"))
 
 
 if __name__ == "__main__":

@@ -225,6 +225,15 @@ window manager.
   `max_desks: 2` runs four browser desks, or one whole desk and two browser desks.
 - **On a Mac too.** A browser desk needs only Chromium, Chrome, Edge or Brave, so it runs on macOS as well as Linux.
   `describe` lists the kinds a machine runs in `desk.kinds` (`desktop`, `browser`).
+- **chrome-headless-shell where it is installed** (v0.69). A browser desk, and the agent's headless browser, run
+  Chrome for Testing's headless build when it is there: measured on one machine against full Chrome with
+  `--headless=new`, it started in 92 ms against 290, loaded a page in 15 ms against 105, took a screenshot in 49 ms
+  against 69, and used 177 MB against 300 MB (PSS) in 5 processes against 10, so more desks fit on a machine. A desk
+  host's installer (`--desk-host`, `--desktops`, Linux x86-64) puts it in `/opt/openvibe-link/chrome-headless-shell`, a
+  link to a folder per version, and a daily timer (`openvibe-link-headless-shell.timer`) brings each Chrome stable
+  release within a day; a desk already running keeps the version it started with. `browser_headless_shell` is `auto`
+  (the default), `off`, or a path; the owner's `browser_path` and a browser shown on a display (a whole desk, a lent
+  desktop) keep the full browser. `describe` says `browser.headless_shell`.
 - **Its page is its screen.** `screen` takes a picture of the page. `input` is the page's own mouse and keyboard:
   clicks, the wheel, keys and chords in xdotool's names (`Return`, `ctrl+a`), and text. A click answers with what it
   changed (a receipt, as in the browser kind). `screen_stream` sends frames of the page, so you can watch a browser desk
@@ -393,6 +402,7 @@ only where both are on.
 | `browser_profile`    | `~/.local/share/openvibe-link/browser` (Windows: `%LOCALAPPDATA%\openvibe-link\browser`) | its profile folder: the agent's own, unless you choose another |
 | `browser_egress`     | `public`       | `public`: every agent browser goes through the egress guard (never your own network below level `full`); `open`: no guard |
 | `browser_headless`   | `true`         | `false`: show its window |
+| `browser_headless_shell` | `auto`     | `auto`: chrome-headless-shell for a headless browser where it is installed; `off`; or its path |
 | `browser_idle_s`     | 600            | close it after this long without a command |
 
 `describe` reports `terminal`, `files`, `screen`, `input` and `browser` with the level and folders, so Bot shows what the machine allows;
