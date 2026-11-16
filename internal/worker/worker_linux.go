@@ -177,15 +177,15 @@ func jobAttr(cfg config.WorkerConfig) (*syscall.SysProcAttr, error) {
 // sandbox is a job's sandbox as the Link holds it: the status pipe of its init, the pipe that lets it execute the
 // function, the descriptors the child inherits (closed once it started), its cgroup and its veth (nil under none).
 type sandbox struct {
-	ptys   bool // the desk has its own devpts at /dev/pts (sandboxSpec.Ptys), which ready() then allows
+	ptys bool // the desk has its own devpts at /dev/pts (sandboxSpec.Ptys), which ready() then allows
 	// persist: the job has its person's sandbox at /sandbox (sandboxSpec.Persist), writable and nosuid,nodev, which
 	// ready() then allows as the one writable path outside its scratch space.
 	persist bool
-	cg     *jobCgroup
-	egress *egressNet
-	status *os.File
-	goW    *os.File
-	child  []*os.File
+	cg      *jobCgroup
+	egress  *egressNet
+	status  *os.File
+	goW     *os.File
+	child   []*os.File
 }
 
 // started closes the Link's copies of what the child inherited.
