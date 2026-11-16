@@ -128,3 +128,6 @@ func maxRSS(ps *os.ProcessState) int64 {
 	}
 	return 0
 }
+
+// sandboxSupported: not yet; a job here keeps nothing between runs.
+const sandboxSupported = false

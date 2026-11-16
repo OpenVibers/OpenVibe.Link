@@ -501,6 +501,34 @@ sandbox: `openvibe-link desk-sandbox [--memory-mb N] [--cpu-millis N] [--disk-mb
 - **Its end.** SIGTERM (the plugin's close) kills everything in its cgroup and removes the cgroup, its network and its
   root; it exits with the program's code, or 125 when the sandbox could not be set up (the program never ran).
 
+### A person's own sandbox (`function.sandbox`, Link v0.72.0)
+
+The owner, 2026-11-16: "that shit should install when the user goes to use openvibe.computer or openvibe.link … why
+would it be on there before they have their shit set up, their sandbox". A machine has nothing installed for anyone
+but Link itself.
+
+- **What a sandbox is.** An entry with `"sandbox": true` gives each job its person's own persistent sandbox,
+  read-write at `/sandbox` (`OPENVIBE_SANDBOX`). What the job installs there (a coding agent, on its first use) and the
+  sign-ins it keeps stay for that person's next job, and for nobody else's.
+- **Whose sandbox a job gets:**
+  - Another person's job names its sandbox with the id the dispatcher derives from the person and the machine
+    (`"sandbox": "sbx_…"` in platform.job@1), so the machine keeps their things without learning who they are.
+  - The machine owner's own job, which names none, uses the owner's (`owner`).
+  - A relayed job, or another person's job without an id, gets none and keeps nothing.
+- **Where they live.** Sandboxes are directories under `worker.sandboxes_dir`, by default `<state>-sandboxes` beside
+  the Link's state directory, never in it. That directory can be passed through but not listed (0711). Each sandbox is
+  0700, its person's jobs' user's.
+- **What the job is allowed to write.** The bind is nosuid and nodev. It is the one writable path a job has besides
+  its own `/tmp`, and the isolation check allows exactly that one.
+- Linux only for now; on macOS and Windows a job keeps nothing between runs.
+
+### Interactive jobs (`function.interactive`, `job_stdin`, Link v0.72.0)
+
+An entry with `"interactive": true` keeps the job's stdin open after its args. The server's `job_stdin` frames
+(`{ id, data, eof }`, at most 4096 bytes each) write to it while the job runs. An agent's own sign-in uses this: its
+sign-in page shows a code, the person pastes it on the page, and the page sends it here. Input for a job that is not
+running, or not interactive, is dropped.
+
 ## Refusals and exit reasons
 
 Refused with `nack` (keyed by the job id; the first matching row wins, after the checks every Link does, in

@@ -639,3 +639,6 @@ func runConfined(argv []string) (uint32, error) {
 	}
 	return code, nil
 }
+
+// sandboxSupported: not yet; a job here keeps nothing between runs.
+const sandboxSupported = false

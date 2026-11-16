@@ -72,8 +72,11 @@ const (
 // Job frames (OpenVibe.Contracts platform.job-frame@1). Server → device: job, job_cancel, job_exit_ack. Device →
 // server: job_started, job_stdout, job_usage, job_exit. A job is accepted or refused with ack/nack keyed by its id.
 const (
-	TypeJob        = "job"
-	TypeJobCancel  = "job_cancel"
+	TypeJob       = "job"
+	TypeJobCancel = "job_cancel"
+	// TypeJobStdin (server → device, 2026-11-16) is what a person types to a running interactive job: an agent's own
+	// sign-in asks for the code its sign-in page shows, and the page sends it here.
+	TypeJobStdin   = "job_stdin"
 	TypeJobExitAck = "job_exit_ack"
 	TypeJobStarted = "job_started"
 	TypeJobStdout  = "job_stdout"
@@ -129,6 +132,7 @@ const (
 	JobNoArtifact     = "function or code job needs an artifact with an exact version"
 	JobNetUnsupported = "net policy not supported"
 	JobBadInputs      = "invalid inputs"
+	JobBadSandbox     = "invalid sandbox"
 	JobInputsRefused  = "job inputs not supported"
 	JobBadLimits      = "missing or invalid args, ttl_ms or limits"
 	JobNotAvailable   = "class not available"
@@ -465,7 +469,22 @@ type Job struct {
 	Limits   JobLimits       `json:"limits"`
 	Net      string          `json:"net,omitempty"` // absent means deny
 	Inputs   []JobInput      `json:"inputs,omitempty"`
+	// Sandbox is the person's own persistent sandbox on this machine (2026-11-16): an opaque id the dispatcher derives
+	// from the person and the machine (sbx_…), so the machine keeps that person's installed agents and sign-ins without
+	// learning who they are. Empty for the machine owner's own job, whose sandbox is the owner's.
+	Sandbox string `json:"sandbox,omitempty"`
 }
+
+// SandboxOwner is the machine owner's own sandbox.
+const SandboxOwner = "owner"
+
+var sandboxRe = regexp.MustCompile(`^sbx_[a-z0-9]{8,64}$`)
+
+// ValidSandbox reports whether id names a person's sandbox the dispatcher made (sbx_ and 8 to 64 of a-z, 0-9).
+func ValidSandbox(id string) bool { return sandboxRe.MatchString(id) }
+
+// JobStdinMax is the most one job_stdin frame carries.
+const JobStdinMax = 4096
 
 // JobRequest is the `job` frame: run Job. A body that does not decode still yields the frame, with Err set and the
 // id when it is a string, so the Link can nack it rather than drop it (the server resends a job until it is answered).
@@ -586,6 +605,14 @@ func isObject(b json.RawMessage) bool {
 // JobCancel stops a job; an unknown or ended id is ignored.
 type JobCancel struct {
 	ID string `json:"id"`
+}
+
+// JobStdin is input for a running interactive job: Data is written to its stdin as it is (at most JobStdinMax bytes),
+// and EOF closes it afterwards.
+type JobStdin struct {
+	ID   string `json:"id"`
+	Data string `json:"data,omitempty"`
+	EOF  bool   `json:"eof,omitempty"`
 }
 
 // JobExitAck tells the worker every usage reading of the job is recorded, so it stops resending job_exit.
@@ -778,6 +805,7 @@ func (VoiceAsk) MessageType() string     { return TypeVoiceAsk }
 func (VoiceAnswer) MessageType() string  { return TypeVoiceAnswer }
 func (JobRequest) MessageType() string   { return TypeJob }
 func (JobCancel) MessageType() string    { return TypeJobCancel }
+func (JobStdin) MessageType() string     { return TypeJobStdin }
 func (JobExitAck) MessageType() string   { return TypeJobExitAck }
 func (JobStarted) MessageType() string   { return TypeJobStarted }
 func (JobStdout) MessageType() string    { return TypeJobStdout }
@@ -800,6 +828,7 @@ var registry = map[string]func() Message{
 	TypeEstopState:         func() Message { return &EstopState{} },
 	TypeJob:                func() Message { return &JobRequest{} },
 	TypeJobCancel:          func() Message { return &JobCancel{} },
+	TypeJobStdin:           func() Message { return &JobStdin{} },
 	TypeJobExitAck:         func() Message { return &JobExitAck{} },
 	TypeJobStarted:         func() Message { return &JobStarted{} },
 	TypeJobStdout:          func() Message { return &JobStdout{} },
@@ -904,6 +933,8 @@ func derefMessage(m Message) Message {
 	case *JobRequest:
 		return *v
 	case *JobCancel:
+		return *v
+	case *JobStdin:
 		return *v
 	case *JobExitAck:
 		return *v

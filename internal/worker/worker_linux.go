@@ -50,7 +50,7 @@ func isolate(cmd *exec.Cmd, cfg config.WorkerConfig, p plan) (*sandbox, error) {
 		return nil, err
 	}
 	caps := cfg.Caps.WithDefaults()
-	sb := &sandbox{}
+	sb := &sandbox{persist: p.persist != ""}
 	fail := func(err error) (*sandbox, error) { sb.close(); return nil, err }
 	art, err := openArtifact(cfg.LinkDirs, binds, links, p.fn.Artifact())
 	if err != nil {
@@ -73,7 +73,7 @@ func isolate(cmd *exec.Cmd, cfg config.WorkerConfig, p plan) (*sandbox, error) {
 	sb.goW, sb.child = gw, append(sb.child, gr)
 	files = append(files, sw, gr) // statusFD, goFD
 	spec := sandboxSpec{Root: p.root, Work: cmd.Dir, Disk: caps.MaxDiskBytes, Links: links, Inputs: p.inputs,
-		PlanLogins: p.planLogins, Argv: append([]string{cmd.Path}, cmd.Args[1:]...), Env: cmd.Env}
+		PlanLogins: p.planLogins, Argv: append([]string{cmd.Path}, cmd.Args[1:]...), Env: cmd.Env, Persist: p.persist}
 	if art != nil {
 		spec.Artifact = p.fn.Artifact()
 	}
@@ -178,6 +178,9 @@ func jobAttr(cfg config.WorkerConfig) (*syscall.SysProcAttr, error) {
 // function, the descriptors the child inherits (closed once it started), its cgroup and its veth (nil under none).
 type sandbox struct {
 	ptys   bool // the desk has its own devpts at /dev/pts (sandboxSpec.Ptys), which ready() then allows
+	// persist: the job has its person's sandbox at /sandbox (sandboxSpec.Persist), writable and nosuid,nodev, which
+	// ready() then allows as the one writable path outside its scratch space.
+	persist bool
 	cg     *jobCgroup
 	egress *egressNet
 	status *os.File
@@ -223,7 +226,7 @@ func (s *sandbox) ready(pid int) error {
 	if st := string(st); !strings.Contains(st, "\nNoNewPrivs:\t1\n") || !strings.Contains(st, "\nSeccomp:\t2\n") {
 		return errors.New("the job is not confined: no no_new_privs or seccomp filter")
 	}
-	rw, err := writableMounts(pid, s.ptys)
+	rw, err := writableMounts(pid, s.ptys, s.persist)
 	if err != nil {
 		return err
 	}
@@ -502,3 +505,6 @@ func maxRSS(ps *os.ProcessState) int64 {
 	}
 	return 0
 }
+
+// sandboxSupported: the private root takes a read-write bind of the person's sandbox (sandbox_linux.go).
+const sandboxSupported = true
