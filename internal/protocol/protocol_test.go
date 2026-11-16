@@ -540,3 +540,29 @@ func TestJobFrameFor(t *testing.T) {
 		}
 	}
 }
+
+// TestJobStdinAndSandbox (2026-11-16): job_stdin decodes to what the person typed, and a job's sandbox is the
+// dispatcher's opaque id or none: nothing else passes ValidSandbox (no path, no other prefix).
+func TestJobStdinAndSandbox(t *testing.T) {
+	b, err := Encode(1, 1234, JobStdin{ID: "job_01JAB2C3D4E5F6G7H8J9K00001", Data: "code-123\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := Decode(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := m.Msg.(JobStdin)
+	if !ok || got.ID != "job_01JAB2C3D4E5F6G7H8J9K00001" || got.Data != "code-123\n" || got.EOF {
+		t.Fatalf("%+v %T", m.Msg, m.Msg)
+	}
+	var r JobRequest
+	if err := json.Unmarshal([]byte(`{"job":{"id":"job_01JAB2C3D4E5F6G7H8J9K00001","class":"function","args":{},"ttl_ms":1000,"limits":{},"sandbox":"sbx_0123456789abcdef"}}`), &r); err != nil || r.Job.Sandbox != "sbx_0123456789abcdef" {
+		t.Fatalf("%+v %v", r.Job, err)
+	}
+	for id, want := range map[string]bool{"sbx_0123456789abcdef": true, "sbx_short": false, "../owner": false, "owner": false, "sbx_UPPERCASE00": false, "": false} {
+		if ValidSandbox(id) != want {
+			t.Fatalf("ValidSandbox(%q) = %v", id, !want)
+		}
+	}
+}

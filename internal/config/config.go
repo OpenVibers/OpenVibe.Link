@@ -178,6 +178,9 @@ type WorkerConfig struct {
 	// openvibe.link/machines, which Bot also checks): a job Bot marks for another person runs in the same sandbox under
 	// the same caps and egress, and never gets PlanLogins. Off (the default), such a job is refused.
 	ServeOthers bool `json:"serve_others,omitempty"`
+	// SandboxesDir is where the people's persistent sandboxes live, one directory each (default: <state>-sandboxes
+	// beside the Link's state directory, never in it). A sandbox is made by its person's first job; nothing is in it before.
+	SandboxesDir string `json:"sandboxes_dir,omitempty"`
 	// LinkDirs are the Link's own directories (config, credential, state, control socket), which no job may see; the
 	// Link sets them, the config file does not.
 	LinkDirs []string `json:"-"`
@@ -254,6 +257,12 @@ type FunctionConfig struct {
 	// ArtifactDir is the directory each job gets a read-only copy of, made as it starts, in its private root (default:
 	// the directory of Command[0]). It must not be / nor hold, or lie inside, the Link's own directories.
 	ArtifactDir string `json:"artifact_dir,omitempty"`
+	// Interactive keeps the job's stdin open after its args (2026-11-16): what the person types reaches it (job_stdin),
+	// so a job can ask (an agent's own sign-in asks for the code its sign-in page shows).
+	Interactive bool `json:"interactive,omitempty"`
+	// Sandbox gives each job the person's own persistent sandbox, read-write at /sandbox (OPENVIBE_SANDBOX): what it
+	// installs and the sign-ins it keeps are there for that person's next job and nobody else's (Linux).
+	Sandbox bool `json:"sandbox,omitempty"`
 }
 
 // The classes a declared entry may implement.

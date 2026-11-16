@@ -62,6 +62,9 @@ type sandboxSpec struct {
 	// Ptys gives the sandbox a pseudo-terminal instance of its own (a new devpts at /dev/pts, /dev/ptmx leading to it):
 	// a lent desktop's terminal needs one (Link v0.65.1). Nothing of the host's terminals is visible through it.
 	Ptys bool `json:"ptys,omitempty"`
+	// Persist is the host directory of the person's persistent sandbox, bound read-write at /sandbox (nosuid, nodev):
+	// the only path of the job that outlives it (2026-11-16).
+	Persist string `json:"persist,omitempty"`
 }
 
 // statusOut is where the init reports: statusFD, until a desk's pipe takes fd 4 (enterSandbox).
@@ -169,6 +172,11 @@ func enterSandbox() error {
 	}
 	for _, b := range s.Binds {
 		if err := step("bind-mounting "+b.Path, bind(r, b)); err != nil {
+			return err
+		}
+	}
+	if s.Persist != "" {
+		if err := step("binding the person's sandbox", bindPersist(r, s.Persist)); err != nil {
 			return err
 		}
 	}
@@ -338,6 +346,19 @@ func bind(r string, b bindSpec) error {
 		return nil
 	}
 	return readOnlyTree(dst)
+}
+
+// bindPersist binds the person's sandbox (host) read-write at /sandbox under the private root r, nosuid and nodev. The
+// root's later read-only remount is not recursive: this mount keeps its own flags.
+func bindPersist(r, host string) error {
+	dst := r + "/sandbox"
+	if err := os.Mkdir(dst, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
+		return err
+	}
+	if err := syscall.Mount(host, dst, "", syscall.MS_BIND, ""); err != nil {
+		return err
+	}
+	return syscall.Mount("", dst, "", syscall.MS_BIND|syscall.MS_REMOUNT|syscall.MS_NOSUID|syscall.MS_NODEV, "")
 }
 
 // copyInputs copies the regular files names in the directory from (opened before the private root covered it) into
@@ -1048,8 +1069,9 @@ func resolved(p string) []string {
 }
 
 // writableMounts lists the mounts of the process pid that are not read-only, except its /tmp, its /proc and the
-// device nodes, and with ptys its own devpts at /dev/pts: what a job could write to besides its own scratch space.
-func writableMounts(pid int, ptys bool) ([]string, error) {
+// device nodes, with ptys its own devpts at /dev/pts, and with persist its person's sandbox at /sandbox when that is
+// nosuid and nodev: what a job could write to besides its own scratch space and its own sandbox.
+func writableMounts(pid int, ptys, persist bool) ([]string, error) {
 	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/mountinfo")
 	if err != nil {
 		return nil, err
@@ -1069,6 +1091,12 @@ func writableMounts(pid int, ptys bool) ([]string, error) {
 		}
 		if ptys && f[4] == "/dev/tty" && mountType(f) == "devtmpfs" {
 			continue // the device node /dev/tty, bound as the other device nodes are
+		}
+		if persist && f[4] == "/sandbox" {
+			opts := strings.Split(f[5], ",")
+			if slices.Contains(opts, "nosuid") && slices.Contains(opts, "nodev") {
+				continue
+			}
 		}
 		if !slices.Contains(strings.Split(f[5], ","), "ro") {
 			rw = append(rw, f[4])

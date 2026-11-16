@@ -18,6 +18,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -487,6 +488,8 @@ func (n *Agent) Frame(f protocol.Frame) {
 		n.job(m)
 	case protocol.JobCancel:
 		n.jobCancel(m)
+	case protocol.JobStdin:
+		n.jobStdin(m)
 	case protocol.VoiceAnswer:
 		n.voiceAnswer(m)
 	case protocol.JobExitAck:
@@ -643,6 +646,11 @@ func (n *Agent) startWorker(why string) bool {
 	wcfg := n.opt.Config.Worker
 	// No job may see the Agent's config, credential, state or control socket (they all lie in these).
 	wcfg.LinkDirs = []string{n.opt.Paths.ConfigDir, n.opt.Paths.StateDir}
+	// The people's persistent sandboxes: beside the state directory, never in it (no job may see the Link's state).
+	if wcfg.SandboxesDir == "" && n.opt.Paths.StateDir != "" {
+		st := filepath.Clean(n.opt.Paths.StateDir)
+		wcfg.SandboxesDir = filepath.Join(filepath.Dir(st), filepath.Base(st)+"-sandboxes")
+	}
 	w := worker.New(wcfg, n.sendJobFrame, n.log)
 	if err := w.Probe(); err != nil {
 		n.log.Error("worker off: jobs cannot run isolated here, every job is refused", "err", err)

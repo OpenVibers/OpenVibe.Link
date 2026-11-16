@@ -191,6 +191,17 @@ func (n *Agent) jobCancel(c protocol.JobCancel) {
 	n.log.Warn("job_cancel: no worker runs jobs on this Agent, nothing to stop", "id", c.ID)
 }
 
+// jobStdin hands what the person typed to the running interactive job it names (an agent's sign-in code). Like
+// job_cancel it reaches only a job this Link runs; anything else is dropped.
+func (n *Agent) jobStdin(s protocol.JobStdin) {
+	if n.worker == nil || !protocol.ValidJobID(s.ID) {
+		return
+	}
+	if !n.worker.Input(s.ID, s.Data, s.EOF) {
+		n.log.Debug("job_stdin for a job that is not running interactive ignored", "id", s.ID)
+	}
+}
+
 // stopFault is the fault a job is refused with while the stop latch is set; "" when it is clear.
 func stopFault(st safety.LatchState) string {
 	switch {

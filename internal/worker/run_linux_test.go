@@ -52,6 +52,18 @@ func TestHelperProcess(t *testing.T) {
 		fmt.Println("line 2 é")
 		time.Sleep(2900 * time.Millisecond) // well past the second usage tick, so both are sent even under -race
 		fmt.Fprintf(result, `{"got":%s}`, bytes.TrimSpace(in))
+	case "ask": // an interactive job: its args, then a question, then what the person typed (job_stdin)
+		rd := bufio.NewReader(os.Stdin)
+		args, _ := rd.ReadString('\n')
+		fmt.Println("Paste code here >")
+		code, _ := rd.ReadString('\n')
+		fmt.Printf("got %s\n", strings.TrimSpace(code))
+		fmt.Fprintf(result, `{"args":%s,"code":%q}`, strings.TrimSpace(args), strings.TrimSpace(code))
+	case "persist": // what the person's sandbox held when it started, then a mark left for the next job
+		dir := os.Getenv("OPENVIBE_SANDBOX")
+		before, _ := os.ReadFile(filepath.Join(dir, "mark"))
+		werr := os.WriteFile(filepath.Join(dir, "mark"), []byte(os.Getenv("OPENVIBE_JOB_ID")), 0o600)
+		_ = json.NewEncoder(result).Encode(map[string]any{"dir": dir, "before": string(before), "write": fmt.Sprint(werr)})
 	case "sleep":
 		fmt.Println("sleeping")
 		time.Sleep(time.Hour)
@@ -341,6 +353,103 @@ func TestRunStreamsAndMeters(t *testing.T) {
 	if _, ok := w.Known(j.ID); ok {
 		t.Fatal("job still held after job_exit_ack")
 	}
+}
+
+// TestInteractiveAndSandbox (2026-11-16): an interactive job reads what the person typed (job_stdin) after its args, as
+// an agent's own sign-in reads its code; and a person's persistent sandbox (/sandbox, read-write) keeps what one of
+// their jobs left for the next, while another person's sandbox is another directory and a job without one keeps none.
+func TestInteractiveAndSandbox(t *testing.T) {
+	cfg := helperConfig(t, config.WorkerCaps{MaxJobs: 4}, "ask", "persist")
+	cfg.Functions[0].Interactive = true
+	cfg.Functions[1].Sandbox = true
+	// Under a temporary directory, as /var/lib holds the real one: as root, the jobs' user must pass through its parent.
+	cfg.SandboxesDir = filepath.Join(t.TempDir(), "sandboxes")
+	if cfg.RunAs != nil {
+		if err := os.Chmod(filepath.Dir(cfg.SandboxesDir), 0o711); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(filepath.Dir(filepath.Dir(cfg.SandboxesDir)), 0o711); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg.ServeOthers = true
+	w, s := newRunWorkerConfig(t, cfg)
+	if os.Getenv("OPENVIBE_WORKER_LOG") != "" {
+		w.log = slog.New(slog.NewTextHandler(os.Stderr, nil))
+	}
+
+	ask := testJob(1, "ask")
+	run(t, w, ask)
+	s.wait(t, protocol.TypeJobStarted, ask.ID, 1, 10*time.Second)
+	deadline := time.Now().Add(10 * time.Second)
+	for !strings.Contains(stdoutOf(s, ask.ID), "Paste code here") {
+		if time.Now().After(deadline) {
+			t.Fatalf("no question: %q", stdoutOf(s, ask.ID))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if w.Input("job_01ZZZZZZZZZZZZZZZZZZZZZZZZ", "x\n", false) {
+		t.Fatal("input for a job that is not running was taken")
+	}
+	if !w.Input(ask.ID, "the-code-123\n", false) {
+		t.Fatal("the running interactive job did not take its input")
+	}
+	ex := s.exit(t, ask.ID)
+	if ex.Reason != protocol.ExitExited || !strings.Contains(string(ex.Result), `"code":"the-code-123"`) || !strings.Contains(stdoutOf(s, ask.ID), "got the-code-123") {
+		t.Fatalf("%+v result %s stdout %q", ex, ex.Result, stdoutOf(s, ask.ID))
+	}
+	if w.Input(ask.ID, "late\n", false) {
+		t.Fatal("input after the job ended was taken")
+	}
+
+	mark := func(n int, origin Origin, sandbox string) map[string]string {
+		t.Helper()
+		j := testJob(n, "persist")
+		j.Sandbox = sandbox
+		if f, r := w.AdmitFrom(j, origin); f != "" {
+			t.Fatalf("persist %d refused: %s %s", n, f, r)
+		}
+		w.Launch(j.ID)
+		ex := s.exit(t, j.ID)
+		out := map[string]string{}
+		if err := json.Unmarshal(ex.Result, &out); err != nil || out == nil {
+			t.Fatalf("persist %d: %+v result %s stdout %q", n, ex, ex.Result, stdoutOf(s, j.ID))
+		}
+		out["id"] = j.ID
+		return out
+	}
+	first := mark(2, OriginOwner, "")
+	if first["dir"] != SandboxMount || first["before"] != "" || first["write"] != "<nil>" {
+		t.Fatalf("the owner's first job: %v", first)
+	}
+	again := mark(3, OriginOwner, "")
+	if again["before"] != first["id"] {
+		t.Fatalf("the owner's next job did not find what the first left: %v", again)
+	}
+	other := mark(4, OriginOther, "sbx_0123456789abcdef")
+	if other["before"] != "" || other["write"] != "<nil>" {
+		t.Fatalf("another person's sandbox is their own: %v", other)
+	}
+	if b, err := os.ReadFile(filepath.Join(cfg.SandboxesDir, protocol.SandboxOwner, "mark")); err != nil || string(b) != again["id"] {
+		t.Fatalf("the owner's sandbox on the host: %q %v", b, err)
+	}
+	none := mark(5, OriginOther, "")
+	if none["dir"] != "" {
+		t.Fatalf("another person's job without a sandbox id keeps nothing: %v", none)
+	}
+	if f, r := w.AdmitFrom(protocol.Job{ID: testJob(6, "persist").ID, Class: protocol.ClassFunction, Artifact: testJob(6, "persist").Artifact, Args: testJob(6, "persist").Args, TTLMS: 60000, Sandbox: "../owner"}, OriginOther); f != protocol.FaultBadValue || r != protocol.JobBadSandbox {
+		t.Fatalf("a sandbox id that is not the dispatcher's: %q %q", f, r)
+	}
+}
+
+func stdoutOf(s *sink, id string) string {
+	var b strings.Builder
+	for _, m := range s.all() {
+		if f, ok := m.(protocol.JobStdout); ok && f.ID == id {
+			b.WriteString(f.Chunk)
+		}
+	}
+	return b.String()
 }
 
 // TestIsolation: the job sees none of the Link's environment, has no network (not even loopback), is PID 1 of its own

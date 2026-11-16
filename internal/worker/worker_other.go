@@ -46,3 +46,6 @@ func exitStatus(ps *os.ProcessState) (*int, bool) {
 }
 
 func maxRSS(*os.ProcessState) int64 { return 0 }
+
+// sandboxSupported: no sandbox here.
+const sandboxSupported = false

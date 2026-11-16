@@ -75,6 +75,8 @@ type plan struct {
 	// planLogins are the names (paths under the home) of the owner's plan logins staged in root, which the sandbox
 	// copies read-only into the job's working directory. Empty unless the owner named them (worker.plan_logins).
 	planLogins []string
+	// persist is the host directory of the person's persistent sandbox, bound read-write at SandboxMount; "" for none.
+	persist string
 }
 
 // egressFor is the network policy a job runs under: the stricter of the net the job names and the host's worker.egress,
@@ -126,6 +128,64 @@ type job struct {
 	abort     func()      // cancels its worker.media requests; set while it fetches its inputs or uploads its result
 	startedMS int64
 	exit      *protocol.JobExit // set once it ended
+
+	sandbox string         // the person's persistent sandbox id ("" for none)
+	stdin   io.WriteCloser // an interactive job's open stdin, while it runs
+}
+
+// SandboxMount is where a job sees its person's persistent sandbox.
+const SandboxMount = "/sandbox"
+
+// sandboxDir is the host directory of the job's persistent sandbox, made (0700, the jobs' user's) by the person's first
+// job; "" when the entry keeps none, the job has none, or the machine has no sandboxes directory.
+func (w *Worker) sandboxDir(jb *job) (string, error) {
+	if !jb.fn.Sandbox || jb.sandbox == "" || w.cfg.SandboxesDir == "" || !sandboxSupported {
+		return "", nil
+	}
+	// The directory of sandboxes is passed through, never listed (0711): the job's user (worker.run_as) reaches its own
+	// sandbox in it without seeing whose others there are. Each sandbox is its person's jobs' alone (0700).
+	if err := os.MkdirAll(w.cfg.SandboxesDir, 0o711); err != nil {
+		return "", err
+	}
+	if fi, err := os.Stat(w.cfg.SandboxesDir); err == nil && fi.Mode().Perm()&0o001 == 0 {
+		if err := os.Chmod(w.cfg.SandboxesDir, fi.Mode().Perm()|0o001); err != nil {
+			return "", err
+		}
+	}
+	dir := filepath.Join(w.cfg.SandboxesDir, jb.sandbox)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	if r := w.cfg.RunAs; r != nil {
+		if err := os.Chown(dir, int(r.UID), int(r.GID)); err != nil {
+			return "", err
+		}
+	}
+	return dir, nil
+}
+
+// Input writes what the person typed to a running interactive job (job_stdin); false when no such job is running, or
+// it is not interactive, or its stdin is closed.
+func (w *Worker) Input(id, data string, eof bool) bool {
+	if len(data) > protocol.JobStdinMax {
+		return false
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	jb, ok := w.jobs[id]
+	if !ok || jb.stdin == nil || jb.exit != nil {
+		return false
+	}
+	if data != "" {
+		if _, err := io.WriteString(jb.stdin, data); err != nil {
+			return false
+		}
+	}
+	if eof {
+		_ = jb.stdin.Close()
+		jb.stdin = nil
+	}
+	return true
 }
 
 // New returns a Worker for cfg. It runs nothing until Probe has passed and a job is admitted and launched.
@@ -172,6 +232,17 @@ func (w *Worker) AdmitFrom(j protocol.Job, origin Origin) (fault, reason string)
 	if !protocol.ValidJobInputs(j.Inputs) {
 		return protocol.FaultBadValue, protocol.JobBadInputs
 	}
+	// The person's sandbox: the dispatcher's opaque id, or the owner's own for the owner's job. Another person's job
+	// without an id, or a relayed one, gets none (it runs as before, keeping nothing).
+	sandbox := ""
+	switch {
+	case j.Sandbox != "" && !protocol.ValidSandbox(j.Sandbox):
+		return protocol.FaultBadValue, protocol.JobBadSandbox
+	case j.Sandbox != "" && origin != OriginRelayed:
+		sandbox = j.Sandbox
+	case j.Sandbox == "" && origin == OriginOwner:
+		sandbox = protocol.SandboxOwner
+	}
 	if _, ok := egressFor(w.cfg.Egress, j.Net); !ok {
 		return protocol.FaultUnsupported, protocol.JobNetUnsupported
 	}
@@ -188,7 +259,7 @@ func (w *Worker) AdmitFrom(j protocol.Job, origin Origin) (fault, reason string)
 	if running >= w.caps.MaxJobs {
 		return protocol.FaultNotReady, protocol.JobBusy
 	}
-	w.jobs[j.ID] = &job{origin: origin, req: j, fn: fn, received: time.Now(), ttl: ms(min(j.TTLMS, w.caps.MaxTTLMS)),
+	w.jobs[j.ID] = &job{origin: origin, req: j, fn: fn, sandbox: sandbox, received: time.Now(), ttl: ms(min(j.TTLMS, w.caps.MaxTTLMS)),
 		limits: protocol.JobLimits{WallMS: min(j.Limits.WallMS, w.caps.MaxWallMS), CPUMS: min(j.Limits.CPUMS, w.caps.MaxCPUMS),
 			MemBytes: min(j.Limits.MemBytes, w.caps.MaxMemBytes)}}
 	return "", ""
@@ -484,10 +555,31 @@ func (w *Worker) execute(jb *job) protocol.JobExit {
 	work := workDir(dir)
 	cmd := exec.Command(jb.fn.Command[0], jb.fn.Command[1:]...)
 	cmd.Dir, cmd.Env = work, jobEnv(jb.fn, work, id, jb.origin)
-	cmd.Stdin = bytes.NewReader(append(append([]byte(nil), jb.req.Args...), '\n'))
+	// The person's persistent sandbox (an entry that keeps one, a job that has one): made by their first job.
+	persist, err := w.sandboxDir(jb)
+	if err != nil {
+		return never(protocol.ExitFailed, err)
+	}
+	if persist != "" {
+		cmd.Env = append(cmd.Env, "OPENVIBE_SANDBOX="+SandboxMount)
+	}
+	args := append(append([]byte(nil), jb.req.Args...), '\n')
+	var inW *os.File
+	if jb.fn.Interactive {
+		// An interactive job's stdin stays open after its args: job_stdin frames write to it (Input) until it ends.
+		inR, iw, err := os.Pipe()
+		if err != nil {
+			return never(protocol.ExitFailed, err)
+		}
+		defer inR.Close()
+		inW = iw
+		cmd.Stdin = inR
+	} else {
+		cmd.Stdin = bytes.NewReader(args)
+	}
 	cmd.Stdout, cmd.ExtraFiles = outW, []*os.File{resW}
 	egress, _ := egressFor(w.cfg.Egress, jb.req.Net) // Admit refused what the host cannot enforce
-	sb, err := w.isolate(cmd, w.cfg, plan{root: dir, fn: jb.fn, limits: jb.limits, egress: egress, inputs: inputs, planLogins: planLogins})
+	sb, err := w.isolate(cmd, w.cfg, plan{root: dir, fn: jb.fn, limits: jb.limits, egress: egress, inputs: inputs, planLogins: planLogins, persist: persist})
 	if err != nil {
 		outW.Close()
 		resW.Close()
@@ -543,7 +635,21 @@ func (w *Worker) execute(jb *job) protocol.JobExit {
 	}
 	w.mu.Lock()
 	jb.started = true
+	if inW != nil {
+		jb.stdin = inW
+	}
 	w.mu.Unlock()
+	if inW != nil {
+		go func() { _, _ = inW.Write(args) }() // its args first, as every job gets them
+		defer func() {
+			w.mu.Lock()
+			if jb.stdin != nil {
+				_ = jb.stdin.Close()
+				jb.stdin = nil
+			}
+			w.mu.Unlock()
+		}()
+	}
 	w.send(protocol.JobStarted{ID: id, StartedMS: jb.startedMS})
 
 	stop, watched := make(chan struct{}), make(chan accounting, 1)
