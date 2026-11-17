@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -142,6 +143,9 @@ func TestScreenStreamRefusesBadTargets(t *testing.T) {
 // The live screen through ov-desk (Link v0.75): on an X11 session with ov-desk the plugin answers native and the core
 // runs `ov-desk stream` itself. Here ov-desk is a fake that records its arguments and plays H.264 from the PCM encoder.
 func TestScreenStreamRunsOvDeskOnAnX11Session(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("ov-desk captures X11 on Linux; the plugin offers it nowhere else")
+	}
 	bin := t.TempDir()
 	enc, err := video.NewPCMEncoder(64, 48)
 	if err != nil {

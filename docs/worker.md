@@ -23,7 +23,11 @@ one-time code: `curl -fsSL https://openvibe.link/install | sh -s -- --network â€
   `/opt/openvibe-codes` when Node.js 20 or newer is installed system-wide, and declares it as a `code` entry. Since
   v0.63.0 that is Codes v0.8.0, which also runs `kind: 'check'` jobs (one GitHub Actions workflow job with act in host
   mode, placed by OpenVibe.Run's checks scheduler), and the installer fetches the pinned act release beside it, checks
-  its sha256 and names it in `OPENVIBE_CODES_ACT_BIN`, so a check job does not download it again;
+  its sha256 and names it in `OPENVIBE_CODES_ACT_BIN`, so a check job does not download it again. Since v0.76.0 the
+  Link keeps that runner current by itself: every six hours it asks openvibe.codes which runner is current
+  (`GET /api/v1/runner`), installs a newer release from OpenVibe.Codes' own tag beside the old one, checks that it
+  starts and says that version, carries `act` over, and swaps it in when no job is starting or running (each job reads
+  its own copy of the folder). A failure leaves the runner as it was. `OPENVIBE_CODES_AUTO_UPDATE=0` turns it off;
 - with `--plan-logins` (which turns the worker on too), names the coding tools' own login files that are already signed
   in on this computer as the worker's `plan_logins`, and sets the service's HOME to your home so they sit under the
   Link user's home. A tool whose login file is missing or empty is skipped with a line giving its own login command; a
