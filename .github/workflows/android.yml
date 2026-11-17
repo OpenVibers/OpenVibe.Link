@@ -45,10 +45,13 @@ jobs:
           echo "$RUNNER_TEMP/gradle-8.11.1/bin" >> "$GITHUB_PATH"
 
       - name: Cache pinned Kotlin compiler
+        # The asset API without a token is 60 calls an hour per runner address: shared runners hit it (403, 11-17).
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           artifact="$HOME/.m2/repository/org/jetbrains/kotlin/kotlin-compiler-embeddable/2.0.21"
           mkdir -p "$artifact"
-          curl -fL --retry 3 -H 'Accept: application/octet-stream' \
+          curl -fL --retry 3 -H 'Accept: application/octet-stream' -H "Authorization: Bearer $GH_TOKEN" \
             https://api.github.com/repos/JetBrains/kotlin/releases/assets/587823233 \
             -o "$artifact/kotlin-compiler-embeddable-2.0.21.jar"
           echo '9fa8cdd1de0dccffe154c997d423ec6b5f53cd6d9177e3a77a9b0de03fb1bc81  '"$artifact/kotlin-compiler-embeddable-2.0.21.jar" | sha256sum -c -
