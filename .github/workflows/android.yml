@@ -45,17 +45,18 @@ jobs:
           echo "$RUNNER_TEMP/gradle-8.11.1/bin" >> "$GITHUB_PATH"
 
       - name: Cache pinned Kotlin compiler
+        # 429 from shared runners (11-17): retries 15 s apart, up to three minutes, not 1, 2 and 4 seconds.
         # The asset API without a token is 60 calls an hour per runner address: shared runners hit it (403, 11-17).
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           artifact="$HOME/.m2/repository/org/jetbrains/kotlin/kotlin-compiler-embeddable/2.0.21"
           mkdir -p "$artifact"
-          curl -fL --retry 3 -H 'Accept: application/octet-stream' -H "Authorization: Bearer $GH_TOKEN" \
+          curl -fL --retry 8 --retry-delay 15 --retry-max-time 180 -H 'Accept: application/octet-stream' -H "Authorization: Bearer $GH_TOKEN" \
             https://api.github.com/repos/JetBrains/kotlin/releases/assets/587823233 \
             -o "$artifact/kotlin-compiler-embeddable-2.0.21.jar"
           echo '9fa8cdd1de0dccffe154c997d423ec6b5f53cd6d9177e3a77a9b0de03fb1bc81  '"$artifact/kotlin-compiler-embeddable-2.0.21.jar" | sha256sum -c -
-          curl -fL --retry 3 \
+          curl -fL --retry 8 --retry-delay 15 --retry-max-time 180 \
             https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-compiler-embeddable/2.0.21/kotlin-compiler-embeddable-2.0.21.pom \
             -o "$artifact/kotlin-compiler-embeddable-2.0.21.pom"
           echo 'bd4656a46ec418252e5bc5e1c20eb2029fb2a8e0e3cc94eeddfac7e87c8cd5b6  '"$artifact/kotlin-compiler-embeddable-2.0.21.pom" | sha256sum -c -

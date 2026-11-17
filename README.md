@@ -36,6 +36,12 @@ openvibe.bot shows this command with the robot's id and a fresh code. `--driver`
 OpenVibe.Network gets `--network <URL> --pairing pair_… --code ABCD-1234` instead of `--robot`. Details, manual
 install, Windows and configuration: [docs/install.md](docs/install.md).
 
+**It keeps itself current (v0.78).** On Linux, a timer looks for a new release every six hours. When there is one and
+nothing is running (no job, no live screen, no desk stream), it checks that release's install.sh against its
+SHA256SUMS and runs it with the flags you installed with. That keeps the pairing, and nobody has to log in to the
+machine. The flags are kept in `/etc/openvibe-link/install-args`, never a code or a key. `--no-auto-update` turns it
+off; running the installer again updates by hand.
+
 **Put a port on the web** with [OpenVibe Connect](https://connect.openvibe.website): `openvibe-link share 8790`
 serves the share this computer was picked for at `https://<name>--<you>.openvibe.website` behind OpenVibe sign-in (or
 `openvibe-link share --key ovc_… --port 8790` with a key), and `openvibe-link share add` keeps it up with the service;

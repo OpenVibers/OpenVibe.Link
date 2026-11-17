@@ -88,6 +88,25 @@ impl Relay {
         Ok(r.get("result").cloned().unwrap_or(Value::Null))
     }
 
+    /// OV.screenshot: a JPEG of the page, at most max_width wide (Chrome scales it), handed back as Chrome's own base64
+    /// with its size: the plugin passes it on without decoding or encoding it again.
+    fn screenshot(&self, params: &Value, session: Option<&str>) -> Result<Value, String> {
+        let max_width = params.get("max_width").and_then(|v| v.as_f64()).unwrap_or(1280.0).max(64.0);
+        let quality = params.get("quality").and_then(|v| v.as_u64()).unwrap_or(70).clamp(10, 95);
+        let m = self.call("Page.getLayoutMetrics", json!({}), session)?;
+        let view = m.get("cssVisualViewport").or_else(|| m.get("visualViewport")).cloned().unwrap_or(Value::Null);
+        let width = view.get("clientWidth").and_then(|v| v.as_f64()).unwrap_or(1280.0);
+        let height = view.get("clientHeight").and_then(|v| v.as_f64()).unwrap_or(900.0);
+        let mut shot = json!({ "format": "jpeg", "quality": quality });
+        let scale = if width > max_width { max_width / width } else { 1.0 };
+        if scale < 1.0 {
+            shot["clip"] = json!({ "x": 0, "y": 0, "width": width, "height": height, "scale": scale });
+        }
+        let r = self.call("Page.captureScreenshot", shot, session)?;
+        let data = r.get("data").cloned().ok_or("no picture")?;
+        Ok(json!({ "data": data, "width": (width * scale).round() as i64, "height": (height * scale).round().max(1.0) as i64 }))
+    }
+
     /// OV.frame: one JPEG picture of the page, at most max_width wide, written whole to path.
     fn frame(&self, params: &Value, session: Option<&str>) -> Result<Value, String> {
         let path = params.get("path").and_then(|p| p.as_str()).ok_or("path is needed")?;
@@ -171,15 +190,17 @@ pub fn run(args: &[String]) -> i32 {
     // The plugin → Chrome: OV.* is answered here (on a thread, so a frame never holds up the plugin's other calls).
     let from_plugin = unsafe { std::fs::File::from_raw_fd(3) };
     messages(from_plugin, |m| {
-        if m.windows(6).take(64).any(|w| w == b"\"OV.fr") {
+        if m.windows(4).take(64).any(|w| w == b"\"OV.") {
             if let Ok(v) = serde_json::from_slice::<Value>(m) {
-                if v.get("method").and_then(|x| x.as_str()) == Some("OV.frame") {
+                let method = v.get("method").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                if method == "OV.frame" || method == "OV.screenshot" {
                     let relay = relay.clone();
                     std::thread::spawn(move || {
                         let id = v.get("id").cloned().unwrap_or(Value::Null);
                         let session = v.get("sessionId").and_then(|s| s.as_str()).map(|s| s.to_string());
                         let params = v.get("params").cloned().unwrap_or(Value::Null);
-                        let answer = match relay.frame(&params, session.as_deref()) {
+                        let done = if method == "OV.frame" { relay.frame(&params, session.as_deref()) } else { relay.screenshot(&params, session.as_deref()) };
+                        let answer = match done {
                             Ok(r) => json!({ "id": id, "result": r }),
                             Err(e) => json!({ "id": id, "error": { "code": -32000, "message": e } }),
                         };

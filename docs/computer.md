@@ -153,6 +153,12 @@ You can watch your machine's screen live on openvibe.bot (**Your machines** → 
   When the screen moves, Rust's media path wins, and it always uses about a quarter less memory. The pure-Rust crypto
   backend won, and it is the build. The media path alone was raced on real recordings as well: splitting the frames,
   RTP and SRTP took 11–44% less CPU in Rust (webrtc-rs) than in Go (pion).
+- **Screenshots of the screen through ov-desk (v0.78).** On X11, where ov-desk v0.78 or newer is installed,
+  `screen` asks `ov-desk shot` for the picture: it is read through MIT-SHM, shrunk and encoded as JPEG by libjpeg-turbo
+  in one process. Before, a forked `import` (or `scrot`) wrote a PNG that the plugin opened, shrank and encoded again
+  with Pillow. On a 1280×800 screen at 640 wide, over 3 rounds of 40, CPU went from 165–169 ms to 11 ms a picture
+  (−93%) and the wait from 145 ms to 14 ms. The pictures are about a quarter larger (24 KB against 19), since
+  Pillow's optimized Huffman tables are not used. An older ov-desk, Wayland or `OPENVIBE_SCREEN_SHOT=0` keep the tool.
 - **You are told.** The desktop says when it starts ("Your screen is live on OpenVibe"), and `openvibe-link status`
   shows `Screen: live … until …` while it runs.
 - **It ends** when its time is up, when you press Stop, when capturing fails five times in a row, and at once on
@@ -271,6 +277,10 @@ window manager.
     - total CPU 0.353 → 0.204 s (−42%);
     - the plugin's own 0.353 → 0.044 s;
     - the same 150 frames.
+  - **Agent screenshots too (v0.78).** An action's screenshot is taken scaled by Chrome and handed back by ov-desk as
+    Chrome's own base64. Before, Python decoded the full-size picture, shrank it with Pillow and encoded it again. At
+    640 wide, over 3 rounds of 60: 23–25 ms of CPU a screenshot became 0.7–0.9 ms (−96%), and 57–64 ms of waiting
+    became 49–50 ms.
   - **What it costs:** the relay is one more process (6.4 MB), and an ordinary call takes one more hop (323 → 366 µs).
     Both shrink as more of the browser moves into it.
 - **On a Mac too.** A browser desk needs only Chromium, Chrome, Edge or Brave, so it runs on macOS as well as Linux.

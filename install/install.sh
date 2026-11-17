@@ -103,6 +103,8 @@ NAME=""
 NETWORK=""
 PAIRING=""
 SERVICE=1
+# Link v0.78: the machine keeps itself current (a timer runs the next release's installer with these same flags).
+AUTO_UPDATE="${OPENVIBE_LINK_AUTO_UPDATE:-1}"
 LOCAL=""
 TAG="latest"
 WORKER=0
@@ -127,7 +129,10 @@ SETUP="${OPENVIBE_SETUP_KEY:-}"
 # v0.8.0 (2026-11-13) adds `kind: 'check'` jobs: one GitHub Actions workflow job run with act in host mode, which
 # OpenVibe.Run's checks scheduler places on worker nodes (CI on shared nodes).
 # v0.8.1 binds act's cache server to the job's own loopback (Link v0.64.0 brings it up).
-CODES_VERSION="${OPENVIBE_CODES_VERSION:-v0.8.1}"
+# v0.12.0 (2026-11-17) adds agent homes (job mode 'home') and Actor hand-offs. Since Link v0.76 the Link keeps the runner
+# at the release openvibe.codes names, so this pin is only the floor a new machine starts from: a runner already newer is
+# kept (Link v0.78: the self-updater runs this installer on every release, and must never take a runner back).
+CODES_VERSION="${OPENVIBE_CODES_VERSION:-v0.12.0}"
 CODES_DIR=/opt/openvibe-codes
 # The act release a check job runs (nektos/act, MIT): the same pin and sha256 as the Codes runner's harness/check.js.
 # It is fetched once here, checked, and named to the runner by OPENVIBE_CODES_ACT_BIN, so a check job does not download
@@ -140,7 +145,7 @@ usage() {
 	echo "                  [--driver adeept|adeept-mecanum|cozmo|looi|ros2|ros2-holonomic|none] [--worker [--plan-logins] [--serve-others]]"
 	echo "                  [--computer observe|ask|trusted|full] [--desk-host [--shared [--desktops]]] [--ai] [--ai-endpoint URL]"
 	echo "                  [--no-service] [--no-claim] [--setup osk_…]"
-	echo "                  [--local DIR] [--version TAG]"
+	echo "                  [--local DIR] [--version TAG] [--no-auto-update]"
 	echo "  curl -fsSL https://openvibe.link/install | sh      (finds the kit, then shows a code to approve on openvibe.bot/link)"
 	echo "  curl -fsSL https://openvibe.link/install | sh -s -- --robot rob_… --code ABCD-1234 --driver adeept"
 	echo "  curl -fsSL https://openvibe.link/install | sh -s -- --network https://openvibe.network --pairing pair_… --code ABCD-1234"
@@ -156,8 +161,22 @@ robot_arg() {
 	esac
 }
 
+# The flags this machine is installed with (Link v0.78), so the updater runs the next release's installer the same way:
+# never a pairing code, a setup key, a pinned version or a local folder.
+SAVED_ARGS=""
+_skip=0
+for _a in "$@"; do
+	if [ "$_skip" = 1 ]; then _skip=0; continue; fi
+	case "$_a" in
+	--code|--setup|--pairing|--version|--local) _skip=1; continue ;;
+	--no-auto-update) continue ;;
+	esac
+	SAVED_ARGS="$SAVED_ARGS '$(printf '%s' "$_a" | sed "s/'/'\\\\''/g")'"
+done
+
 while [ $# -gt 0 ]; do
 	case "$1" in
+	--no-auto-update) AUTO_UPDATE=0; shift ;;
 	--robot) robot_arg "${2:-}"; shift 2 ;;
 	--robot=*) robot_arg "${1#*=}"; shift ;;
 	--driver) DRIVER="${2:-}"; DRIVER_GIVEN=1; shift 2 ;;
@@ -1327,11 +1346,17 @@ if [ "$WORKER" = 1 ]; then
 		if [ -x "$candidate" ] && [ "$("$candidate" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)" -ge 20 ]; then NODEJS="$candidate"; break; fi
 	done
 	if [ -n "$NODEJS" ]; then
-		say "adding the OpenVibe.Codes job runner $CODES_VERSION in $CODES_DIR"
-		$SUDO mkdir -p "$CODES_DIR"
-		$SUDO "$(dirname "$NODEJS")/npm" install --prefix "$CODES_DIR" --omit=dev --no-audit --no-fund --no-save --loglevel=error \
-			"https://codeload.github.com/OpenVibers/OpenVibe.Codes/tar.gz/refs/tags/$CODES_VERSION" >/dev/null ||
-			die "could not install OpenVibe.Codes $CODES_VERSION into $CODES_DIR"
+		_codes_have="$("$NODEJS" -p "require('$CODES_DIR/node_modules/openvibe-codes/package.json').version" 2>/dev/null || true)"
+		_codes_want="${CODES_VERSION#v}"
+		if [ -n "$_codes_have" ] && [ "$(printf '%s\n%s\n' "$_codes_want" "$_codes_have" | sort -V | tail -n 1)" = "$_codes_have" ]; then
+			say "keeping the OpenVibe.Codes job runner $_codes_have in $CODES_DIR (not older than $CODES_VERSION)"
+		else
+			say "adding the OpenVibe.Codes job runner $CODES_VERSION in $CODES_DIR"
+			$SUDO mkdir -p "$CODES_DIR"
+			$SUDO "$(dirname "$NODEJS")/npm" install --prefix "$CODES_DIR" --omit=dev --no-audit --no-fund --no-save --loglevel=error \
+				"https://codeload.github.com/OpenVibers/OpenVibe.Codes/tar.gz/refs/tags/$CODES_VERSION" >/dev/null ||
+				die "could not install OpenVibe.Codes $CODES_VERSION into $CODES_DIR"
+		fi
 		say "adding act $ACT_VERSION for check jobs (GitHub Actions workflow jobs, run in the job sandbox)"
 		act_tgz="$TMP/act.tar.gz"
 		if { if command -v curl >/dev/null 2>&1; then curl -fsSL --retry 3 -o "$act_tgz" \
@@ -1421,6 +1446,136 @@ elif $SUDO "$BIN_DIR/openvibe-link" status --json 2>/dev/null | grep -q '"paired
 	say "paired already; the update keeps it"
 else
 	say "not paired yet: get a code on openvibe.link/pair (a computer) or openvibe.bot (a robot) and run: sudo openvibe-link pair <CODE>"
+fi
+
+# ---- keeping itself current (Link v0.78) ----
+# The owner, 11-17: Link does it, nobody logs in to a machine. Every six hours (and an hour after boot) a timer looks at
+# the latest release; when it is newer and nothing is running here (no job, no live screen, no desk stream), it checks
+# that release's install.sh against its SHA256SUMS and runs it with the flags saved above, which keeps the pairing.
+# --no-auto-update (or OPENVIBE_LINK_AUTO_UPDATE=0) turns it off; /etc/openvibe-link/no-auto-update says so.
+if [ "$SERVICE" = 1 ] && [ -z "$LOCAL" ] && [ "$(uname -s)" = Linux ] && command -v systemctl >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+	$SUDO mkdir -p /etc/openvibe-link /usr/local/lib/openvibe-link
+	if [ "$AUTO_UPDATE" = 0 ]; then
+		$SUDO touch /etc/openvibe-link/no-auto-update
+		$SUDO systemctl disable --now openvibe-link-update.timer >/dev/null 2>&1 || true
+		say "automatic updates are off (--no-auto-update): run this installer again to update"
+	else
+		$SUDO rm -f /etc/openvibe-link/no-auto-update
+		printf '%s\n' "$SAVED_ARGS" | $SUDO sh -c 'umask 077; cat > /etc/openvibe-link/install-args'
+		$SUDO sh -c "cat > /usr/local/lib/openvibe-link/update-link && chmod 0755 /usr/local/lib/openvibe-link/update-link" <<'PY'
+#!/usr/bin/env python3
+"""OpenVibe Link, kept current (Link v0.78). When the latest release is newer than this machine's Link and nothing is
+running here, that release's install.sh is checked against its SHA256SUMS and run with the flags the machine was
+installed with (/etc/openvibe-link/install-args), which keeps its pairing. Prints one line saying what it did."""
+import hashlib, json, os, re, shlex, subprocess, sys, tempfile, urllib.request
+
+REPO = os.environ.get("OPENVIBE_LINK_REPO", "https://github.com/OpenVibers/OpenVibe.Link")
+ARGS = os.environ.get("OPENVIBE_LINK_INSTALL_ARGS", "/etc/openvibe-link/install-args")
+OFF = os.environ.get("OPENVIBE_LINK_NO_AUTO_UPDATE", "/etc/openvibe-link/no-auto-update")
+SEMVER = re.compile(r"(\d+)\.(\d+)\.(\d+)")
+
+
+def run(argv, timeout=30):
+    return subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+
+
+def installed():
+    m = SEMVER.search(run(["openvibe-link", "--version"]).stdout or "")
+    return tuple(map(int, m.groups())) if m else None
+
+
+def latest():
+    # The latest release's page redirects to its tag: no API call, so no rate limit.
+    req = urllib.request.Request(REPO + "/releases/latest", headers={"User-Agent": "openvibe-link-update"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        m = re.search(r"/tag/v(\d+)\.(\d+)\.(\d+)$", r.geturl())
+    return tuple(map(int, m.groups())) if m else None
+
+
+def busy():
+    try:
+        st = json.loads(run(["openvibe-link", "status", "--json"]).stdout or "{}")
+    except (ValueError, subprocess.SubprocessError, OSError):
+        return None   # no answer: the service is down, and an update is what it needs
+    if st.get("jobs"):
+        return "%d job(s) running" % len(st["jobs"])
+    if (st.get("screen") or {}).get("state") not in (None, "off"):
+        return "the screen is live"
+    if st.get("desk_stream"):
+        return "a desk is streaming"
+    return None
+
+
+def get(url, path):
+    req = urllib.request.Request(url, headers={"User-Agent": "openvibe-link-update"})
+    with urllib.request.urlopen(req, timeout=120) as r, open(path, "wb") as f:
+        f.write(r.read())
+
+
+def main():
+    if os.path.exists(OFF):
+        print("automatic updates are off")
+        return 0
+    have, want = installed(), latest()
+    if not have or not want:
+        print("could not tell the versions apart (have %s, latest %s)" % (have, want))
+        return 0
+    if want <= have:
+        print("current (v%d.%d.%d)" % have)
+        return 0
+    why = busy()
+    if why:
+        print("v%d.%d.%d is out; waiting: %s" % (want + (why,)))
+        return 0
+    tag = "v%d.%d.%d" % want
+    with tempfile.TemporaryDirectory() as d:
+        script, sums = os.path.join(d, "install.sh"), os.path.join(d, "SHA256SUMS")
+        get("%s/releases/download/%s/install.sh" % (REPO, tag), script)
+        get("%s/releases/download/%s/SHA256SUMS" % (REPO, tag), sums)
+        digest = hashlib.sha256(open(script, "rb").read()).hexdigest()
+        listed = [line.split()[0] for line in open(sums) if line.strip().endswith(" install.sh") or line.strip().endswith("*install.sh")]
+        if listed != [digest]:
+            print("refused %s: its install.sh does not match its SHA256SUMS" % tag)
+            return 1
+        args = shlex.split(open(ARGS).read()) if os.path.exists(ARGS) else []
+        print("updating v%d.%d.%d to %s" % (have + (tag,)))
+        r = subprocess.run(["sh", script, "--version", tag] + args, timeout=3600)
+        return r.returncode
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+PY
+		$SUDO sh -c "cat > /etc/systemd/system/openvibe-link-update.service" <<'EOF'
+[Unit]
+Description=Keep OpenVibe Link current
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/openvibe-link/update-link
+EOF
+		$SUDO sh -c "cat > /etc/systemd/system/openvibe-link-update.timer" <<'EOF'
+[Unit]
+Description=Keep OpenVibe Link current, every six hours
+
+[Timer]
+OnBootSec=1h
+OnUnitActiveSec=6h
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+		$SUDO systemctl daemon-reload >/dev/null 2>&1
+		if $SUDO systemctl enable --now openvibe-link-update.timer >/dev/null 2>&1; then
+			say "keeps itself current: a timer installs each new release when nothing is running (--no-auto-update turns it off)"
+		else
+			say "warning: the update timer could not be turned on; run this installer again to update"
+		fi
+	fi
 fi
 
 # ---- the one command: is it driving and streaming? ----

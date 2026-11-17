@@ -5,7 +5,7 @@
   "wave": "T15",
   "plan": "Plan track T15 (Bot complete) and ADR-043 (Bot: devices, pairing, control and safety); the computer plugin and the job worker serve OpenVibe.Actor and the Codes job runner (tracks T14/T17)",
   "kind": "client",
-  "version": "0.77.0",
+  "version": "0.78.0",
   "release": "v0.75.0: the live screen through ov-desk. On an X11 session where ov-desk is installed, the core runs `ov-desk stream`. It reads the screen through MIT-SHM and encodes H.264 itself with OpenH264's screen-content mode at 15 a second, about 16 ms of CPU a 1280x800 frame against about 70 for a forked screenshot and ffmpeg, and a frame every 66 ms instead of every 500. The plugin still applies the owner's level and says the screen is live; Wayland and other systems keep the frames path.",
   "runtime": "go 1.24 (one static binary per platform); plugins in Python 3; an ESP32 Arduino library",
   "database": "none",

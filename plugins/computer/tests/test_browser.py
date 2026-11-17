@@ -455,7 +455,8 @@ class RealBrowserRelayTest(unittest.TestCase):
         page = b.open(base + "/")
         self.assertEqual((page["title"], [l["text"] for l in page["links"]]), ("Home", ["Second page"]))
         self.assertEqual(b.click(text="Second page")["title"], "Two")
-        self.assertEqual(b.screenshot(640)["format"], "jpeg")
+        shot = b.screenshot(640)
+        self.assertEqual((shot["format"], shot["width"] <= 640, len(shot["content_b64"]) > 100), ("jpeg", True, True), "scaled by Chrome, handed back as it came")
         frame = os.path.join(profile, "frame.jpg")
         b.frame(frame, 320, 60)
         with open(frame, "rb") as f:

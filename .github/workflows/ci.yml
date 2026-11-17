@@ -261,8 +261,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - run: shellcheck -s sh install/install.sh scripts/dist.sh scripts/test-install-stock-server.sh scripts/test-install-pair-args.sh scripts/test-install-worker-config.sh scripts/test-install-computer-config.sh scripts/test-install-plan-logins.sh scripts/test-install-claim.sh scripts/test-install-plugins-installed.sh
+      - run: shellcheck -s sh install/install.sh scripts/dist.sh scripts/test-install-stock-server.sh scripts/test-install-pair-args.sh scripts/test-install-worker-config.sh scripts/test-install-computer-config.sh scripts/test-install-plan-logins.sh scripts/test-install-claim.sh scripts/test-install-plugins-installed.sh scripts/test-install-update.sh
       - run: sh scripts/test-install-stock-server.sh
+      - run: sh scripts/test-install-update.sh
       - run: sh scripts/test-install-pair-args.sh
       - run: sh scripts/test-install-worker-config.sh
       - run: sh scripts/test-install-computer-config.sh
@@ -298,9 +299,11 @@ jobs:
           arduino-cli core update-index
           cache="$HOME/.arduino15/staging/packages"
           mkdir -p "$cache"
+          # With the workflow's token (as ArduinoJson above): the anonymous asset API is 60 an hour per runner address,
+          # and these seven toolchains alone failed the job with 403 on 11-17.
           stage_asset() {
             file=$1 repo=$2 asset=$3 checksum=$4
-            curl -fLsS --retry 3 -H 'Accept: application/octet-stream' \
+            curl -fLsS --retry 3 -H 'Accept: application/octet-stream' -H "Authorization: Bearer ${{ github.token }}" \
               "https://api.github.com/repos/$repo/releases/assets/$asset" -o "$cache/$file"
             printf '%s  %s\n' "$checksum" "$cache/$file" | sha256sum -c -
           }
