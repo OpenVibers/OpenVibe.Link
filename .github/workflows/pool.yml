@@ -17,7 +17,7 @@ jobs:
         run: |
           curl -fsSL https://codeload.github.com/ggml-org/llama.cpp/tar.gz/bcb0152876e8f0b684ba70d3defcab6cdf35adb5 -o /tmp/llama.tar.gz
           tar -xzf /tmp/llama.tar.gz -C /tmp
-          cmake -S /tmp/llama.cpp-bcb0152876e8f0b684ba70d3defcab6cdf35adb5 -B /tmp/pool-build -DGGML_RPC=ON -DLLAMA_CURL=OFF -DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF
+          cmake -S /tmp/llama.cpp-bcb0152876e8f0b684ba70d3defcab6cdf35adb5 -B /tmp/pool-build -DGGML_RPC=ON -DLLAMA_CURL=OFF -DGGML_NATIVE=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_USE_PREBUILT_UI=OFF -DLLAMA_BUILD_UI=OFF
           cmake --build /tmp/pool-build --target ggml-rpc-server llama-server -j2
           curl -fsSL https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories15M-q4_0.gguf -o /tmp/pool-model.gguf
           echo "66967fbece6dbe97886593fdbb73589584927e29119ec31f08090732d1861739  /tmp/pool-model.gguf" | sha256sum -c -

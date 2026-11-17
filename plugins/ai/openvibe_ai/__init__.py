@@ -65,7 +65,9 @@ import urllib.request
 
 from openvibe_plugin import Deferred, Fault, Plugin
 
-VERSION = "0.4.0"
+from openvibe_ai import serve as served_models
+
+VERSION = "0.5.0"
 DEFAULT_ENDPOINTS = ("http://127.0.0.1:11434", "http://127.0.0.1:1234", "http://127.0.0.1:8080")
 MAX_REPLY_CHARS = 200 * 1024     # well inside the core's answer limit (512 KB)
 MAX_MESSAGES = 200
@@ -372,6 +374,12 @@ class Ai(Plugin):
         self.pool_allow_start = False
         self.pool_cfg = None
         self.pool_error = None
+        # Models this machine runs itself (plugin 0.5.0, Link v0.79, plan §AD.23): alias → served_models.Served once
+        # running, and what each one is doing while it is fetched and started (for describe).
+        self.served = {}
+        self.serve_state = {}
+        self.serve_specs = ()
+        self.serve_lock = threading.Lock()
 
     # ---- the model server -----------------------------------------------------------------------------------------
     def _get(self, url, timeout):
@@ -398,6 +406,9 @@ class Ai(Plugin):
         if cfg.get("pool_directory"):
             self._configure_pool(cfg)
             return
+        if cfg.get("serve") is not None:
+            self._configure_serve(cfg)
+            return
         endpoint = cfg.get("endpoint")
         if endpoint is not None and (not isinstance(endpoint, str) or not endpoint.startswith(("http://", "https://"))):
             raise Fault("bad_value", "endpoint is the model server's http(s) base, for example http://127.0.0.1:11434")
@@ -420,6 +431,81 @@ class Ai(Plugin):
         if before is None or before != self.offer["idle_only"]:
             self.quiet_since = None
             self._busy_cache = (0.0, False, None)
+
+    # ---- models this machine runs itself (plugin 0.5.0) -------------------------------------------------------------
+    def _serve_root(self):
+        return self.cfg.get("models_dir") or os.path.join(os.environ.get("OPENVIBE_LINK_STATE") or os.path.expanduser("~/.local/state/openvibe-link"), "ai-models")
+
+    def _configure_serve(self, cfg):
+        raw = cfg.get("serve")
+        if not isinstance(raw, list) or len(raw) > 8:
+            raise Fault("bad_value", "serve is a list of up to 8 models: {model} from the catalog, or {alias, url, sha256}")
+        try:
+            specs = tuple(served_models.spec_of(e) for e in raw)
+        except served_models.ServeError as e:
+            raise Fault("bad_value", str(e))
+        if len({s["alias"] for s in specs}) != len(specs):
+            raise Fault("bad_value", "two served models share an alias")
+        with self.serve_lock:
+            changed = specs != self.serve_specs
+            self.serve_specs = specs
+        if changed and self.pool_allow_start:
+            self._apply_serve(specs)
+        ready = [a for a, s in self.served.items() if s.ready]
+        wanted = cfg.get("models")
+        self.models = [a for a in ready if not wanted or a in wanted]
+        self.reachable = bool(ready)
+        self.endpoint = None
+        before = self.offer.get("idle_only")
+        self.offer = _offer_config(cfg, self.models)
+        if before is None or before != self.offer["idle_only"]:
+            self.quiet_since = None
+            self._busy_cache = (0.0, False, None)
+
+    def _apply_serve(self, specs):
+        """Stops the models no longer listed and fetches and starts the new ones, each on a thread of its own (a model
+        is gigabytes: the plugin answers meanwhile and says what each one is doing)."""
+        keep = {s["alias"]: s for s in specs}
+        for alias in list(self.served):
+            if alias not in keep or self.served[alias].spec != keep[alias]:
+                self.served.pop(alias).stop()
+                self.serve_state.pop(alias, None)
+        for s in specs:
+            if s["alias"] in self.served or self.serve_state.get(s["alias"], {}).get("state") in ("fetching", "starting"):
+                continue
+            self.serve_state[s["alias"]] = {"state": "fetching"}
+            threading.Thread(target=self._provision, args=(s,), name="ai-provision-" + s["alias"], daemon=True).start()
+
+    def _provision(self, spec):
+        alias = spec["alias"]
+        try:
+            root = self._serve_root()
+            binary = served_models.llama_server(root, opener=self.default_opener, log=self.log)
+            model = served_models.fetch_checked(spec["url"], spec["sha256"], os.path.join(root, "models", spec["sha256"] + ".gguf"),
+                                                opener=self.default_opener, log=self.log)
+            with self.serve_lock:
+                if spec not in self.serve_specs:
+                    return
+                self.serve_state[alias] = {"state": "starting"}
+                self.served[alias] = served_models.Served(spec, binary, model, log=self.log).start()
+        except (served_models.ServeError, OSError, ValueError) as e:
+            self.serve_state[alias] = {"state": "problem", "problem": str(e)[:200]}
+            self.log("could not serve %s: %s" % (alias, e))
+
+    def _serve_view(self):
+        out = []
+        for s in self.serve_specs:
+            running = self.served.get(s["alias"])
+            if running is not None:
+                state = {"state": "ready" if running.ready else "starting", **({"problem": running.problem} if running.problem else {})}
+            else:
+                state = self.serve_state.get(s["alias"]) or {"state": "waiting"}
+            out.append({"model": s["alias"], "embedding": s["embedding"], **state})
+        return out
+
+    def _endpoint_for(self, model):
+        running = self.served.get(model)
+        return running.endpoint if running is not None and running.ready else self.endpoint
 
     def _raw_busy(self):
         """(busy, reason) from the injected probe or the machine's own signals, cached for five seconds."""
@@ -641,6 +727,10 @@ class Ai(Plugin):
         runtime = self.pool_runtime
         if runtime:
             runtime.close()
+        # The models it runs go with it.
+        for running in list(self.served.values()):
+            running.stop()
+        self.served.clear()
 
     def describe(self, config):
         try:
@@ -651,6 +741,8 @@ class Ai(Plugin):
                       "max_tokens": self.max_tokens, "tools": True,
                       "speed": {m: round(r, 1) for m, r in self.speed.items()},
                       "offer": self._offer_view()}}
+        if self.serve_specs:
+            out["ai"]["serving"] = self._serve_view()
         if self.cfg.get("pool_directory"):
             runtime = self.pool_runtime
             out["ai"]["pool"] = {"id": runtime.doc["id"] if runtime else None,
@@ -662,8 +754,9 @@ class Ai(Plugin):
 
     def setup(self, config):
         self.pool_allow_start = True
+        self.serve_specs = ()
         self._configure(config)
-        if self.endpoint is None:
+        if self.endpoint is None and not (config or {}).get("serve"):
             self.log("no model server answers yet (Ollama, LM Studio or llama.cpp's server, or the endpoint in config)")
 
     # ---- one reply --------------------------------------------------------------------------------------------------
@@ -770,7 +863,7 @@ class Ai(Plugin):
 
     def _reply(self, cid, body, community=False):
         try:
-            req = urllib.request.Request(self.endpoint + "/v1/chat/completions", data=json.dumps(body).encode("utf-8"),
+            req = urllib.request.Request((self._endpoint_for(body.get("model")) or "") + "/v1/chat/completions", data=json.dumps(body).encode("utf-8"),
                                          headers={"Content-Type": "application/json", "Accept": "application/json"})
             started = self.clock()
             with self.opener(req, timeout=self.timeout_s) as r:
