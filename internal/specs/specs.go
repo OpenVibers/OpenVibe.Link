@@ -5,7 +5,8 @@
 //
 // Everything is best effort and bounded: a probe that cannot answer leaves its field empty, a slow tool (lspci,
 // nvidia-smi, system_profiler) gets ProbeTimeout, and Read never fails. Nothing personal is read: no serial numbers,
-// no user names, no host names beyond what the Link already reports.
+// no user names, no host names beyond what the Link already reports. Addresses are only the machine's own private ones
+// (lan.go), never a public one.
 package specs
 
 import (
@@ -60,12 +61,14 @@ type Machine struct {
 	DiskFreeGB     float64        `json:"disk_free_gb,omitempty"`
 	Virtualization Virtualization `json:"virtualization"`
 	Display        string         `json:"display,omitempty"` // x11, wayland, quartz, windows or none (a service with no screen)
+	LAN            []string       `json:"lan,omitempty"`     // its addresses on its own networks (lan.go): where Computer finds it
 }
 
 // Read is the machine now. dataDir is the volume whose space is reported (the Link's state directory).
 func Read(dataDir string) Machine {
 	m := Machine{Arch: runtime.GOARCH, CPU: CPU{Threads: runtime.NumCPU()}}
 	readOS(&m)
+	m.LAN = lanAddresses()
 	if dataDir != "" {
 		m.DiskTotalGB, m.DiskFreeGB = diskGB(dataDir)
 	}
