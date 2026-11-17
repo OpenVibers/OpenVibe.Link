@@ -322,7 +322,9 @@ class RealLentDesktopTest(unittest.TestCase):
             self.assertEqual(cmd("input", {"action": "type", "text": "echo sandboxed", "desk": "desk-a"})["op"], "ack")
             self.assertEqual(lent.xdotool(["xdotool", "getdisplaygeometry"])["out"].split(), ["800", "600"], "its own display")
             # Its programs run (the terminal needs the desk's own ptys, Link v0.65.1), and say why when they do not.
-            self.assertTrue(lent.native, "CI installs the Link under /usr: the Go helper runs (Link v0.67)")
+            self.assertTrue(lent.native, "CI installs the Link under /usr: a native helper runs (Link v0.67)")
+            if os.path.exists("/usr/local/bin/ov-desk"):
+                self.assertEqual(lent.helper, "ov-desk", "CI installs ov-desk under /usr too: the Rust helper runs (Link v0.74)")
             # Link v0.68: the screen read through MIT-SHM inside the sandbox, and libjpeg-turbo (CI installs it) encoding.
             self.assertEqual(lent.paths, {"capture": "shm", "encoder": "libjpeg-turbo"}, "the fast picture path")
             info = lent.logs()
@@ -336,6 +338,27 @@ class RealLentDesktopTest(unittest.TestCase):
                          "the sandbox removed its root (SIGTERM, not killed)")
         plugin.stop()
 
+
+
+@unittest.skipIf(os.name == "nt", "lent desktops are Linux: these are POSIX paths")
+class NativeHelperChoiceTest(unittest.TestCase):
+    """Link v0.74: ov-desk (Rust) is the first native helper, the Link's own binary the second; only where the sandbox
+    sees it (under /usr, /bin or /opt)."""
+
+    def plugin(self, found, env=None):
+        return Computer(env=env or {}, platform="linux", which=lambda n: found.get(n))
+
+    def test_ov_desk_first_then_the_link(self):
+        both = {"ov-desk": "/usr/local/bin/ov-desk", "openvibe-link": "/usr/local/bin/openvibe-link"}
+        self.assertEqual(self.plugin(both)._native_display(), os.path.realpath("/usr/local/bin/ov-desk"))
+        self.assertEqual(self.plugin({"openvibe-link": "/usr/local/bin/openvibe-link"})._native_display(),
+                         os.path.realpath("/usr/local/bin/openvibe-link"))
+
+    def test_only_where_the_sandbox_sees_it(self):
+        self.assertEqual(self.plugin({"ov-desk": "/home/me/ov-desk", "openvibe-link": "/opt/openvibe-link/openvibe-link"})._native_display(),
+                         os.path.realpath("/opt/openvibe-link/openvibe-link"), "a helper in a home folder is skipped")
+        self.assertIsNone(self.plugin({})._native_display())
+        self.assertEqual(self.plugin({}, env={"OPENVIBE_DESK_EXE": "/usr/bin/ov-desk"})._native_display(), os.path.realpath("/usr/bin/ov-desk"))
 
 if __name__ == "__main__":
     unittest.main()

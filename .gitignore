@@ -17,3 +17,4 @@ android/local.properties
 android/keystore.properties
 android/.kotlin/
 *.aar
+/desk/target/

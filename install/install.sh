@@ -924,6 +924,24 @@ fi
 $SUDO install -m 0755 "$TMP/$BIN_NAME" "$BIN_DIR/openvibe-link"
 say "installed $BIN_DIR/openvibe-link ($("$BIN_DIR/openvibe-link" version))"
 
+# ---- ov-desk (Linux): the lent desktop's Rust helper, the computer plugin's first choice ----
+# Optional: a release without it (before v0.74) or a failed check leaves the Go helper (`openvibe-link desk-display`).
+if [ "$OS" = linux ] && { [ "$ARCH" = amd64 ] || [ "$ARCH" = arm64 ]; }; then
+	DESK_NAME="ov-desk-linux-$ARCH"
+	desk_ok=""
+	if [ -n "$LOCAL" ]; then
+		[ -s "$LOCAL/$DESK_NAME" ] && cp "$LOCAL/$DESK_NAME" "$TMP/$DESK_NAME" && desk_ok=1
+	elif fetch "$BASE/$DESK_NAME" "$TMP/$DESK_NAME" 2>/dev/null; then
+		( cd "$TMP"
+		  grep -E " $DESK_NAME\$" SHA256SUMS > desk-sums &&
+		  if command -v sha256sum >/dev/null 2>&1; then sha256sum -c desk-sums >/dev/null; else shasum -a 256 -c desk-sums >/dev/null; fi ) && desk_ok=1
+	fi
+	if [ -n "$desk_ok" ]; then
+		$SUDO install -m 0755 "$TMP/$DESK_NAME" "$BIN_DIR/ov-desk"
+		say "installed $BIN_DIR/ov-desk (lent desktops: the Rust helper)"
+	fi
+fi
+
 # ---- service account (Linux): hardware groups, no login ----
 # A worker (--worker) runs the service as root: the job sandbox's run_as and its public egress (a veth, NAT and the
 # Link's nftables table) need it, and each job still runs as the unprivileged openvibe-job user.

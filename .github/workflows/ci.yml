@@ -46,6 +46,16 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libturbojpeg
           OPENVIBE_EXPECT_FAST=1 go test -count=1 -v -run 'TestRealDisplay|TestEncodeBGRX' ./internal/deskdisplay | tee /tmp/fast.log
           grep -q 'capture shm, encoder libjpeg-turbo' /tmp/fast.log
+      # ov-desk (desk/, Rust, Link v0.74): its unit tests, then its own loop on a real Xvfb through MIT-SHM and
+      # libjpeg-turbo (the bench prints how it made the pictures).
+      - name: ov-desk (Rust desk helper)
+        run: |
+          cargo test --quiet --locked --manifest-path desk/Cargo.toml
+          cargo build --quiet --release --locked --manifest-path desk/Cargo.toml
+          Xvfb :93 -screen 0 1024x768x24 -nolisten tcp & sleep 1
+          desk/target/release/ov-desk bench -display :93 -seconds 2 -moves 100 | tee /tmp/ov-desk.json
+          grep -q '"capture":"shm"' /tmp/ov-desk.json && grep -q '"encoder":"libjpeg-turbo"' /tmp/ov-desk.json
+          kill %1
       # The tray's desktop notifications, against a fake notification server on a private session bus.
       - name: tray notifications (private D-Bus)
         run: |
@@ -75,9 +85,11 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq xvfb openbox xdotool imagemagick xterm libturbojpeg
           d=$(mktemp -d) && chmod 755 "$d"
           go build -o "$d/openvibe-link" ./cmd/openvibe-link
-          # Where a desk host installs it: under /usr the sandbox sees it, so a lent desktop runs the Go helper
-          # (openvibe-link desk-display, Link v0.67) rather than the Python one.
+          # Where a desk host installs it: under /usr the sandbox sees it, so a lent desktop runs a native helper rather
+          # than the Python one: ov-desk (Rust, Link v0.74) first, the Go one (openvibe-link desk-display) without it.
           sudo install -m 0755 "$d/openvibe-link" /usr/local/bin/openvibe-link
+          cargo build --quiet --release --locked --manifest-path desk/Cargo.toml
+          sudo install -m 0755 desk/target/release/ov-desk /usr/local/bin/ov-desk
           mkdir -m 700 "$d/config" "$d/state"
           echo '{"worker":{"enabled":true,"run_as":{"uid":65534,"gid":65534}}}' > "$d/config/config.json"
           sudo systemd-run --scope --quiet -p Delegate=yes env OPENVIBE_DESK_SANDBOX_TESTS=require \
@@ -99,8 +111,10 @@ jobs:
           go-version-file: go.mod
       # The packages are built on every run so a broken .deb/.rpm is caught before a tag: dpkg-deb ships with Ubuntu,
       # rpm (rpmbuild) does not.
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm
-      - run: scripts/dist.sh ci
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm gcc-aarch64-linux-gnu
+      # ov-desk for Linux amd64 and arm64 (Rust): the arm64 one through the cross linker.
+      - run: rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
+      - run: OV_DESK_REQUIRED=1 scripts/dist.sh ci
       # OpenVibe.Bot's /install route and BOT_INSTALLER_SOURCE_URL are documented to serve this exact release asset.
       - run: test -s dist/install.sh && cmp -s install/install.sh dist/install.sh
       - name: every OS, architecture and package the release promises is in dist
@@ -112,18 +126,22 @@ jobs:
             dist/openvibe-link_*_amd64.deb dist/openvibe-link_*_arm64.deb \
             dist/openvibe-link-*-1.x86_64.rpm dist/openvibe-link-*-1.aarch64.rpm \
             dist/openvibe-link_*_linux_amd64.tar.gz dist/openvibe-link_*_linux_arm64.tar.gz \
-            dist/openvibe-link_*_darwin_amd64.tar.gz dist/openvibe-link_*_darwin_arm64.tar.gz; do
+            dist/openvibe-link_*_darwin_amd64.tar.gz dist/openvibe-link_*_darwin_arm64.tar.gz \
+            dist/ov-desk-linux-amd64 dist/ov-desk-linux-arm64; do
             test -s "$f" || { echo "missing $f"; exit 1; }
           done
+          file dist/ov-desk-linux-arm64 | grep -q aarch64
       - name: the packages carry the program, not just a file
         run: |
           for f in dist/*.deb; do
             dpkg-deb -c "$f" > /tmp/pkg.txt
             grep -q 'usr/local/bin/openvibe-link$' /tmp/pkg.txt
+            grep -q 'usr/local/bin/ov-desk$' /tmp/pkg.txt
           done
           for f in dist/*.rpm; do
             rpm -qpl "$f" > /tmp/pkg.txt
             grep -qx '/usr/local/bin/openvibe-link' /tmp/pkg.txt
+            grep -qx '/usr/local/bin/ov-desk' /tmp/pkg.txt
           done
           for f in dist/openvibe-link_*.tar.gz; do
             tar -tzf "$f" > /tmp/pkg.txt

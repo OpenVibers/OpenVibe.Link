@@ -26,8 +26,9 @@ jobs:
           for p in sdk dryrun adeept_adr036 cozmo relay ros2 computer voice; do python -m pytest -q plugins/$p/tests; done
       # The packages are built on every tag, and CI already built them on the PR that made this commit: rpm is the
       # only tool Ubuntu does not ship.
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm
-      - run: scripts/dist.sh "${GITHUB_REF_NAME}"
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm gcc-aarch64-linux-gnu
+      - run: rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
+      - run: OV_DESK_REQUIRED=1 scripts/dist.sh "${GITHUB_REF_NAME}"
       # Every release must carry the installer OpenVibe.Bot's GET /install route and BOT_INSTALLER_SOURCE_URL are
       # documented to serve (releases/latest/download/install.sh), the plugin bundle the installer downloads, every
       # OS/architecture the site offers, and the checksums they are verified against.
@@ -44,7 +45,8 @@ jobs:
             dist/openvibe-link-*-1.x86_64.rpm dist/openvibe-link-*-1.aarch64.rpm \
             dist/openvibe-link_*_linux_amd64.tar.gz dist/openvibe-link_*_linux_arm64.tar.gz \
             dist/openvibe-link_*_darwin_amd64.tar.gz dist/openvibe-link_*_darwin_arm64.tar.gz \
-            dist/openvibe-link-linux-amd64 dist/openvibe-link-windows-amd64.exe; do
+            dist/openvibe-link-linux-amd64 dist/openvibe-link-windows-amd64.exe \
+            dist/ov-desk-linux-amd64 dist/ov-desk-linux-arm64; do
             test -s "$f" || { echo "missing $f"; exit 1; }
           done
       - name: publish the release

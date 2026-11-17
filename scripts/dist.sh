@@ -21,6 +21,26 @@ for target in linux/amd64 linux/arm64 linux/arm/7 darwin/amd64 darwin/arm64 wind
 		go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o "dist/$name" ./cmd/openvibe-link
 	echo "built dist/$name"
 done
+# ov-desk (desk/, Rust): the lent desktop's helper on Linux, the computer plugin's first choice (2026-11-17: the race in
+# docs/computer.md). Built where cargo is; a release (OV_DESK_REQUIRED=1) must have it.
+if command -v cargo >/dev/null 2>&1; then
+	for pair in amd64:x86_64-unknown-linux-gnu arm64:aarch64-unknown-linux-gnu; do
+		arch="${pair%%:*}"
+		triple="${pair#*:}"
+		if [ "$arch" = arm64 ] && [ "$(uname -m)" != aarch64 ]; then
+			command -v aarch64-linux-gnu-gcc >/dev/null 2>&1 || { [ "${OV_DESK_REQUIRED:-0}" = 1 ] && { echo "dist: aarch64-linux-gnu-gcc is needed for ov-desk arm64" >&2; exit 1; }; echo "dist: no aarch64 linker, ov-desk arm64 skipped"; continue; }
+			export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+		fi
+		cargo build --quiet --release --locked --manifest-path desk/Cargo.toml --target "$triple"
+		cp "desk/target/$triple/release/ov-desk" "dist/ov-desk-linux-$arch"
+		echo "built dist/ov-desk-linux-$arch"
+	done
+elif [ "${OV_DESK_REQUIRED:-0}" = 1 ]; then
+	echo "dist: cargo is needed for ov-desk" >&2
+	exit 1
+else
+	echo "dist: no cargo, ov-desk skipped"
+fi
 # The plugin bundle: the Python packages without their tests.
 tar -czf dist/openvibe-link-plugins.tar.gz -C plugins \
 	--exclude=tests --exclude=__pycache__ --exclude='*.egg-info' --exclude=.pytest_cache --exclude=build \
