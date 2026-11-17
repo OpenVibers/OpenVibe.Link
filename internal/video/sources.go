@@ -203,6 +203,7 @@ func splitNALs(br *bufio.Reader, nalFn func([]byte), end func()) error {
 // with backoff when it exits.
 type CommandSource struct {
 	Argv []string
+	Env  []string // added to the Link's own environment (ov-desk stream's XAUTHORITY)
 	Log  *slog.Logger
 }
 
@@ -239,6 +240,9 @@ func (c *CommandSource) Run(ctx context.Context, sink func(Sample)) error {
 
 func (c *CommandSource) runOnce(ctx context.Context, sink func(Sample)) error {
 	cmd := exec.CommandContext(ctx, c.Argv[0], c.Argv[1:]...)
+	if len(c.Env) > 0 {
+		cmd.Env = append(os.Environ(), c.Env...)
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &limitedWriter{w: &stderr, n: 4096}
 	out, err := cmd.StdoutPipe()

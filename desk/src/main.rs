@@ -2,6 +2,7 @@
 //! desk-display`, internal/deskdisplay) exactly, so the computer plugin can run either:
 //!
 //!   ov-desk desk-display WIDTH HEIGHT APPS_JSON     (the plugin's pipe on fds 3 and 4)
+//!   ov-desk stream [-display :0] [-fps 15] [-max-width 1600] [-kbps 2500]   (live H.264 on stdout)
 //!   ov-desk bench [-display :97] [-seconds 60] [-fps 30] [-width 0] [-moves 2000]
 //!
 //! Why Rust (2026-11-17, the owner: "use rust … for the most ultimate maximized optimized efficient agent workers"): on
@@ -10,11 +11,13 @@
 mod display;
 mod keys;
 mod serve;
+mod stream;
+mod yuv;
 
 use std::os::fd::FromRawFd;
 use std::time::{Duration, Instant};
 
-const USAGE: &str = "usage: ov-desk desk-display WIDTH HEIGHT APPS_JSON\n       ov-desk bench [-display :0] [-seconds 10] [-fps 30] [-width 0] [-moves 2000]\n";
+const USAGE: &str = "usage: ov-desk desk-display WIDTH HEIGHT APPS_JSON\n       ov-desk stream [-display :0] [-fps 15] [-max-width 1600] [-kbps 2500] [-seconds 0]\n       ov-desk bench [-display :0] [-seconds 10] [-fps 30] [-width 0] [-moves 2000]\n";
 
 fn arg(args: &[String], name: &str) -> Option<String> {
     args.iter().position(|x| x == name).and_then(|i| args.get(i + 1)).cloned()
@@ -90,6 +93,7 @@ fn main() {
             match serve::serve(w, h, apps, input, output) { Ok(()) => 0, Err(e) => { eprintln!("desk-display: {e}"); 1 } }
         }
         Some("bench") => bench(&args[2..]),
+        Some("stream") => match stream::run(&stream::Options::parse(&args[2..])) { Ok(()) => 0, Err(e) => { eprintln!("ov-desk stream: {e}"); 1 } },
         Some("--version") | Some("version") => { println!("ov-desk {}", env!("CARGO_PKG_VERSION")); 0 }
         _ => { eprint!("{USAGE}"); 2 }
     };
