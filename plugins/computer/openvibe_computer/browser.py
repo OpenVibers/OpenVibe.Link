@@ -212,6 +212,32 @@ TARGET_JS = """((selector, text) => {
 })(%s, %s)"""
 
 
+# The page check's measure (plan §AD.25, Design's eyes; the owner, 11-17: "analyze interfaces and designs and improve and
+# critique"): run in the page at each width and theme, it answers the faults a phone and a desktop show, from the drawn
+# page itself (what a markup audit cannot see): sideways overflow and what sticks out, targets under 44 px (on a
+# phone), text under 12 px, native controls showing, pictures without alt. Names and counts only, a few examples each.
+PAGE_CHECK_JS = r"""(() => {
+  // The width being checked (a phone zooms out to fit a page that sticks out, so its own innerWidth can be wider).
+  const W = __WIDTH__, out = { width: W, layout_width: window.innerWidth, scroll_width: document.documentElement.scrollWidth, title: document.title.slice(0, 200) };
+  const seen = (el) => { const r = el.getBoundingClientRect(); const cs = getComputedStyle(el); return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity) > 0.05; };
+  const name = (el) => (el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (typeof el.className === 'string' && el.className.trim() ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '')).slice(0, 80);
+  const all = [...document.querySelectorAll('body *')].slice(0, 4000);
+  const wide = all.filter((el) => { const r = el.getBoundingClientRect(); return r.right > W + 1 && r.width > 0 && seen(el); });
+  out.overflow = { count: wide.length, examples: wide.slice(0, 4).map((el) => name(el) + ' ends at ' + Math.round(el.getBoundingClientRect().right) + 'px') };
+  const press = all.filter((el) => el.matches('a[href],button,input:not([type=hidden]),select,textarea,[role=button],[role=tab],[role=switch],summary') && seen(el));
+  const small = W < 700 ? press.filter((el) => { const r = el.getBoundingClientRect(); return r.width < 44 || r.height < 44; }) : [];
+  out.small_targets = { count: small.length, of: press.length, examples: small.slice(0, 4).map((el) => { const r = el.getBoundingClientRect(); return name(el) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height); }) };
+  const texts = all.filter((el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()) && seen(el));
+  const tiny = texts.filter((el) => parseFloat(getComputedStyle(el).fontSize) < 12);
+  out.small_text = { count: tiny.length, examples: tiny.slice(0, 4).map((el) => name(el) + ' ' + getComputedStyle(el).fontSize) };
+  const natives = all.filter((el) => (el.matches('select') || el.matches('input[type=checkbox],input[type=radio],input[type=file],input[type=range],input[type=color],input[type=date]')) && !el.hasAttribute('data-ov-native') && seen(el));
+  out.native_controls = { count: natives.length, examples: natives.slice(0, 4).map(name) };
+  const noAlt = all.filter((el) => el.matches('img') && !el.hasAttribute('alt') && seen(el));
+  out.images_without_alt = { count: noAlt.length, examples: noAlt.slice(0, 4).map((el) => name(el) + ' ' + String(el.getAttribute('src') || '').slice(0, 60)) };
+  return JSON.stringify(out);
+})()"""
+
+
 class BrowserError(Exception):
     def __init__(self, code, message):
         super().__init__(message)
@@ -751,6 +777,39 @@ class Browser:
         self._eval("history.back()")
         self._settle()
         return self._with_receipt(before)
+
+    def page_check(self, url, widths=(390, 1280), themes=("dark", "light"), shots=True):
+        """A page as a phone and a desktop draw it, dark and light (plan §AD.25, Design's eyes): for each view its measured
+        faults (PAGE_CHECK_JS) and, with shots, a JPEG (a phone at its width, a desktop at most 900 px wide). The page is
+        opened once; the emulation is cleared afterwards, whatever happened."""
+        self.open(url)
+        views = []
+        try:
+            for theme in themes:
+                self.call("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-color-scheme", "value": theme}]})
+                for w in widths:
+                    phone = w < 700
+                    self.call("Emulation.setDeviceMetricsOverride", {"width": int(w), "height": 844 if phone else 900, "deviceScaleFactor": 1, "mobile": phone})
+                    self.call("Emulation.setTouchEmulationEnabled", {"enabled": phone})
+                    time.sleep(0.6)   # the layout settles at the new width
+                    raw = self._eval(PAGE_CHECK_JS.replace("__WIDTH__", str(int(w))), sanitize_errors=True)
+                    try:
+                        metrics = json.loads(raw) if isinstance(raw, str) else {}
+                    except ValueError:
+                        metrics = {}
+                    view = {"width": int(w), "theme": theme, "metrics": metrics}
+                    if shots:
+                        view["screenshot"] = self.screenshot(min(int(w), 900))
+                    views.append(view)
+        finally:
+            for method, params in (("Emulation.clearDeviceMetricsOverride", {}), ("Emulation.setEmulatedMedia", {"features": []}),
+                                   ("Emulation.setTouchEmulationEnabled", {"enabled": False})):
+                try:
+                    self.call(method, params)
+                except Exception:
+                    pass
+        first = views[0]["metrics"] if views else {}
+        return {"url": url, "title": str(first.get("title", ""))[:200], "views": views}
 
     def screenshot(self, max_width=1280):
         self._need()

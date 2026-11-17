@@ -411,6 +411,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         "/cookie": b"<!doctype html><title>Cookie</title><script>if (!document.cookie.includes('kept=yes')) document.cookie = 'kept=yes; max-age=3600; path=/';</script>",
         "/session": b"<!doctype html><title>Session</title><script>if (!document.cookie.includes('sid=')) document.cookie = 'sid=s1; path=/';</script>",
         # Desks plan D3: a page whose button changes the page without going anywhere, and things that are not elements.
+        "/faulty": b"<!doctype html><title>Faulty</title><meta name=viewport content='width=device-width'><style>.wide{width:700px;height:20px;background:#ccc}</style>"
+                   b"<p>Words</p><div class=wide>too wide</div><button id=tiny style='width:20px;height:20px;padding:0'>x</button><select id=pick><option>A</option></select>"
+                   b"<span style='font-size:9px'>small print</span><img src=/none.png width=10 height=10>",
         "/app": b"<!doctype html><title>App</title><p>Ready</p><button id='go' aria-label='Add a row'>+</button>"
                 b"<input type='email' placeholder='Email'><input type='checkbox' checked><a href='/two'>Second page</a>"
                 b"<button style='display:none'>Hidden</button><div id='rows'></div>"
@@ -509,6 +512,31 @@ class RealBrowserTest(unittest.TestCase):
         self.assertTrue(shot["content_b64"])
         b.close()
         self.assertFalse(b.alive())
+
+    def test_a_page_check_draws_the_page_as_a_phone_and_a_desktop(self):
+        # Plan §AD.25 (Design's eyes): one page at 390 and 1280 px, dark and light: what sticks out, small targets on a
+        # phone, small text, native controls, pictures without alt, and a picture of each view.
+        srv = socketserver.TCPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.addCleanup(srv.shutdown)
+        base = "http://127.0.0.1:%d" % srv.server_address[1]
+        profile = __import__("tempfile").mkdtemp(prefix="ov-browser-")
+        self.addCleanup(lambda: shutil.rmtree(profile, ignore_errors=True))
+        b = Browser(self.binary(), profile, extra_args=["--no-sandbox"] if os.environ.get("CI") else [])
+        self.addCleanup(b.close)
+        out = b.page_check(base + "/faulty", (390, 1280), ("dark", "light"), True)
+        self.assertEqual(out["title"], "Faulty")
+        self.assertEqual([(v["width"], v["theme"]) for v in out["views"]], [(390, "dark"), (1280, "dark"), (390, "light"), (1280, "light")])
+        phone, desk = out["views"][0]["metrics"], out["views"][1]["metrics"]
+        self.assertEqual((phone["width"], phone["scroll_width"] > 390, phone["overflow"]["count"] >= 1), (390, True, True), phone)
+        self.assertEqual(desk["overflow"]["count"], 0, "at 1280 nothing sticks out")
+        self.assertTrue(any(e.startswith("button#tiny 20x20") for e in phone["small_targets"]["examples"]), phone["small_targets"])
+        self.assertEqual(desk["small_targets"]["count"], 0, "small targets are a phone's fault")
+        self.assertEqual((phone["small_text"]["count"], phone["native_controls"]["count"], phone["images_without_alt"]["count"]), (1, 1, 1))
+        self.assertTrue(all(v["screenshot"]["content_b64"] and v["screenshot"]["width"] <= 900 for v in out["views"]))
+        back = b.read()
+        self.assertTrue(back["url"].endswith("/faulty"), "the page stays open, the emulation cleared")
+        b.close()
 
     def test_a_popup_is_followed_and_a_cookie_kept(self):
         # Node v0.24.0: a page this page opens comes to the front (the agent and a person watching see it), the page
