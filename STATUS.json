@@ -5,8 +5,8 @@
   "wave": "T15",
   "plan": "Plan track T15 (Bot complete) and ADR-043 (Bot: devices, pairing, control and safety); the computer plugin and the job worker serve OpenVibe.Actor and the Codes job runner (tracks T14/T17)",
   "kind": "client",
-  "version": "0.72.0",
-  "release": "v0.72.0: a person's own sandbox on every machine, and jobs that take what the person types. An entry with sandbox: true mounts the person's persistent sandbox read-write at /sandbox (what they install and the sign-ins they keep stay for their next job only; another person's is named by the dispatcher's opaque sbx_ id); an entry with interactive: true keeps stdin open for job_stdin frames, so an agent's own sign-in can take the code its page shows.",
+  "version": "0.73.0",
+  "release": "v0.73.0: the machine registry on openvibe.computer, and where a machine is. The default device socket is wss://openvibe.computer/device (openvibe.bot stays an old name for it), and specs carry lan: the machine's private, overlay (100.64/10) and unique-local IPv6 addresses on interfaces that are up, never a public one, loopback, link-local or a container or VM bridge, so Computer knows where each machine is.",
   "runtime": "go 1.24 (one static binary per platform); plugins in Python 3; an ESP32 Arduino library",
   "database": "none",
   "deployed": false,
@@ -36,5 +36,5 @@
     "a tray on macOS (approvals there are a dialog with Deny as its default)",
     "the computer plugin's browser on Windows"
   ],
-  "updated": "2026-11-16"
+  "updated": "2026-11-17"
 }
