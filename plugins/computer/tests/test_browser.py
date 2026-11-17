@@ -430,6 +430,42 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 
 @unittest.skipUnless(find_binary(shutil.which, sys.platform), "no Chromium-family browser on this machine")
+class RealBrowserRelayTest(unittest.TestCase):
+    """The browser's pipe through ov-desk's relay (Link v0.77). Its own class, so the headless-shell run (which counts
+    any skip as a failure) does not inherit it where no ov-desk is built."""
+
+    def binary(self):
+        return find_binary(shutil.which, sys.platform)
+
+    def test_through_ov_desks_relay_everything_works_and_frames_are_taken_in_rust(self):
+        # Link v0.77: the browser's pipe through `ov-desk browser` (OV_DESK_BIN names a build; CI's plugin job has
+        # none, so this runs where one is built). The same page, links, clicks and screenshot as below, and a desk frame
+        # written by ov-desk (OV.frame) without the picture passing through this process.
+        relay = os.environ.get("OV_DESK_BIN")
+        if not relay or not os.access(relay, os.X_OK):
+            self.skipTest("no ov-desk build (set OV_DESK_BIN)")
+        srv = socketserver.TCPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.addCleanup(srv.shutdown)
+        base = "http://127.0.0.1:%d" % srv.server_address[1]
+        profile = __import__("tempfile").mkdtemp(prefix="ov-browser-relay-")
+        self.addCleanup(lambda: shutil.rmtree(profile, ignore_errors=True))
+        b = Browser(self.binary(), profile, extra_args=["--no-sandbox"] if os.environ.get("CI") else [], relay=relay)
+        self.addCleanup(b.close)
+        page = b.open(base + "/")
+        self.assertEqual((page["title"], [l["text"] for l in page["links"]]), ("Home", ["Second page"]))
+        self.assertEqual(b.click(text="Second page")["title"], "Two")
+        self.assertEqual(b.screenshot(640)["format"], "jpeg")
+        frame = os.path.join(profile, "frame.jpg")
+        b.frame(frame, 320, 60)
+        with open(frame, "rb") as f:
+            head = f.read(3)
+        self.assertEqual(head, b"\xff\xd8\xff", "a JPEG, written whole by ov-desk")
+        self.assertFalse(os.path.exists(frame + ".part"))
+        self.assertEqual(b.proc.args[1:3] if isinstance(b.proc.args, list) else None, ["browser", "--"])
+
+
+@unittest.skipUnless(find_binary(shutil.which, sys.platform), "no Chromium-family browser on this machine")
 class RealBrowserTest(unittest.TestCase):
     def binary(self):
         return find_binary(shutil.which, sys.platform)

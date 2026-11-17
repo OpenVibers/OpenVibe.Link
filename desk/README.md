@@ -19,6 +19,9 @@ the Link's own binary, then the Python helper.
 ```sh
 ov-desk desk-display WIDTH HEIGHT APPS_JSON        # what the plugin runs (fds 3 and 4 are its pipe)
 ov-desk stream -display :0 -fps 15                 # the live screen as H.264 on stdout (the core reads it)
+ov-desk publish -whip URL -display :0              # the live screen published over WHIP by ov-desk itself (v0.77)
+ov-desk publish -whip URL -- rpicam-vid …          # a camera command's H.264, published the same way (v0.77)
+ov-desk browser -- <browser argv>                  # the plugin's browser behind a Rust relay: frames taken here (v0.77)
 ov-desk bench -display :99 -seconds 10 -fps 30     # the desk loop timed on a display: one JSON line
 ```
 
@@ -28,6 +31,20 @@ ov-desk bench -display :99 -seconds 10 -fps 30     # the desk loop timed on a di
 - OpenH264 encodes it in its screen-content mode;
 - it runs at 15 a second, at most 1600 px wide, with a keyframe every 2 seconds;
 - SIGUSR1 makes the next frame a keyframe: the Link's core sends it when a viewer asks for one (a PLI, a new viewer).
+
+`ov-desk publish` (v0.77) is the same capture, published over WHIP by ov-desk itself, with no pipe and no Go in
+between. The owner asked for Rust wherever it gains at all, and the Go media path (frames, RTP, SRTP) lost to Rust on
+every input (docs/computer.md).
+- **WebRTC** is [str0m](https://github.com/algesten/str0m): sans-IO, so it is one thread and one UDP socket with no
+  async runtime. Its crypto is pure Rust (`rust-crypto`); `--features aws-lc` builds the other backend, and the race
+  decided between them.
+- **Keys:** the publish key comes in the environment (`OPENVIBE_WHIP_KEY`), never in argv.
+- **The core's control:** it drives ov-desk over stdin (`{"pause":true}`, `{"mute":true}`, `{"key":"…"}`,
+  `{"voice":"<base64 Opus>"}`) and reads its state on stdout (`{"state":"live"}`, `{"frames":N}`).
+- **Keyframes:** a viewer's PLI or FIR makes the next frame an IDR directly.
+- **Ending:** it reconnects with backoff and sends DELETE to the WHIP resource when it ends.
+- **Exit 3** means no UDP path to the server. The core then falls back to the pipe and its own publisher, which can
+  relay through TURN. It does the same for an ov-desk older than v0.77.
 
 ## How it makes pictures
 

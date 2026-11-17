@@ -163,7 +163,8 @@ func TestScreenStreamRunsOvDeskOnAnX11Session(t *testing.T) {
 	}
 	argvFile := filepath.Join(bin, "argv")
 	envFile := filepath.Join(bin, "xauth")
-	fake := "#!/bin/sh\necho \"$@\" > '" + argvFile + "'\necho \"$XAUTHORITY\" > '" + envFile + "'\n" +
+	// An ov-desk older than v0.77 knows no `publish` (exit 2): the core falls back to `stream` and its own publisher.
+	fake := "#!/bin/sh\n[ \"$1\" = publish ] && exit 2\necho \"$@\" > '" + argvFile + "'\necho \"$XAUTHORITY\" > '" + envFile + "'\n" +
 		"n=0\nwhile [ $n -lt 300 ]; do cat '" + h264 + "'; sleep 0.1; n=$((n+1)); done\n"
 	exe := filepath.Join(bin, "ov-desk")
 	if err := os.WriteFile(exe, []byte(fake), 0o755); err != nil {

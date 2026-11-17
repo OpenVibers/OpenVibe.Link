@@ -258,8 +258,12 @@ def find_binary(which, platform, configured=None):
 
 class Browser:
     def __init__(self, binary, profile, headless=True, timeout_s=15.0, popen=subprocess.Popen, extra_args=(), env=None,
-                 sandbox=None):
+                 sandbox=None, relay=None):
         self.binary = binary
+        # Link v0.77: ov-desk's browser relay (`ov-desk browser -- <browser argv>`), when the plugin found one that
+        # answers --check. Every message passes through it unchanged; a browser desk's frames (OV.frame) are taken and
+        # written there, in Rust, so the pictures never pass through this process. None: the browser's pipe is ours.
+        self.relay = relay
         self.env = env   # the private desk's display and bus, or None for this process's own
         # On a desk host serving other people (desk_isolation sandbox): the `openvibe-link desk-sandbox … --` command the
         # browser runs under, its profile inside the sandbox (profile is then a path in there, never made here).
@@ -318,6 +322,8 @@ class Browser:
         if self.headless and not is_headless_shell(self.binary):
             argv.insert(1, "--headless=new")
         argv[1:1] = self.extra_args
+        if self.relay:
+            argv[:0] = [self.relay, "browser", "--"]   # ov-desk takes our 3 and 4 and gives the browser its own pair
         if self.sandbox:
             argv[:0] = self.sandbox   # fds 3 and 4 pass through the sandbox to the browser
 
@@ -869,6 +875,10 @@ class Browser:
     def frame(self, path, max_width, quality):
         """One JPEG picture of the page at path (written whole, then moved into place), at most max_width wide."""
         self.page()
+        if self.relay:
+            # ov-desk asks for the picture, decodes it and writes it: only {bytes, width} comes back here.
+            self.call("OV.frame", {"path": path, "max_width": max_width, "quality": quality})
+            return
         width, height = self.viewport()
         params = {"format": "jpeg", "quality": quality}
         if width > max_width:

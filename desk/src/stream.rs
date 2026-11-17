@@ -43,6 +43,20 @@ impl Options {
 fn even(v: usize) -> usize { v & !1 }
 
 pub fn run(o: &Options) -> Result<(), String> {
+    unsafe { libc::signal(libc::SIGUSR1, on_keyframe_signal as *const () as libc::sighandler_t) };
+    let mut out = std::io::stdout().lock();
+    // One whole access unit, written whole (the crate's own write takes a short write as an error). The core closing its
+    // end is how a stream normally stops.
+    produce(o, &KEYFRAME, "stream", |au, _at| out.write_all(au).is_ok() && out.flush().is_ok())
+}
+
+/// Asks the next frame to be an IDR (a PLI, a new viewer): `ov-desk publish` sets it from the viewer's RTCP.
+pub fn request_keyframe() { KEYFRAME.store(true, Ordering::SeqCst); }
+pub fn keyframe_flag() -> &'static AtomicBool { &KEYFRAME }
+
+/// The screen, captured and encoded at the paced rate: each access unit goes to `sink` with its time since the start;
+/// the loop ends when `sink` says false, after -seconds, or on a capture or encoder error. `stream` and `publish` share it.
+pub fn produce(o: &Options, keyframe: &AtomicBool, what: &str, mut sink: impl FnMut(&[u8], Duration) -> bool) -> Result<(), String> {
     let mut d = Display::open(&o.display)?;
     let (capture, _) = d.paths();
     let config = EncoderConfig::new()
@@ -57,8 +71,6 @@ pub fn run(o: &Options) -> Result<(), String> {
     let (mut py, mut pu, mut pv) = (Vec::new(), Vec::new(), Vec::new());
     let mut packed: Vec<u8> = Vec::new();
     let mut au: Vec<u8> = Vec::with_capacity(256 * 1024);
-    unsafe { libc::signal(libc::SIGUSR1, on_keyframe_signal as *const () as libc::sighandler_t) };
-    let mut out = std::io::stdout().lock();
     let start = Instant::now();
     let end = if o.seconds > 0.0 { Some(start + Duration::from_secs_f64(o.seconds)) } else { None };
     let tick = Duration::from_secs_f64(1.0 / o.fps as f64);
@@ -77,17 +89,16 @@ pub fn run(o: &Options) -> Result<(), String> {
         crate::yuv::bgrx_to_i420(src, ew, eh, &mut py, &mut pu, &mut pv);
         let planes = YUVSlices::new((&py, &pu, &pv), (ew, eh), (ew, ew / 2, ew / 2));
         if !said {
-            eprintln!("ov-desk stream: {ew}×{eh} at {} a second, {} kbit/s, capture {capture}, H.264 screen content", o.fps, o.kbps);
+            eprintln!("ov-desk {what}: {ew}×{eh} at {} a second, {} kbit/s, capture {capture}, H.264 screen content", o.fps, o.kbps);
             said = true;
         }
-        if KEYFRAME.swap(false, Ordering::SeqCst) { enc.force_intra_frame(); }
+        if keyframe.swap(false, Ordering::SeqCst) { enc.force_intra_frame(); }
         // Real timestamps: OpenH264's rate control and its keyframe requests go by them (encode() sends 0 every time).
-        let bits = enc.encode_at(&planes, Timestamp::from_millis(start.elapsed().as_millis() as u64)).map_err(|e| format!("encode: {e}"))?;
-        // One whole access unit, written whole (the crate's own write takes a short write as an error). The core closing
-        // its end is how a stream normally stops.
+        let at = start.elapsed();
+        let bits = enc.encode_at(&planes, Timestamp::from_millis(at.as_millis() as u64)).map_err(|e| format!("encode: {e}"))?;
         au.clear();
         bits.write_vec(&mut au);
-        if !au.is_empty() && (out.write_all(&au).is_err() || out.flush().is_err()) { return Ok(()); }
+        if !au.is_empty() && !sink(&au, at) { return Ok(()); }
         next += tick;
         let now = Instant::now();
         if next > now { std::thread::sleep(next - now); } else { next = now; }

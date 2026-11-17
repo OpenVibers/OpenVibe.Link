@@ -9,7 +9,10 @@
 //! the same loop and the same libjpeg-turbo it measured less CPU a frame and less memory than the Go helper (the race
 //! in docs/computer.md), and its platform bindings are the way to native capture on Windows and macOS.
 mod display;
+mod annexb;
+mod browser;
 mod keys;
+mod publish;
 mod serve;
 mod stream;
 mod yuv;
@@ -94,6 +97,8 @@ fn main() {
         }
         Some("bench") => bench(&args[2..]),
         Some("stream") => match stream::run(&stream::Options::parse(&args[2..])) { Ok(()) => 0, Err(e) => { eprintln!("ov-desk stream: {e}"); 1 } },
+        Some("browser") => browser::run(&args[2..]),
+        Some("publish") => match publish::Options::parse(&args[2..]).and_then(publish::run) { Ok(c) => c, Err(e) => { eprintln!("ov-desk publish: {e}"); 1 } },
         Some("--version") | Some("version") => { println!("ov-desk {}", env!("CARGO_PKG_VERSION")); 0 }
         _ => { eprint!("{USAGE}"); 2 }
     };

@@ -15,6 +15,13 @@ jpeg-encoder = { version = "0.6", features = ["simd"] }
 # The live screen (`ov-desk stream`): OpenH264 built from source, BSD-2-Clause; 0.9.9 and its sys crate pinned.
 openh264 = "=0.9.9"
 openh264-sys2 = "=0.9.9"
+# `ov-desk publish` (Link v0.77): WebRTC by str0m (MIT/Apache-2.0, sans-IO, no async runtime). The crypto backend is a
+# feature, raced: rust-crypto (pure Rust, the default) or aws-lc-rs.
+str0m = { version = "=0.25.0", default-features = false, features = ["rust-crypto"] }
+ureq = { version = "2", default-features = false, features = ["tls"] }
+
+[features]
+aws-lc = ["str0m/aws-lc-rs"]
 
 [profile.release]
 opt-level = 3

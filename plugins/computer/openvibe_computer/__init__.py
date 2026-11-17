@@ -1118,6 +1118,27 @@ class Computer(Plugin):
                 return real
         return None
 
+    def _browser_relay(self):
+        """ov-desk's browser relay (Link v0.77), where the sandbox sees it (under /usr, /bin or /opt) and it answers
+        `browser --check` (an older ov-desk has no browser): the browser's pipe goes through it and a desk's frames are
+        taken there, in Rust. OPENVIBE_BROWSER_RELAY=0 turns it off. None: the plugin keeps the pipe itself."""
+        if self.env.get("OPENVIBE_BROWSER_RELAY") == "0":
+            return None
+        if getattr(self, "_relay_checked", False):
+            return self._relay
+        self._relay_checked, self._relay = True, None
+        exe = self.env.get("OPENVIBE_DESK_EXE") or self.which("ov-desk")
+        if exe:
+            real = os.path.realpath(exe)
+            if real.startswith(("/usr/", "/bin/", "/opt/")) and os.path.basename(real).startswith("ov-desk"):
+                try:
+                    out = subprocess.run([real, "browser", "--check"], capture_output=True, text=True, timeout=5)
+                    if out.returncode == 0 and out.stdout.strip() == "ok":
+                        self._relay = real
+                except (OSError, subprocess.SubprocessError):
+                    pass
+        return self._relay
+
     def _lent_desktop(self, v):
         """The lent desktop a command names on a desk host for other people, else None."""
         if not self._shared():
@@ -1265,7 +1286,8 @@ class Computer(Plugin):
         sandbox = self._sandbox_argv(binary)
         if sandbox:
             binary = os.path.realpath(binary)   # the sandbox shows the install directory, not the links that lead to it
-        return Browser(binary, profile, headless, env=env, extra_args=self._browser_args(), sandbox=sandbox)
+        return Browser(binary, profile, headless, env=env, extra_args=self._browser_args(), sandbox=sandbox,
+                       relay=self._browser_relay())
 
     # ---- the private desk --------------------------------------------------------------------------------------------
     def _desk_env(self, v):
