@@ -409,6 +409,34 @@ class ComputerTest(unittest.TestCase):
         mac = Computer(which=lambda n: "/usr/sbin/screencapture" if n == "screencapture" else None, env={}, platform="darwin")
         self.assertEqual(mac._screen_tool()[1]("/tmp/x.png"), ["screencapture", "-x", "-t", "png", "/tmp/x.png"])
 
+    def test_on_x11_ov_desk_takes_the_screen_and_an_older_one_falls_back(self):
+        # Link v0.78: `ov-desk shot` (MIT-SHM + libjpeg-turbo, in-process) instead of a forked tool's PNG re-encoded with
+        # Pillow; 93% less CPU and 10x quicker in the race. An ov-desk without `shot` (exit 2) is not asked again; Wayland
+        # and OPENVIBE_SCREEN_SHOT=0 keep the tool.
+        d = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(d, ignore_errors=True))
+        exe = os.path.join(d, "ov-desk")
+        seen = os.path.join(d, "argv")
+        with open(exe, "w") as f:
+            f.write('#!/bin/sh\necho "$@" > "%s"\n[ "$1" = shot ] || exit 2\n'
+                    'echo \'{"format":"jpeg","width":640,"height":400,"content_b64":"/9j/AAAA"}\'\n' % seen)
+        os.chmod(exe, 0o755)
+        which = lambda name: "/usr/bin/" + name if name == "import" else None
+        c = Computer(which=which, env={"DISPLAY": ":7"}, platform="linux")
+        with mock.patch.object(Computer, "_native_display", return_value=exe):
+            shot = c._native_shot(c._screen_tool(), 640)
+            self.assertEqual(shot, {"format": "jpeg", "width": 640, "height": 400, "content_b64": "/9j/AAAA"})
+            with open(seen) as f:
+                self.assertEqual(f.read().split(), ["shot", "-display", ":7", "-max-width", "640", "-max-bytes", str(300 * 1024)])
+            self.assertIsNone(c._native_shot(("grim", None), 640), "Wayland keeps grim")
+            off = Computer(which=which, env={"DISPLAY": ":7", "OPENVIBE_SCREEN_SHOT": "0"}, platform="linux")
+            self.assertIsNone(off._native_shot(off._screen_tool(), 640))
+            with open(exe, "w") as f:
+                f.write("#!/bin/sh\nexit 2\n")
+            older = Computer(which=which, env={"DISPLAY": ":7"}, platform="linux")
+            self.assertIsNone(older._native_shot(older._screen_tool(), 640))
+            self.assertTrue(older._shot_unsupported, "an ov-desk without shot is not asked again")
+
     def test_screen_capture_encodes_a_jpeg(self):
         try:
             from PIL import Image

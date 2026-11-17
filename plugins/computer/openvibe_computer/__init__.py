@@ -2590,6 +2590,12 @@ class Computer(Plugin):
 
     def _screen(self, tool, max_width, env=None):
         self._check_identity()
+        # Link v0.78: on X11, ov-desk takes the picture in-process (MIT-SHM, shrunk and encoded as JPEG by
+        # libjpeg-turbo) instead of a forked tool writing a PNG that Pillow opens, shrinks and encodes again. An older
+        # ov-desk (no `shot`) or any failure falls back to the tool.
+        native = self._native_shot(tool, max_width, env)
+        if native is not None:
+            return native
         fd, out = tempfile.mkstemp(prefix="openvibe-screen-", suffix=".png")
         os.close(fd)
         proc = None
@@ -2609,6 +2615,32 @@ class Computer(Plugin):
                 self._forget(proc, "capture")
             if os.path.exists(out):
                 os.unlink(out)
+
+    def _native_shot(self, tool, max_width, env=None):
+        """The screen as ov-desk takes it, or None (not X11, no ov-desk, OPENVIBE_SCREEN_SHOT=0, or it failed)."""
+        if tool is None or tool[0] not in ("import", "scrot", "gnome-screenshot") or self.env.get("OPENVIBE_SCREEN_SHOT") == "0":
+            return None
+        exe = self._native_display()
+        if not exe or not os.path.basename(exe).startswith("ov-desk") or getattr(self, "_shot_unsupported", False):
+            return None
+        e = env or self.env
+        argv = [exe, "shot", "-display", e.get("DISPLAY", ":0"), "-max-width", str(int(max_width)), "-max-bytes", str(SCREEN_MAX_BYTES)]
+        try:
+            out = subprocess.run(argv, capture_output=True, timeout=15, env=dict(e))
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if out.returncode == 2:
+            self._shot_unsupported = True   # an ov-desk older than v0.78
+            return None
+        if out.returncode != 0:
+            return None
+        try:
+            doc = json.loads(out.stdout)
+        except ValueError:
+            return None
+        if doc.get("format") != "jpeg" or not doc.get("content_b64"):
+            return None
+        return {"format": "jpeg", "width": int(doc["width"]), "height": int(doc["height"]), "content_b64": doc["content_b64"]}
 
     # ---- the live screen --------------------------------------------------------------------------------------------
     @staticmethod

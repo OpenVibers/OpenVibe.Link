@@ -39,6 +39,26 @@ fn rusage() -> (f64, i64) {
     ((ru.ru_utime.tv_sec + ru.ru_stime.tv_sec) as f64 * 1000.0 + (ru.ru_utime.tv_usec + ru.ru_stime.tv_usec) as f64 / 1000.0, ru.ru_maxrss)
 }
 
+/// One picture of an X display, as the computer plugin's `screen` sends it (Link v0.78): JPEG at most max_width wide and
+/// max_bytes long (quality, then width, step down as the plugin's own encoder does), as one JSON line on stdout:
+/// {"format":"jpeg","width":W,"height":H,"content_b64":"…"}. It replaces a forked screenshot tool writing a PNG that the
+/// plugin opened, shrank and encoded again with Pillow.
+fn shot(args: &[String]) -> i32 {
+    let disp = arg(args, "-display").or_else(|| std::env::var("DISPLAY").ok().filter(|d| !d.is_empty())).unwrap_or_else(|| ":0".into());
+    let num = |n: &str, d: f64| arg(args, n).and_then(|v| v.parse::<f64>().ok()).unwrap_or(d);
+    let (max_width, max_bytes) = (num("-max-width", 1280.0).max(64.0) as usize, num("-max-bytes", 300.0 * 1024.0).max(16.0 * 1024.0) as usize);
+    let mut d = match display::Display::open(&disp) { Ok(d) => d, Err(e) => { eprintln!("ov-desk shot: {e}"); return 1; } };
+    match d.shot(max_width, max_bytes) {
+        Ok((pic, w, h)) => {
+            use base64::Engine;
+            let b64 = base64::engine::general_purpose::STANDARD.encode(&pic);
+            println!("{{\"format\":\"jpeg\",\"width\":{w},\"height\":{h},\"content_b64\":\"{b64}\"}}");
+            0
+        }
+        Err(e) => { eprintln!("ov-desk shot: {e}"); 1 }
+    }
+}
+
 /// The desk loop timed: shots at a pace (or flat out), then pointer moves; one JSON line.
 fn bench(args: &[String]) -> i32 {
     let disp = arg(args, "-display").unwrap_or_else(|| ":0".into());
@@ -96,6 +116,7 @@ fn main() {
             match serve::serve(w, h, apps, input, output) { Ok(()) => 0, Err(e) => { eprintln!("desk-display: {e}"); 1 } }
         }
         Some("bench") => bench(&args[2..]),
+        Some("shot") => shot(&args[2..]),
         Some("stream") => match stream::run(&stream::Options::parse(&args[2..])) { Ok(()) => 0, Err(e) => { eprintln!("ov-desk stream: {e}"); 1 } },
         Some("browser") => browser::run(&args[2..]),
         Some("publish") => match publish::Options::parse(&args[2..]).and_then(publish::run) { Ok(c) => c, Err(e) => { eprintln!("ov-desk publish: {e}"); 1 } },
