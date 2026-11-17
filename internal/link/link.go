@@ -633,7 +633,15 @@ func (l *Link) reauth(ctx context.Context, up *atomic.Bool, end func(error)) {
 	}
 }
 
-// DeviceURL derives wss://host/device from the server origin.
+// The machine registry's own host, and the address its device socket moved to (plan §AD.15: machines are
+// openvibe.computer's, openvibe.bot is for robots). Pairing and the API stay on the server; only the socket moves, and
+// wss://openvibe.computer/device reaches the same registry.
+const (
+	registryHost = "openvibe.bot"
+	machineHost  = "openvibe.computer"
+)
+
+// DeviceURL derives wss://host/device from the server origin; the default registry's socket is openvibe.computer's.
 func DeviceURL(server string) (string, error) {
 	u, err := url.Parse(server)
 	if err != nil {
@@ -647,6 +655,9 @@ func DeviceURL(server string) (string, error) {
 	case "ws", "wss":
 	default:
 		return "", fmt.Errorf("server %q must be https://", server)
+	}
+	if strings.EqualFold(u.Hostname(), registryHost) && u.Port() == "" && (u.Scheme == "wss") {
+		u.Host = machineHost
 	}
 	u.Path = strings.TrimSuffix(u.Path, "/") + protocol.DevicePath
 	u.RawQuery, u.Fragment = "", ""

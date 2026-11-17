@@ -666,8 +666,8 @@ func TestNothingSentBeforeHello(t *testing.T) {
 
 func TestDeviceURL(t *testing.T) {
 	for in, want := range map[string]string{
-		"https://openvibe.bot":         "wss://openvibe.bot/device",
-		"https://openvibe.bot/":        "wss://openvibe.bot/device",
+		"https://openvibe.bot":         "wss://openvibe.computer/device", // plan §AD.15: the socket is Computer's
+		"https://openvibe.bot/":        "wss://openvibe.computer/device",
 		"http://127.0.0.1:8080":        "ws://127.0.0.1:8080/device",
 		"https://x.example/base?q=1#f": "wss://x.example/base/device",
 	} {
