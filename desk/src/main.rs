@@ -9,6 +9,7 @@
 //! the same loop and the same libjpeg-turbo it measured less CPU a frame and less memory than the Go helper (the race
 //! in docs/computer.md), and its platform bindings are the way to native capture on Windows and macOS.
 mod display;
+mod annexb;
 mod keys;
 mod publish;
 mod serve;

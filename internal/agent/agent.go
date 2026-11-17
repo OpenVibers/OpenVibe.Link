@@ -95,6 +95,11 @@ type Agent struct {
 	mgr       *plugins.Manager
 	link      *link.Link
 	pub       *video.Publisher
+	// camWHIP and camKey are the camera's WHIP session; camNative is ov-desk publishing a camera command's H.264 itself
+	// (v0.78), when it runs: the status reads it instead of pub.
+	camWHIP   string
+	camKey    credentials.Secret
+	camNative atomic.Pointer[video.NativePublisher]
 	// screen is the owner's live view of the machine's screen (screen.go), apart from a robot's camera.
 	screen screenState
 	// deskStream is the agent's desk stream (stream.go, Agent Streams S1); one at a time.
@@ -335,6 +340,7 @@ func New(opt Options) (*Agent, error) {
 		if whip != "" && opt.Config.Video.Source != "off" {
 			n.pub = video.NewPublisher(video.Options{WHIPURL: whip, PublishKey: opt.Creds.PublishKey,
 				ICEServers: opt.Creds.ICEServers, Log: opt.Log, IncludeLoopback: opt.VideoLoopback})
+			n.camWHIP, n.camKey = whip, opt.Creds.PublishKey
 		}
 	}
 	if opt.Config.Worker.Enabled {
@@ -1471,7 +1477,54 @@ func (n *Agent) startVideo(ctx context.Context) {
 	n.videoSrc = src.Name()
 	n.mu.Unlock()
 	n.log.Info("publishing video", "source", src.Name())
+	// v0.78: a camera program's H.264 is published by ov-desk itself (Rust end to end, as the screen is since v0.77);
+	// the Go publisher takes over where ov-desk is missing, older, or finds no UDP path (it relays through TURN).
+	if cs, ok := src.(*video.CommandSource); ok {
+		if argv := cameraPublishArgv(cs.Argv, n.camWHIP); argv != nil {
+			np := &video.NativePublisher{Argv: argv, Env: cs.Env, Key: n.camKey, Log: n.log}
+			n.camNative.Store(np)
+			err := np.Run(ctx)
+			n.camNative.Store(nil)
+			if err == nil || ctx.Err() != nil {
+				return
+			}
+		}
+	}
 	n.pub.Run(ctx, src)
+}
+
+// cameraPublishArgv is `ov-desk publish -whip <url> -- <camera command>`, or nil where ov-desk cannot publish here
+// (not Linux, no ov-desk, OPENVIBE_CAMERA_PUBLISH=0, or no WHIP URL).
+func cameraPublishArgv(command []string, whip string) []string {
+	if runtime.GOOS != "linux" || len(command) == 0 || whip == "" || os.Getenv("OPENVIBE_CAMERA_PUBLISH") == "0" {
+		return nil
+	}
+	exe := deskExe()
+	if exe == "" {
+		return nil
+	}
+	return append([]string{exe, "publish", "-whip", whip, "--"}, command...)
+}
+
+// deskExe finds ov-desk the way the computer plugin does: OPENVIBE_DESK_EXE, then PATH, then beside this binary.
+func deskExe() string {
+	if p := os.Getenv("OPENVIBE_DESK_EXE"); p != "" && filepath.IsAbs(p) && filepath.Base(p) == "ov-desk" {
+		if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() && st.Mode().Perm()&0o111 != 0 {
+			return p
+		}
+	}
+	if p, err := exec.LookPath("ov-desk"); err == nil {
+		if abs, err := filepath.Abs(p); err == nil {
+			return abs
+		}
+	}
+	if self, err := os.Executable(); err == nil {
+		p := filepath.Join(filepath.Dir(self), "ov-desk")
+		if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() && st.Mode().Perm()&0o111 != 0 {
+			return p
+		}
+	}
+	return ""
 }
 
 // chooseSource applies video.source. For "auto" it waits (up to 20 s) for the plugins to describe their cameras.
@@ -1628,7 +1681,9 @@ func (n *Agent) Status() Status {
 	s.DeskStream = n.deskStreamStatus()
 	s.Shares = connect.LiveShares()
 	s.Video.State = video.StateOff
-	if n.pub != nil {
+	if np := n.camNative.Load(); np != nil {
+		s.Video.State, s.Video.Frames, s.Video.LastError = np.State(), np.Frames(), np.LastError()
+	} else if n.pub != nil {
 		s.Video.State, s.Video.Frames, s.Video.LastError = n.pub.State(), n.pub.Frames(), n.pub.LastError()
 	}
 	return s
@@ -1688,7 +1743,9 @@ func (n *Agent) sendStatus() {
 			MaxMemBytes: caps.MaxMemBytes, MaxOutputBytes: caps.MaxOutputBytes,
 			ServeOthers: n.opt.Config.Worker.ServeOthers, Egress: n.opt.Config.Worker.Egress}
 	}
-	if n.pub != nil {
+	if np := n.camNative.Load(); np != nil {
+		s.Video = np.State()
+	} else if n.pub != nil {
 		s.Video = n.pub.State()
 	}
 	n.send(s)

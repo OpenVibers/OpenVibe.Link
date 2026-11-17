@@ -8,6 +8,11 @@
 //! or FIR makes the next frame an IDR directly, with no signal in between.
 //!
 //!   ov-desk publish -whip <url> [-display :0] [-fps 15] [-max-width 1600] [-kbps 2500] [-audio] [-seconds 0]
+//!   ov-desk publish -whip <url> [-audio] -- rpicam-vid -t 0 --codec h264 --inline -o -      (a camera, v0.78)
+//!
+//! With a command after `--`, the frames are that program's H.264 (Annex B on its stdout: a robot's camera), split into
+//! access units here and published the same way; the program is started again with backoff when it ends. Keyframes
+//! come at the program's own interval (rpicam-vid takes no request).
 //!
 //! The publish key is the environment's OPENVIBE_WHIP_KEY (never argv, which every user can read). The Link's core
 //! drives it over stdin and reads it over stdout, one JSON object a line:
@@ -38,6 +43,8 @@ pub struct Options {
     pub stream: StreamOptions,
     pub whip: String,
     pub audio: bool,
+    /// A camera program whose H.264 is published instead of the screen (everything after `--`).
+    pub source_cmd: Option<Vec<String>>,
 }
 
 impl Options {
@@ -47,7 +54,12 @@ impl Options {
         if !(whip.starts_with("https://") || whip.starts_with("http://127.0.0.1") || whip.starts_with("http://localhost")) {
             return Err("the WHIP endpoint is https (or loopback http, for tests)".into());
         }
-        Ok(Options { stream: StreamOptions::parse(args), whip, audio: args.iter().any(|a| a == "-audio") })
+        let (own, source_cmd) = match args.iter().position(|a| a == "--") {
+            Some(i) if i + 1 < args.len() => (&args[..i], Some(args[i + 1..].to_vec())),
+            Some(_) => return Err("a command after -- is needed".into()),
+            None => (args, None),
+        };
+        Ok(Options { stream: StreamOptions::parse(own), whip, audio: own.iter().any(|a| a == "-audio"), source_cmd })
     }
 }
 
@@ -111,7 +123,10 @@ pub fn run(o: Options) -> Result<i32, String> {
     // and the next one is made an IDR so the picture never decodes from a missing reference.
     let (tx, rx) = sync_channel::<(Vec<u8>, Duration)>(4);
     let frames = Arc::new(AtomicU64::new(0));
-    let capture = {
+    let capture = if let Some(argv) = o.source_cmd.clone() {
+        let ctl = ctl.clone();
+        std::thread::spawn(move || camera(argv, &ctl, tx))
+    } else {
         let so = StreamOptions { display: o.stream.display.clone(), fps: o.stream.fps, max_width: o.stream.max_width, kbps: o.stream.kbps, seconds: o.stream.seconds };
         let ctl = ctl.clone();
         std::thread::spawn(move || {
@@ -153,6 +168,39 @@ pub fn run(o: Options) -> Result<i32, String> {
                 if backoff < Duration::from_secs(30) { backoff *= 2; }
             }
         }
+    }
+}
+
+/// A camera program's H.264, frame by frame, until the end: it is started again with backoff (1 s doubling to 30 s)
+/// whenever it ends, as the core's CommandSource does. A frame waits for room (the camera's pipe holds the rest) rather
+/// than being dropped: a camera cannot be asked for a keyframe, so a lost frame would spoil the picture until its next one.
+fn camera(argv: Vec<String>, ctl: &Control, tx: std::sync::mpsc::SyncSender<(Vec<u8>, Duration)>) {
+    let start = Instant::now();
+    let mut backoff = Duration::from_secs(1);
+    let stopped = || ctl.stop.load(Ordering::SeqCst) || TERM.load(Ordering::SeqCst);
+    while !stopped() {
+        let began = Instant::now();
+        let child = std::process::Command::new(&argv[0]).args(&argv[1..])
+            .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::inherit()).spawn();
+        match child {
+            Ok(mut ch) => {
+                let out = ch.stdout.take().expect("piped stdout");
+                let mut gone = false;
+                let _ = crate::annexb::Splitter::new().run(out, |au, _key| {
+                    if stopped() { return false; }
+                    if tx.send((au.to_vec(), start.elapsed())).is_err() { gone = true; return false; }
+                    true
+                });
+                let _ = ch.kill();
+                let _ = ch.wait();
+                if gone { return; }
+            }
+            Err(e) => eprintln!("ov-desk publish: the camera program could not start: {e}"),
+        }
+        if began.elapsed() > Duration::from_secs(60) { backoff = Duration::from_secs(1); }
+        let until = Instant::now() + backoff;
+        while Instant::now() < until && !stopped() { std::thread::sleep(Duration::from_millis(100)); }
+        if backoff < Duration::from_secs(30) { backoff *= 2; }
     }
 }
 
