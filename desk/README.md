@@ -26,7 +26,8 @@ ov-desk bench -display :99 -seconds 10 -fps 30     # the desk loop timed on a di
 - the screen is read through MIT-SHM and turned into I420 in one integer pass, since the openh264 crate's own
   conversion cost more than the encoding;
 - OpenH264 encodes it in its screen-content mode;
-- it runs at 15 a second, at most 1600 px wide, with a keyframe every 2 seconds.
+- it runs at 15 a second, at most 1600 px wide, with a keyframe every 2 seconds;
+- SIGUSR1 makes the next frame a keyframe: the Link's core sends it when a viewer asks for one (a PLI, a new viewer).
 
 ## How it makes pictures
 

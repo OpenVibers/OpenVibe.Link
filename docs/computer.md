@@ -127,7 +127,8 @@ You can watch your machine's screen live on openvibe.bot (**Your machines** → 
 - **Through ov-desk (v0.75).** On an X11 session where `ov-desk` is installed (Linux; `OPENVIBE_SCREEN_NATIVE=0` turns
   it off), the plugin still applies your level and says the screen is live, but the core runs `ov-desk stream` instead.
   It reads the screen through MIT-SHM and encodes H.264 itself with OpenH264's screen-content mode, at 15 a second,
-  at most 1600 px wide, about 2.5 Mbit/s with a keyframe every 2 seconds. No screenshot tool, Pillow or ffmpeg is needed.
+  at most 1600 px wide, about 2.5 Mbit/s with a keyframe every 2 seconds, and one at once when a viewer asks for it
+  (a PLI or a new viewer: the core's RequestKeyframe signals ov-desk, SIGUSR1). No screenshot tool, Pillow or ffmpeg is needed.
   On one workstation (1280×800) a frame cost about 16 ms of CPU, against about 70 ms for the old path's forked `import`
   (51.6 ms) and its ffmpeg encoding, and a frame arrives every 66 ms instead of every 500. Wayland and other systems
   keep the frames path.

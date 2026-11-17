@@ -4,7 +4,8 @@
 //! Before this the screen stream was 1 to 5 JPEG pictures a second, each made by forking a screenshot tool, re-encoded
 //! by ffmpeg (or the core's uncompressed fallback). Here the screen is read through MIT-SHM and encoded in-process by
 //! OpenH264 in its screen-content mode (made for desktops: text stays sharp, still areas cost almost nothing), at 15 a
-//! second by default, with a keyframe every 2 seconds (the core cannot ask its child for one).
+//! second by default, with a keyframe every 2 seconds and one at once on SIGUSR1 (the core's RequestKeyframe: a PLI or a
+//! new viewer).
 //!
 //!   ov-desk stream [-display :0] [-fps 15] [-max-width 1600] [-kbps 2500] [-seconds 0]
 //!
@@ -12,9 +13,14 @@
 use crate::display::Display;
 use openh264::encoder::{BitRate, Encoder, EncoderConfig, FrameRate, IntraFramePeriod, RateControlMode, UsageType};
 use openh264::formats::YUVSlices;
-use openh264::OpenH264API;
+use openh264::{OpenH264API, Timestamp};
 use std::io::Write;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
+
+/// Set by SIGUSR1: the Link's core asks for a keyframe (a PLI, a new viewer) and the next frame is an IDR.
+static KEYFRAME: AtomicBool = AtomicBool::new(false);
+extern "C" fn on_keyframe_signal(_: libc::c_int) { KEYFRAME.store(true, Ordering::SeqCst); }
 
 pub struct Options { pub display: String, pub fps: u32, pub max_width: usize, pub kbps: u32, pub seconds: f64 }
 
@@ -51,6 +57,7 @@ pub fn run(o: &Options) -> Result<(), String> {
     let (mut py, mut pu, mut pv) = (Vec::new(), Vec::new(), Vec::new());
     let mut packed: Vec<u8> = Vec::new();
     let mut au: Vec<u8> = Vec::with_capacity(256 * 1024);
+    unsafe { libc::signal(libc::SIGUSR1, on_keyframe_signal as *const () as libc::sighandler_t) };
     let mut out = std::io::stdout().lock();
     let start = Instant::now();
     let end = if o.seconds > 0.0 { Some(start + Duration::from_secs_f64(o.seconds)) } else { None };
@@ -73,7 +80,9 @@ pub fn run(o: &Options) -> Result<(), String> {
             eprintln!("ov-desk stream: {ew}×{eh} at {} a second, {} kbit/s, capture {capture}, H.264 screen content", o.fps, o.kbps);
             said = true;
         }
-        let bits = enc.encode(&planes).map_err(|e| format!("encode: {e}"))?;
+        if KEYFRAME.swap(false, Ordering::SeqCst) { enc.force_intra_frame(); }
+        // Real timestamps: OpenH264's rate control and its keyframe requests go by them (encode() sends 0 every time).
+        let bits = enc.encode_at(&planes, Timestamp::from_millis(start.elapsed().as_millis() as u64)).map_err(|e| format!("encode: {e}"))?;
         // One whole access unit, written whole (the crate's own write takes a short write as an error). The core closing
         // its end is how a stream normally stops.
         au.clear();

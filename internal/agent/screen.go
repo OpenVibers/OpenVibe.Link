@@ -178,7 +178,7 @@ func (n *Agent) screenCommand(c protocol.Command, entry *safety.Entry, received 
 			_ = json.Unmarshal(r.Data, &got)
 			var src video.Source
 			if argv, env, err := got.Native.command(ScreenNativeFPS); err == nil {
-				src = &video.CommandSource{Argv: argv, Env: env, Log: n.log}
+				src = &video.CommandSource{Argv: argv, Env: env, KeyframeSignal: screenKeyframeSignal(), Log: n.log}
 				fps = ScreenNativeFPS
 			} else if got.Native != nil {
 				n.log.Warn("screen stream: the plugin's native capture was refused; its frames are used", "err", err)

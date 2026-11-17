@@ -204,13 +204,31 @@ func splitNALs(br *bufio.Reader, nalFn func([]byte), end func()) error {
 type CommandSource struct {
 	Argv []string
 	Env  []string // added to the Link's own environment (ov-desk stream's XAUTHORITY)
-	Log  *slog.Logger
+	// KeyframeSignal, when set, is sent to the running child for RequestKeyframe (a PLI, a new viewer): ov-desk
+	// stream takes SIGUSR1 as "the next frame is an IDR". Nil for a child that knows no such signal (rpicam-vid,
+	// ffmpeg), which is started with a short keyframe interval instead.
+	KeyframeSignal os.Signal
+	Log            *slog.Logger
+
+	mu  sync.Mutex
+	cur *os.Process // the child running now, for KeyframeSignal
 }
 
 func (c *CommandSource) Name() string { return "command:" + c.Argv[0] }
 
-// RequestKeyframe cannot reach the child; rpicam-vid and ffmpeg are started with a short keyframe interval instead.
-func (c *CommandSource) RequestKeyframe() {}
+// RequestKeyframe signals the running child when it takes KeyframeSignal (ov-desk stream); other children cannot
+// be asked and keep their own short keyframe interval.
+func (c *CommandSource) RequestKeyframe() {
+	if c.KeyframeSignal == nil {
+		return
+	}
+	c.mu.Lock()
+	p := c.cur
+	c.mu.Unlock()
+	if p != nil {
+		_ = p.Signal(c.KeyframeSignal)
+	}
+}
 
 func (c *CommandSource) Run(ctx context.Context, sink func(Sample)) error {
 	backoff := time.Second
@@ -252,6 +270,14 @@ func (c *CommandSource) runOnce(ctx context.Context, sink func(Sample)) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+	c.mu.Lock()
+	c.cur = cmd.Process
+	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		c.cur = nil
+		c.mu.Unlock()
+	}()
 	last := time.Now()
 	perr := AccessUnits(out, func(au []byte, key bool) {
 		now := time.Now()
