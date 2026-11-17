@@ -409,6 +409,7 @@ class ComputerTest(unittest.TestCase):
         mac = Computer(which=lambda n: "/usr/sbin/screencapture" if n == "screencapture" else None, env={}, platform="darwin")
         self.assertEqual(mac._screen_tool()[1]("/tmp/x.png"), ["screencapture", "-x", "-t", "png", "/tmp/x.png"])
 
+    @unittest.skipIf(sys.platform == "win32", "X11 and a shell-script ov-desk: Linux and macOS only")
     def test_on_x11_ov_desk_takes_the_screen_and_an_older_one_falls_back(self):
         # Link v0.78: `ov-desk shot` (MIT-SHM + libjpeg-turbo, in-process) instead of a forked tool's PNG re-encoded with
         # Pillow; 93% less CPU and 10x quicker in the race. An ov-desk without `shot` (exit 2) is not asked again; Wayland

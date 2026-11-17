@@ -299,9 +299,11 @@ jobs:
           arduino-cli core update-index
           cache="$HOME/.arduino15/staging/packages"
           mkdir -p "$cache"
+          # With the workflow's token (as ArduinoJson above): the anonymous asset API is 60 an hour per runner address,
+          # and these seven toolchains alone failed the job with 403 on 11-17.
           stage_asset() {
             file=$1 repo=$2 asset=$3 checksum=$4
-            curl -fLsS --retry 3 -H 'Accept: application/octet-stream' \
+            curl -fLsS --retry 3 -H 'Accept: application/octet-stream' -H "Authorization: Bearer ${{ github.token }}" \
               "https://api.github.com/repos/$repo/releases/assets/$asset" -o "$cache/$file"
             printf '%s  %s\n' "$checksum" "$cache/$file" | sha256sum -c -
           }
