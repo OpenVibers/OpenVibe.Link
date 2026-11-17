@@ -50,11 +50,17 @@ jobs:
       # libjpeg-turbo (the bench prints how it made the pictures).
       - name: ov-desk (Rust desk helper)
         run: |
+          sudo apt-get install -y -qq nasm
+          export NASM=/usr/bin/nasm
           cargo test --quiet --locked --manifest-path desk/Cargo.toml
           cargo build --quiet --release --locked --manifest-path desk/Cargo.toml
           Xvfb :93 -screen 0 1024x768x24 -nolisten tcp & sleep 1
           desk/target/release/ov-desk bench -display :93 -seconds 2 -moves 100 | tee /tmp/ov-desk.json
           grep -q '"capture":"shm"' /tmp/ov-desk.json && grep -q '"encoder":"libjpeg-turbo"' /tmp/ov-desk.json
+          # The live screen (v0.75): two seconds of H.264 from the same display, starting with an Annex B start code.
+          desk/target/release/ov-desk stream -display :93 -seconds 2 > /tmp/screen.h264
+          test "$(head -c 4 /tmp/screen.h264 | od -An -tx1 | tr -d ' ')" = 00000001
+          test "$(stat -c %s /tmp/screen.h264)" -gt 1000
           kill %1
       # The tray's desktop notifications, against a fake notification server on a private session bus.
       - name: tray notifications (private D-Bus)
@@ -111,7 +117,7 @@ jobs:
           go-version-file: go.mod
       # The packages are built on every run so a broken .deb/.rpm is caught before a tag: dpkg-deb ships with Ubuntu,
       # rpm (rpmbuild) does not.
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm gcc-aarch64-linux-gnu
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm gcc-aarch64-linux-gnu g++-aarch64-linux-gnu nasm
       # ov-desk for Linux amd64 and arm64 (Rust): the arm64 one through the cross linker.
       - run: rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
       - run: OV_DESK_REQUIRED=1 scripts/dist.sh ci

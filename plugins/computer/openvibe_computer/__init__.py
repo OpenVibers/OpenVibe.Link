@@ -2824,14 +2824,30 @@ class Computer(Plugin):
             raise Fault("unsupported", "this machine does not show its screen live (allow_screen_stream is off)")
         if self.runtime is not None and self.runtime.estopped:
             raise Fault("local_stop", "stopped on the machine")
-        tool = ("page", None) if page else (self._x11_tool() if env else self._screen_tool())
-        if not tool:
-            raise Fault("unsupported", "no screen capture tool on this machine")
-        if not page and not self._stream_capable(tool):
-            raise Fault("unsupported", "%s only writes PNG: install Pillow (pip install pillow) to show the screen live" % tool[0])
+        # ov-desk shows the main screen itself where it can (Link v0.75): no capture tool or Pillow is needed then.
+        native = None if (env or page) else self._native_stream()
+        if not native:
+            tool = ("page", None) if page else (self._x11_tool() if env else self._screen_tool())
+            if not tool:
+                raise Fault("unsupported", "no screen capture tool on this machine")
+            if not page and not self._stream_capable(tool):
+                raise Fault("unsupported", "%s only writes PNG: install Pillow (pip install pillow) to show the screen live" % tool[0])
         seconds = _int(v.get("seconds"), "seconds", 30, 1800, 600)
         fps = _int(v.get("fps"), "fps", 1, 5, 2)
         self._end_stream("replaced")
+        if native:
+            # ov-desk shows the screen itself (Link v0.75): the core runs `ov-desk stream` (MIT-SHM and H.264 in one
+            # process, 15 a second) and this plugin only keeps the stream's time and its ending.
+            stream = {"sid": os.urandom(8).hex(), "until": self.clock() + seconds, "fps": fps, "tool": ("ov-desk", None),
+                      "dir": None, "stop": threading.Event(), "env": None, "desk": None, "capture": None, "native": True}
+            stream["thread"] = threading.Thread(target=self._stream_wait, args=(stream,), name="computer-screen-stream",
+                                                daemon=True)
+            with self.stream_mu:
+                self.stream = stream
+            stream["thread"].start()
+            self._notify_stream(seconds)
+            return {"streaming": True, "sid": stream["sid"], "seconds": seconds, "fps": fps, "tool": "ov-desk",
+                    "desk": "main", "native": native}
         frames = tempfile.mkdtemp(prefix="openvibe-screen-stream-")  # 0700, this account only
         stream = {"sid": os.urandom(8).hex(), "until": self.clock() + seconds, "fps": fps, "tool": tool, "dir": frames,
                   "stop": threading.Event(), "env": env, "desk": desk, "capture": None}
@@ -2844,6 +2860,36 @@ class Computer(Plugin):
             self._notify_stream(seconds)
         return {"streaming": True, "sid": stream["sid"], "seconds": seconds, "fps": fps, "tool": tool[0],
                 "desk": (desk or "private") if env else "main"}
+
+    def _native_stream(self):
+        """ov-desk for the live screen, where it can show it: an X11 session (DISPLAY, no WAYLAND_DISPLAY) on Linux with
+        ov-desk installed (OPENVIBE_DESK_EXE, else on PATH) → {exe, display, xauthority}, else None (the frames path)."""
+        if not self.platform.startswith("linux") or self.env.get("WAYLAND_DISPLAY") or not self.env.get("DISPLAY"):
+            return None
+        if str(self.env.get("OPENVIBE_SCREEN_NATIVE", "1")).lower() in ("0", "false", "no", "off"):
+            return None
+        exe = self.env.get("OPENVIBE_DESK_EXE") or self.which("ov-desk")
+        if not exe or os.path.basename(exe) != "ov-desk" or not os.path.isabs(exe):
+            return None
+        out = {"exe": exe, "display": self.env["DISPLAY"]}
+        if self.env.get("XAUTHORITY"):
+            out["xauthority"] = self.env["XAUTHORITY"]
+        return out
+
+    def _stream_wait(self, stream):
+        """A native stream's time: the core shows the screen; this ends it on time or on stop, and says so."""
+        reason = "time is up"
+        try:
+            while not stream["stop"].is_set():
+                left = stream["until"] - self.clock()
+                if left <= 0:
+                    break
+                stream["stop"].wait(min(left, 1.0))
+        finally:
+            with self.stream_mu:
+                if self.stream is stream:
+                    self.stream = None
+            self.emit_event("screen_stream_ended", sid=stream["sid"], reason=stream.get("reason") or reason, frames=0)
 
     def _end_stream(self, reason):
         """End the live screen, if one runs → whether one did. A capture in flight is killed and its thread joined, so

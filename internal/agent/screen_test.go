@@ -138,3 +138,94 @@ func TestScreenStreamRefusesBadTargets(t *testing.T) {
 		t.Fatalf("%q", st)
 	}
 }
+
+// The live screen through ov-desk (Link v0.75): on an X11 session with ov-desk the plugin answers native and the core
+// runs `ov-desk stream` itself. Here ov-desk is a fake that records its arguments and plays H.264 from the PCM encoder.
+func TestScreenStreamRunsOvDeskOnAnX11Session(t *testing.T) {
+	bin := t.TempDir()
+	enc, err := video.NewPCMEncoder(64, 48)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stream []byte
+	f := video.NewFrame(64, 48)
+	for i := 0; i < 30; i++ {
+		video.DrawPattern(f, i)
+		stream = append(stream, enc.Encode(f, true, nil)...)
+	}
+	h264 := filepath.Join(bin, "screen.h264")
+	if err := os.WriteFile(h264, stream, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	argvFile := filepath.Join(bin, "argv")
+	envFile := filepath.Join(bin, "xauth")
+	fake := "#!/bin/sh\necho \"$@\" > '" + argvFile + "'\necho \"$XAUTHORITY\" > '" + envFile + "'\n" +
+		"n=0\nwhile [ $n -lt 300 ]; do cat '" + h264 + "'; sleep 0.1; n=$((n+1)); done\n"
+	exe := filepath.Join(bin, "ov-desk")
+	if err := os.WriteFile(exe, []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	e, _ := startComputerWith(t, "observe", func(pc *config.PluginConfig, o *Options) {
+		pc.Env["DISPLAY"] = ":99"
+		pc.Env["XAUTHORITY"] = "/run/user/1000/xauth-test"
+		pc.Env["OPENVIBE_DESK_EXE"] = exe
+		delete(pc.Env, "WAYLAND_DISPLAY")
+		pc.Config["notify"] = false
+		o.VideoLoopback = true
+	})
+	whip, url := screenWHIP(t)
+	d := dataOf(t, e.computerCmd("n1", protocol.KindScreenStream, map[string]any{"action": "start", "whip_url": url, "publish_key": "ork_screen_test_key", "seconds": 60, "fps": 2}, 20*time.Second))
+	if d["streaming"] != true || d["native"] != true || d["fps"] != float64(ScreenNativeFPS) {
+		t.Fatalf("not the native screen: %+v", d)
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for whip.Packets.Load() < 10 {
+		if time.Now().After(deadline) {
+			t.Fatalf("no screen video from ov-desk: %+v", e.node.Status().Screen)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	got, _ := os.ReadFile(argvFile)
+	if want := "stream -display :99 -fps 15 -max-width 1600 -kbps 2500"; string(got) != want+"\n" {
+		t.Fatalf("ov-desk ran with %q, want %q", got, want)
+	}
+	if x, _ := os.ReadFile(envFile); string(x) != "/run/user/1000/xauth-test\n" {
+		t.Fatalf("XAUTHORITY %q", x)
+	}
+	if stop := dataOf(t, e.computerCmd("n2", protocol.KindScreenStream, map[string]any{"action": "stop"}, 10*time.Second)); stop["stopped"] != true {
+		t.Fatalf("%+v", stop)
+	}
+}
+
+func TestScreenNativeRunsOnlyOvDeskOnAnXDisplay(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "ov-desk")
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(dir, "sh")
+	if err := os.WriteFile(other, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		n  *screenNative
+		ok bool
+	}{
+		{&screenNative{Exe: exe, Display: ":0"}, true},
+		{&screenNative{Exe: exe, Display: "localhost:10.0", XAuthority: "/home/a/.Xauthority"}, true},
+		{nil, false},
+		{&screenNative{Exe: "ov-desk", Display: ":0"}, false},
+		{&screenNative{Exe: other, Display: ":0"}, false},
+		{&screenNative{Exe: filepath.Join(dir, "none", "ov-desk"), Display: ":0"}, false},
+		{&screenNative{Exe: exe, Display: ":0; rm -rf /"}, false},
+		{&screenNative{Exe: exe, Display: ":0", XAuthority: "relative"}, false},
+	} {
+		argv, _, err := c.n.command(15)
+		if (err == nil) != c.ok {
+			t.Fatalf("%+v: err %v", c.n, err)
+		}
+		if c.ok && (argv[0] != exe || argv[1] != "stream") {
+			t.Fatalf("argv %q", argv)
+		}
+	}
+}

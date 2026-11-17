@@ -6,6 +6,10 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
 	"sync"
 	"time"
 
@@ -30,15 +34,18 @@ const (
 	ScreenMaxSeconds     = 1800
 	ScreenDefaultFPS     = 2
 	ScreenMaxFPS         = 5
+	// ScreenNativeFPS is the live screen through ov-desk (Link v0.75): captured through MIT-SHM and encoded as H.264 in
+	// one process, about 16 ms of CPU a 1280×800 frame against about 70 for a forked screenshot and ffmpeg.
+	ScreenNativeFPS = 15
 	// The built-in encoder's picture size when ffmpeg is missing (ffmpeg keeps the frames' own size).
 	screenFallbackW, screenFallbackH = 960, 544
 )
 
 type screenStream struct {
 	pub    *video.Publisher
-	src    *video.JPEGSource
-	from   string // the plugin whose frames feed it
-	sid    string // the plugin's id for it: its "ended" event names it
+	src    video.Source // ov-desk stream's H.264, or the plugin's JPEG frames (*video.JPEGSource)
+	from   string       // the plugin whose frames feed it
+	sid    string       // the plugin's id for it: its "ended" event names it
 	until  time.Time
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -63,6 +70,42 @@ type screenValue struct {
 	PublishKey string `json:"publish_key"`
 	Seconds    *int   `json:"seconds"`
 	FPS        *int   `json:"fps"`
+}
+
+// screenNative is the plugin's answer when ov-desk can show the screen itself: the program, the X display and its
+// authority file. The core runs it (`ov-desk stream`) instead of encoding the plugin's JPEG frames.
+type screenNative struct {
+	Exe        string `json:"exe"`
+	Display    string `json:"display"`
+	XAuthority string `json:"xauthority"`
+}
+
+var displayName = regexp.MustCompile(`^[A-Za-z0-9.-]{0,64}:[0-9]{1,4}(\.[0-9]{1,2})?$`)
+
+// command is ov-desk's argv and environment for this stream, or an error when what the plugin named is not ov-desk
+// (an absolute path to an executable file of that name) or not an X display.
+func (s *screenNative) command(fps int) ([]string, []string, error) {
+	if s == nil {
+		return nil, nil, fmt.Errorf("no native capture")
+	}
+	if !filepath.IsAbs(s.Exe) || filepath.Base(s.Exe) != "ov-desk" {
+		return nil, nil, fmt.Errorf("the native helper must be an absolute path to ov-desk")
+	}
+	if st, err := os.Stat(s.Exe); err != nil || !st.Mode().IsRegular() || st.Mode().Perm()&0o111 == 0 {
+		return nil, nil, fmt.Errorf("ov-desk is not an executable file")
+	}
+	if !displayName.MatchString(s.Display) {
+		return nil, nil, fmt.Errorf("not an X display: %q", s.Display)
+	}
+	var env []string
+	if s.XAuthority != "" {
+		if !filepath.IsAbs(s.XAuthority) || len(s.XAuthority) > 4096 {
+			return nil, nil, fmt.Errorf("xauthority must be an absolute path")
+		}
+		env = append(env, "XAUTHORITY="+s.XAuthority)
+	}
+	argv := []string{s.Exe, "stream", "-display", s.Display, "-fps", strconv.Itoa(fps), "-max-width", "1600", "-kbps", "2500"}
+	return argv, env, nil
 }
 
 // screenCommand answers screen_stream: the plugin is asked first (it applies the owner's level and has the capture
@@ -129,11 +172,19 @@ func (n *Agent) screenCommand(c protocol.Command, entry *safety.Entry, received 
 		var msg protocol.Message
 		if r.OK {
 			var got struct {
-				SID string `json:"sid"`
+				SID    string        `json:"sid"`
+				Native *screenNative `json:"native"`
 			}
 			_ = json.Unmarshal(r.Data, &got)
-			until := n.startScreen(v.WHIPURL, key, seconds, fps, p.Name(), got.SID)
-			data, _ := json.Marshal(map[string]any{"streaming": true, "seconds": seconds, "fps": fps, "until_ms": until.UnixMilli()})
+			var src video.Source
+			if argv, env, err := got.Native.command(ScreenNativeFPS); err == nil {
+				src = &video.CommandSource{Argv: argv, Env: env, KeyframeSignal: screenKeyframeSignal(), Log: n.log}
+				fps = ScreenNativeFPS
+			} else if got.Native != nil {
+				n.log.Warn("screen stream: the plugin's native capture was refused; its frames are used", "err", err)
+			}
+			until := n.startScreen(v.WHIPURL, key, seconds, fps, p.Name(), got.SID, src)
+			data, _ := json.Marshal(map[string]any{"streaming": true, "seconds": seconds, "fps": fps, "until_ms": until.UnixMilli(), "native": src != nil})
 			msg = protocol.AckData{ID: c.ID, LatencyMS: mono.Since(received).Milliseconds(), Data: data}
 		} else {
 			msg = protocol.Nack{ID: c.ID, FaultCode: r.FaultCode, Message: r.Message}
@@ -160,12 +211,16 @@ func (n *Agent) checkScreenURL(raw string) error {
 	return fmt.Errorf("whip_url must be an https URL")
 }
 
-// startScreen publishes the plugin's screen frames until the time is up (replacing a stream that runs) → the end.
-func (n *Agent) startScreen(whip string, key credentials.Secret, seconds, fps int, from, sid string) time.Time {
+// startScreen publishes the screen until the time is up (replacing a stream that runs) → the end: native's H.264 when
+// it is given (ov-desk stream), else the plugin's JPEG frames.
+func (n *Agent) startScreen(whip string, key credentials.Secret, seconds, fps int, from, sid string, native video.Source) time.Time {
 	n.stopScreen("replaced")
 	ctx, cancel := context.WithCancel(n.ctx)
 	until := time.Now().Add(time.Duration(seconds) * time.Second)
-	src := &video.JPEGSource{FFmpeg: n.opt.Config.Video.FFmpeg, FPS: fps, W: screenFallbackW, H: screenFallbackH, Log: n.log}
+	var src video.Source = native
+	if src == nil {
+		src = &video.JPEGSource{FFmpeg: n.opt.Config.Video.FFmpeg, FPS: fps, W: screenFallbackW, H: screenFallbackH, Log: n.log}
+	}
 	pub := video.NewPublisher(video.Options{WHIPURL: whip, PublishKey: key, ICEServers: n.screenICE(), Log: n.log, IncludeLoopback: n.opt.VideoLoopback})
 	s := &screenStream{pub: pub, src: src, from: from, sid: sid, until: until, cancel: cancel, done: make(chan struct{})}
 	n.screen.mu.Lock()
@@ -249,8 +304,10 @@ func (n *Agent) screenFrame(o plugins.Output) {
 	if s == nil || s.from != o.Plugin {
 		return
 	}
-	if p, ok := o.Data["path"].(string); ok {
-		s.src.Push(p)
+	if j, ok := s.src.(*video.JPEGSource); ok {
+		if p, ok := o.Data["path"].(string); ok {
+			j.Push(p)
+		}
 	}
 }
 

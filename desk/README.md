@@ -18,8 +18,16 @@ the Link's own binary, then the Python helper.
 
 ```sh
 ov-desk desk-display WIDTH HEIGHT APPS_JSON        # what the plugin runs (fds 3 and 4 are its pipe)
+ov-desk stream -display :0 -fps 15                 # the live screen as H.264 on stdout (the core reads it)
 ov-desk bench -display :99 -seconds 10 -fps 30     # the desk loop timed on a display: one JSON line
 ```
+
+`ov-desk stream` (v0.75) is the live screen. It writes H.264 (Annex B) to stdout, which the Link's core publishes over WHIP:
+- the screen is read through MIT-SHM and turned into I420 in one integer pass, since the openh264 crate's own
+  conversion cost more than the encoding;
+- OpenH264 encodes it in its screen-content mode;
+- it runs at 15 a second, at most 1600 px wide, with a keyframe every 2 seconds;
+- SIGUSR1 makes the next frame a keyframe: the Link's core sends it when a viewer asks for one (a PLI, a new viewer).
 
 ## How it makes pictures
 

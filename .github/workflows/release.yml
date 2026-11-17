@@ -26,7 +26,7 @@ jobs:
           for p in sdk dryrun adeept_adr036 cozmo relay ros2 computer voice; do python -m pytest -q plugins/$p/tests; done
       # The packages are built on every tag, and CI already built them on the PR that made this commit: rpm is the
       # only tool Ubuntu does not ship.
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm gcc-aarch64-linux-gnu
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm gcc-aarch64-linux-gnu g++-aarch64-linux-gnu nasm
       - run: rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
       - run: OV_DESK_REQUIRED=1 scripts/dist.sh "${GITHUB_REF_NAME}"
       # Every release must carry the installer OpenVibe.Bot's GET /install route and BOT_INSTALLER_SOURCE_URL are

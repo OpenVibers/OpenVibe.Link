@@ -157,6 +157,23 @@ impl Display {
         self.read().map(Frame::Owned)
     }
 
+    /// The screen as X's BGRX pixels no wider than max_width (0: its own width), tightly packed: the shared segment
+    /// itself when it is the screen's own size, else the shrunk copy. Valid until the next read. For the live stream.
+    pub fn frame_bgrx(&mut self, max_width: usize) -> Result<(&[u8], usize, usize), String> {
+        let frame = self.frame()?;
+        let (sw, sh) = (self.width, self.height);
+        let w = if max_width > 0 && max_width < sw { max_width } else { sw };
+        if w < sw {
+            let src: &[u8] = match &frame { Frame::Shared(p, n) => unsafe { std::slice::from_raw_parts(*p, *n) }, Frame::Owned(v) => v };
+            let h = shrink_bgrx(&mut self.scaled, src, sw, sh, w);
+            return Ok((&self.scaled[..w * h * 4], w, h));
+        }
+        match frame {
+            Frame::Shared(p, n) => Ok((unsafe { std::slice::from_raw_parts(p, n) }, sw, sh)),
+            Frame::Owned(v) => { self.scaled = v; Ok((&self.scaled[..sw * sh * 4], sw, sh)) }
+        }
+    }
+
     /// The whole screen as a JPEG no wider than max_width (0: its own width) and, by lowering the quality and then the
     /// width, no larger than max_bytes (0: no bound). Answers the picture and its size.
     pub fn shot(&mut self, max_width: usize, max_bytes: usize) -> Result<(Vec<u8>, usize, usize), String> {
