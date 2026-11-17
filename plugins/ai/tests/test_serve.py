@@ -127,6 +127,7 @@ class ServeTest(unittest.TestCase):
             serve.llama_server(self.root, opener=Files({"evil.tgz": evil}))
         self.assertFalse(os.path.exists(os.path.join(self.root, "evil")))
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "serve runs llama.cpp's Linux builds")
     def test_a_server_that_exits_is_started_again(self):
         binary = serve.llama_server(self.root, opener=Files({"llama.tgz": LLAMA_TGZ}))
         s = serve.Served(serve.spec_of({"alias": "tiny", "url": "https://test.invalid/m.gguf", "sha256": SHA(GGUF)}), binary, "/dev/null").start()
@@ -142,6 +143,7 @@ class ServeTest(unittest.TestCase):
             time.sleep(0.05)
         self.assertTrue(s.ready and s.proc.pid != first, "started again after it exited")
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "serve runs llama.cpp's Linux builds")
     def test_the_plugin_fetches_serves_and_answers_by_alias(self):
         files = Files({"llama.tgz": LLAMA_TGZ, "m.gguf": GGUF})
         out = Out()

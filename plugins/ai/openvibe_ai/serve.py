@@ -24,6 +24,7 @@ import platform
 import shutil
 import socket
 import subprocess
+import sys
 import tarfile
 import threading
 import time
@@ -118,6 +119,9 @@ def fetch_checked(url, sha, dest, opener=urllib.request.urlopen, log=lambda m: N
 
 def llama_server(root, opener=urllib.request.urlopen, log=lambda m: None, machine=None):
     """The pinned llama-server for this machine (Linux x86_64 or aarch64), unpacked under root once."""
+    # llama.cpp's pinned builds are Linux ones (the shared node and people's Linux machines): elsewhere, say so in words.
+    if machine is None and not sys.platform.startswith("linux"):
+        raise ServeError("serve runs llama.cpp's Linux builds: on %s, run your own server and set endpoint" % sys.platform)
     arch = machine or platform.machine().lower()
     arch = {"amd64": "x86_64", "arm64": "aarch64"}.get(arch, arch)
     if arch not in LLAMA:
