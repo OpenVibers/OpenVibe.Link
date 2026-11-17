@@ -152,6 +152,32 @@ usage() {
 	echo "  curl -fsSL https://openvibe.link/install | sh -s -- --network https://openvibe.network --pairing pair_… --code ABCD-1234 --plan-logins"
 }
 say() { printf '%s\n' "openvibe-link: $*"; }
+
+# installed_service_user: the account the installed Link service runs as ("root" when it names none), or nothing when no
+# Link service is installed here. An update with no role flags keeps it (2026-11-17: the shared node, set up before
+# v0.78 saved its flags, runs its worker and shared desks as root; a plain update would have made it openvibe-link).
+installed_service_user() {
+	command -v systemctl >/dev/null 2>&1 || return 0
+	[ "$(systemctl show -p LoadState --value openvibe-link.service 2>/dev/null)" = loaded ] || return 0
+	u=$(systemctl show -p User --value openvibe-link.service 2>/dev/null)
+	printf '%s\n' "${u:-root}"
+}
+
+# configured_plugins <config.json>: the names of the plugins that config runs, one a line (nothing without a config). An
+# update installs the bundled ones again so they stay current with the Link (2026-11-17: computer kept no page_check and
+# ai no serve on a machine updated without --computer or --ai).
+configured_plugins() {
+	$SUDO test -f "$1" || return 0
+	$SUDO python3 -c 'import json, sys
+try:
+    conf = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(0)
+for p in conf.get("plugins") or []:
+    name = p.get("name") if isinstance(p, dict) else None
+    if isinstance(name, str) and name.isidentifier():
+        print(name)' "$1" 2>/dev/null || true
+}
 die() { printf '%s\n' "openvibe-link: error: $*" >&2; exit 1; }
 # --robot is the rob_… pairing target; it used to name the driver kind, which still works but is deprecated.
 robot_arg() {
@@ -1002,7 +1028,16 @@ elif [ -n "$COMPUTER" ]; then
 	if [ -z "$COMPUTER_HOME" ] || [ ! -d "$COMPUTER_HOME" ]; then die "no home folder for $SVC_USER"; fi
 fi
 case "$COMPUTER" in ""|observe|ask|trusted|full) ;; *) die "--computer is observe, ask, trusted or full" ;; esac
+KEEP_USER=""
 if [ "$OS" = linux ] && [ "$SERVICE" = 1 ] && [ "$WORKER" = 0 ] && [ -z "$COMPUTER" ] && [ "$DESK_HOST" != shared ]; then
+	KEEP_USER=$(installed_service_user)
+fi
+if [ -n "$KEEP_USER" ] && [ "$KEEP_USER" != openvibe-link ]; then
+	# An update with no role flags: the service keeps the account it was installed with (root for a worker or a shared
+	# desk host, the owner for a computer).
+	if [ "$KEEP_USER" = root ]; then SVC_USER=""; else SVC_USER="$KEEP_USER"; fi
+	say "keeping the service's account ($KEEP_USER) as it was installed; give the flags again to change it"
+elif [ "$OS" = linux ] && [ "$SERVICE" = 1 ] && [ "$WORKER" = 0 ] && [ -z "$COMPUTER" ] && [ "$DESK_HOST" != shared ]; then
 	SVC_USER=openvibe-link
 	if ! id "$SVC_USER" >/dev/null 2>&1; then
 		$SUDO useradd --system --home-dir "$STATE" --no-create-home --shell /usr/sbin/nologin "$SVC_USER" 2>/dev/null ||
@@ -1028,6 +1063,13 @@ fi
 PIP="$STATE/venv/bin/pip"
 $SUDO "$PIP" install --quiet --upgrade pip >/dev/null 2>&1 || true
 $SUDO "$PIP" install --quiet "$STATE/plugins/sdk" "$STATE/plugins/dryrun" "$STATE/plugins/relay"
+# An update keeps the plugins this machine already runs current, flags or not (the options below install them too).
+for p in $(configured_plugins "$CONF/config.json"); do
+	case "$p" in
+	computer) [ -n "$COMPUTER" ] || [ "$DESK_HOST" != 0 ] || { $SUDO "$PIP" install --quiet "$STATE/plugins/computer[screen]" 2>/dev/null || $SUDO "$PIP" install --quiet "$STATE/plugins/computer"; } ;;
+	ai) [ "$AI" = 1 ] || $SUDO "$PIP" install --quiet "$STATE/plugins/ai" || say "warning: the ai plugin did not update" ;;
+	esac
+done
 # driver_setup: the plugin of $DRIVER into the venv, and its PLUGINS, KIND and VIDEO for the config. Run again when the
 # owner chose another model on openvibe.bot/link than the one the bus suggested.
 # Browser desks run chrome-headless-shell (Link v0.69: about 40% less memory than full Chrome headless, and three
