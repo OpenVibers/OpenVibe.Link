@@ -129,7 +129,10 @@ SETUP="${OPENVIBE_SETUP_KEY:-}"
 # v0.8.0 (2026-11-13) adds `kind: 'check'` jobs: one GitHub Actions workflow job run with act in host mode, which
 # OpenVibe.Run's checks scheduler places on worker nodes (CI on shared nodes).
 # v0.8.1 binds act's cache server to the job's own loopback (Link v0.64.0 brings it up).
-CODES_VERSION="${OPENVIBE_CODES_VERSION:-v0.8.1}"
+# v0.12.0 (2026-11-17) adds agent homes (job mode 'home') and Actor hand-offs. Since Link v0.76 the Link keeps the runner
+# at the release openvibe.codes names, so this pin is only the floor a new machine starts from: a runner already newer is
+# kept (Link v0.78: the self-updater runs this installer on every release, and must never take a runner back).
+CODES_VERSION="${OPENVIBE_CODES_VERSION:-v0.12.0}"
 CODES_DIR=/opt/openvibe-codes
 # The act release a check job runs (nektos/act, MIT): the same pin and sha256 as the Codes runner's harness/check.js.
 # It is fetched once here, checked, and named to the runner by OPENVIBE_CODES_ACT_BIN, so a check job does not download
@@ -1343,11 +1346,17 @@ if [ "$WORKER" = 1 ]; then
 		if [ -x "$candidate" ] && [ "$("$candidate" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)" -ge 20 ]; then NODEJS="$candidate"; break; fi
 	done
 	if [ -n "$NODEJS" ]; then
-		say "adding the OpenVibe.Codes job runner $CODES_VERSION in $CODES_DIR"
-		$SUDO mkdir -p "$CODES_DIR"
-		$SUDO "$(dirname "$NODEJS")/npm" install --prefix "$CODES_DIR" --omit=dev --no-audit --no-fund --no-save --loglevel=error \
-			"https://codeload.github.com/OpenVibers/OpenVibe.Codes/tar.gz/refs/tags/$CODES_VERSION" >/dev/null ||
-			die "could not install OpenVibe.Codes $CODES_VERSION into $CODES_DIR"
+		_codes_have="$("$NODEJS" -p "require('$CODES_DIR/node_modules/openvibe-codes/package.json').version" 2>/dev/null || true)"
+		_codes_want="${CODES_VERSION#v}"
+		if [ -n "$_codes_have" ] && [ "$(printf '%s\n%s\n' "$_codes_want" "$_codes_have" | sort -V | tail -n 1)" = "$_codes_have" ]; then
+			say "keeping the OpenVibe.Codes job runner $_codes_have in $CODES_DIR (not older than $CODES_VERSION)"
+		else
+			say "adding the OpenVibe.Codes job runner $CODES_VERSION in $CODES_DIR"
+			$SUDO mkdir -p "$CODES_DIR"
+			$SUDO "$(dirname "$NODEJS")/npm" install --prefix "$CODES_DIR" --omit=dev --no-audit --no-fund --no-save --loglevel=error \
+				"https://codeload.github.com/OpenVibers/OpenVibe.Codes/tar.gz/refs/tags/$CODES_VERSION" >/dev/null ||
+				die "could not install OpenVibe.Codes $CODES_VERSION into $CODES_DIR"
+		fi
 		say "adding act $ACT_VERSION for check jobs (GitHub Actions workflow jobs, run in the job sandbox)"
 		act_tgz="$TMP/act.tar.gz"
 		if { if command -v curl >/dev/null 2>&1; then curl -fsSL --retry 3 -o "$act_tgz" \
