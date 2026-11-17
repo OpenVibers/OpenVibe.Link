@@ -252,6 +252,27 @@ Most agent work happens in a browser, and a browser does not need a screen. `{"a
 window manager.
 - **About half the cost of a whole desk.** A browser desk counts as half a desk against `max_desks`, so a machine with
   `max_desks: 2` runs four browser desks, or one whole desk and two browser desks.
+- **The browser's pipe through ov-desk (v0.77).** Where ov-desk v0.77 or newer is installed (under /usr, /bin or /opt, and
+  answering `ov-desk browser --check`), the plugin runs the browser as `ov-desk browser -- <browser argv>`.
+  - **Every DevTools message passes through unchanged**, so everything the plugin does works as before.
+  - **A browser desk's live frames are taken in Rust.** ov-desk asks for the picture, decodes it and writes the file,
+    and the picture never passes through Python.
+  - **Turning it off:** `OPENVIBE_BROWSER_RELAY=0`.
+  - **Why:** the plugin's DevTools client in Python, raced against the same client in Rust on the same Chrome and page
+    (median of 5), took 2.6–2.8 times the CPU a call and 1.8 times the memory:
+
+    | Call | Python CPU | Rust CPU |
+    |---|---|---|
+    | Screenshot | 1,237 µs | 455 µs |
+    | Evaluate | 69 µs | 27 µs |
+    | Mouse move | 245 µs | 88 µs |
+
+  - **A browser desk's live view, 30 s at 5 frames a second, median of 5:**
+    - total CPU 0.353 → 0.204 s (−42%);
+    - the plugin's own 0.353 → 0.044 s;
+    - the same 150 frames.
+  - **What it costs:** the relay is one more process (6.4 MB), and an ordinary call takes one more hop (323 → 366 µs).
+    Both shrink as more of the browser moves into it.
 - **On a Mac too.** A browser desk needs only Chromium, Chrome, Edge or Brave, so it runs on macOS as well as Linux.
   `describe` lists the kinds a machine runs in `desk.kinds` (`desktop`, `browser`).
 - **chrome-headless-shell where it is installed** (v0.69). A browser desk, and the agent's headless browser, run

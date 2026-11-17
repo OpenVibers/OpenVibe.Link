@@ -20,6 +20,8 @@ the Link's own binary, then the Python helper.
 ov-desk desk-display WIDTH HEIGHT APPS_JSON        # what the plugin runs (fds 3 and 4 are its pipe)
 ov-desk stream -display :0 -fps 15                 # the live screen as H.264 on stdout (the core reads it)
 ov-desk publish -whip URL -display :0              # the live screen published over WHIP by ov-desk itself (v0.77)
+ov-desk publish -whip URL -- rpicam-vid …          # a camera command's H.264, published the same way (v0.77)
+ov-desk browser -- <browser argv>                  # the plugin's browser behind a Rust relay: frames taken here (v0.77)
 ov-desk bench -display :99 -seconds 10 -fps 30     # the desk loop timed on a display: one JSON line
 ```
 
