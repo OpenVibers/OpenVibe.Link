@@ -36,6 +36,15 @@ openvibe.bot shows this command with the robot's id and a fresh code. `--driver`
 OpenVibe.Network gets `--network <URL> --pairing pair_… --code ABCD-1234` instead of `--robot`. Details, manual
 install, Windows and configuration: [docs/install.md](docs/install.md).
 
+**Design's eyes, and models of its own (v0.79).**
+- **A page as a phone and a desktop draw it.** The browser's new `page_check` draws a page at 390 and 1280 px, dark and
+  light. For each view it answers what sticks out sideways, targets under 44 px on a phone, text under 12 px, native
+  controls and pictures without alt, with a picture of each. OpenVibe's Design bot uses it to check what it and other
+  agents build (Actor's `computer_page_check`), and Vision's review panel judges the pictures.
+- **Models it runs itself.** The ai plugin's `serve` list runs models here, in llama.cpp, downloaded and checked
+  against their sha256, on loopback only (docs/ai.md, "Run the models here"). The shared node and your own computer
+  answer OpenVibe's small models instead of OpenVibe's server.
+
 **It keeps itself current (v0.78).** On Linux, a timer looks for a new release every six hours. When there is one and
 nothing is running (no job, no live screen, no desk stream), it checks that release's install.sh against its
 SHA256SUMS and runs it with the flags you installed with. That keeps the pairing, and nobody has to log in to the
