@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/OpenVibers/OpenVibe.Link/internal/access"
+	"github.com/OpenVibers/OpenVibe.Link/internal/codesrunner"
 	"github.com/OpenVibers/OpenVibe.Link/internal/config"
 	"github.com/OpenVibers/OpenVibe.Link/internal/connect"
 	"github.com/OpenVibers/OpenVibe.Link/internal/credentials"
@@ -86,6 +87,8 @@ type Agent struct {
 	// fleet is what this machine's coding agents have left (Codes C9c): the Codes runner's own logins probe, sent
 	// with every heartbeat. Nil when the machine has no OpenVibe.Codes runner declared.
 	fleet *fleet.Prober
+	// codesRunner keeps the worker's OpenVibe.Codes runner at the current release (v0.76.0); nil when it is not ours to move.
+	codesRunner *codesrunner.Updater
 	// machine is what the machine is (internal/specs), read off the start path and every half hour; nil until then.
 	machineMu sync.Mutex
 	machine   *specs.Machine
@@ -285,6 +288,9 @@ func New(opt Options) (*Agent, error) {
 	if cmd := codesProbeCommand(opt.Config.Worker.Functions); cmd != nil {
 		n.fleet = fleet.New(fleet.Options{Command: cmd, Log: opt.Log})
 	}
+	// v0.76.0: the same entry's runner, kept at the release openvibe.codes names (the owner, 11-17: Link does it, nobody
+	// logs in). Only the installer's shape, only where this Link can write beside it, and never mid-job.
+	n.codesRunner = n.newCodesRunner(opt.Config.Worker.Functions)
 	if opt.Creds != nil {
 		u := opt.Creds.DeviceURL
 		if u == "" {
@@ -388,6 +394,10 @@ func (n *Agent) Run(parent context.Context) error {
 	if n.fleet != nil {
 		wg.Add(1)
 		go func() { defer wg.Done(); n.fleet.Run(ctx) }()
+	}
+	if n.codesRunner != nil {
+		wg.Add(1)
+		go func() { defer wg.Done(); n.codesRunner.Run(ctx) }()
 	}
 	if n.accessClient != nil {
 		wg.Add(1)
