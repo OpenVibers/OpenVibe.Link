@@ -430,7 +430,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 
 @unittest.skipUnless(find_binary(shutil.which, sys.platform), "no Chromium-family browser on this machine")
-class RealBrowserTest(unittest.TestCase):
+class RealBrowserRelayTest(unittest.TestCase):
+    """The browser's pipe through ov-desk's relay (Link v0.77). Its own class, so the headless-shell run (which counts
+    any skip as a failure) does not inherit it where no ov-desk is built."""
+
     def binary(self):
         return find_binary(shutil.which, sys.platform)
 
@@ -460,6 +463,12 @@ class RealBrowserTest(unittest.TestCase):
         self.assertEqual(head, b"\xff\xd8\xff", "a JPEG, written whole by ov-desk")
         self.assertFalse(os.path.exists(frame + ".part"))
         self.assertEqual(b.proc.args[1:3] if isinstance(b.proc.args, list) else None, ["browser", "--"])
+
+
+@unittest.skipUnless(find_binary(shutil.which, sys.platform), "no Chromium-family browser on this machine")
+class RealBrowserTest(unittest.TestCase):
+    def binary(self):
+        return find_binary(shutil.which, sys.platform)
 
     def test_a_real_browser_over_the_pipe(self):
         srv = socketserver.TCPServer(("127.0.0.1", 0), Handler)
