@@ -177,7 +177,9 @@ STREAM_QUALITY = 70
 STREAM_MAX_FAILURES = 5
 INPUT_ACTIONS = frozenset({"move", "click", "double_click", "right_click", "scroll", "type", "key"})
 BROWSER_READS = frozenset({"read", "screenshot", "close", "active_origin"})
-BROWSER_ACTS = frozenset({"open", "click", "fill", "press", "back", "blind_fill", "profile_export", "profile_import", "profile_sign_out"})
+# page_check (plan §AD.25): opens a page like open does (so it is an act at level ask) and answers it as a phone and a
+# desktop draw it, dark and light, with measured faults and pictures.
+BROWSER_ACTS = frozenset({"open", "page_check", "click", "fill", "press", "back", "blind_fill", "profile_export", "profile_import", "profile_sign_out"})
 MAX_URL = 2048
 MAX_DESK_PROGRAMS = 16
 PROFILE_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,23}$")
@@ -2254,8 +2256,19 @@ class Computer(Plugin):
         if "origins" in v and v["origins"] is None:
             raise Fault("bad_value", "origins is a list, not null")
         origins = self._clean_origins(v.get("origins"))
-        if action == "open":
+        if action in ("open", "page_check"):
             url = self._browser_url(v.get("url"), level, origins)
+        check_widths, check_themes, check_shots = (390, 1280), ("dark", "light"), True
+        if action == "page_check":
+            ws = v.get("widths", [390, 1280])
+            if not isinstance(ws, list) or not 1 <= len(ws) <= 3 or not all(isinstance(x, int) and not isinstance(x, bool) and 320 <= x <= 1920 for x in ws):
+                raise Fault("bad_value", "widths is one to three widths from 320 to 1920")
+            ts = v.get("themes", ["dark", "light"])
+            if not isinstance(ts, list) or not 1 <= len(ts) <= 2 or not all(t in ("dark", "light") for t in ts):
+                raise Fault("bad_value", "themes is dark, light or both")
+            if "shots" in v and not isinstance(v.get("shots"), bool):
+                raise Fault("bad_value", "shots is true or false")
+            check_widths, check_themes, check_shots = tuple(ws), tuple(dict.fromkeys(ts)), v.get("shots", True)
         if action in ("click", "fill") and selector is not None and (not isinstance(selector, str) or not selector or len(selector) > MAX_SELECTOR):
             raise Fault("bad_value", "selector is a CSS selector of at most %d characters" % MAX_SELECTOR)
         if action == "click" and selector is None and (not isinstance(text, str) or not text.strip() or len(text) > 200):
@@ -2314,6 +2327,8 @@ class Computer(Plugin):
                             raise Fault("not_allowed", "the link is outside the task's origins")
                     if action == "open":
                         out = b.open(url)
+                    elif action == "page_check":
+                        out = b.page_check(url, check_widths, check_themes, check_shots)
                     elif action == "read":
                         out = b.read()
                     elif action == "profile_export":
@@ -2356,6 +2371,8 @@ class Computer(Plugin):
         where = "" if not env else (" on the private desk" if desk == "private" else " on desk %s" % desk)
         if action == "open":
             summary = "open %s in the browser%s" % (_plain(url), where)
+        elif action == "page_check":
+            summary = "check %s at %s px in the browser%s" % (_plain(url), " and ".join(str(x) for x in check_widths), where)
         elif action == "click":
             summary = "click %s in the browser%s" % (
                 _plain(selector) if selector else "the %r button or link" % _plain(text)[:120], where)
