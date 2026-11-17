@@ -41,8 +41,16 @@ const (
 	screenFallbackW, screenFallbackH = 960, 544
 )
 
+// screenPublisher is what the status reads: the Go publisher or ov-desk publish (v0.77).
+type screenPublisher interface {
+	State() string
+	Frames() int64
+	LastError() string
+}
+
 type screenStream struct {
-	pub    *video.Publisher
+	mu     sync.Mutex
+	pub    screenPublisher
 	src    video.Source // ov-desk stream's H.264, or the plugin's JPEG frames (*video.JPEGSource)
 	from   string       // the plugin whose frames feed it
 	sid    string       // the plugin's id for it: its "ended" event names it
@@ -106,6 +114,16 @@ func (s *screenNative) command(fps int) ([]string, []string, error) {
 	}
 	argv := []string{s.Exe, "stream", "-display", s.Display, "-fps", strconv.Itoa(fps), "-max-width", "1600", "-kbps", "2500"}
 	return argv, env, nil
+}
+
+// publishArgv is the same capture published by ov-desk itself (v0.77): `publish` in place of `stream`, and the WHIP
+// endpoint. The key is not in it (the child's environment carries it).
+func publishArgv(streamArgv []string, whip string) []string {
+	if len(streamArgv) < 2 || streamArgv[1] != "stream" {
+		return nil
+	}
+	out := append([]string{streamArgv[0], "publish", "-whip", whip}, streamArgv[2:]...)
+	return out
 }
 
 // screenCommand answers screen_stream: the plugin is asked first (it applies the owner's level and has the capture
@@ -177,13 +195,18 @@ func (n *Agent) screenCommand(c protocol.Command, entry *safety.Entry, received 
 			}
 			_ = json.Unmarshal(r.Data, &got)
 			var src video.Source
+			var native *video.NativePublisher
 			if argv, env, err := got.Native.command(ScreenNativeFPS); err == nil {
 				src = &video.CommandSource{Argv: argv, Env: env, KeyframeSignal: screenKeyframeSignal(), Log: n.log}
+				// v0.77: ov-desk publishes the stream itself (Rust end to end); the pipe + Go publisher is the fallback.
+				if pa := publishArgv(argv, v.WHIPURL); pa != nil && os.Getenv("OPENVIBE_SCREEN_PUBLISH") != "0" {
+					native = &video.NativePublisher{Argv: pa, Env: env, Key: key, Log: n.log}
+				}
 				fps = ScreenNativeFPS
 			} else if got.Native != nil {
 				n.log.Warn("screen stream: the plugin's native capture was refused; its frames are used", "err", err)
 			}
-			until := n.startScreen(v.WHIPURL, key, seconds, fps, p.Name(), got.SID, src)
+			until := n.startScreen(v.WHIPURL, key, seconds, fps, p.Name(), got.SID, src, native)
 			data, _ := json.Marshal(map[string]any{"streaming": true, "seconds": seconds, "fps": fps, "until_ms": until.UnixMilli(), "native": src != nil})
 			msg = protocol.AckData{ID: c.ID, LatencyMS: mono.Since(received).Milliseconds(), Data: data}
 		} else {
@@ -213,7 +236,7 @@ func (n *Agent) checkScreenURL(raw string) error {
 
 // startScreen publishes the screen until the time is up (replacing a stream that runs) → the end: native's H.264 when
 // it is given (ov-desk stream), else the plugin's JPEG frames.
-func (n *Agent) startScreen(whip string, key credentials.Secret, seconds, fps int, from, sid string, native video.Source) time.Time {
+func (n *Agent) startScreen(whip string, key credentials.Secret, seconds, fps int, from, sid string, native video.Source, publisher *video.NativePublisher) time.Time {
 	n.stopScreen("replaced")
 	ctx, cancel := context.WithCancel(n.ctx)
 	until := time.Now().Add(time.Duration(seconds) * time.Second)
@@ -221,15 +244,37 @@ func (n *Agent) startScreen(whip string, key credentials.Secret, seconds, fps in
 	if src == nil {
 		src = &video.JPEGSource{FFmpeg: n.opt.Config.Video.FFmpeg, FPS: fps, W: screenFallbackW, H: screenFallbackH, Log: n.log}
 	}
-	pub := video.NewPublisher(video.Options{WHIPURL: whip, PublishKey: key, ICEServers: n.screenICE(), Log: n.log, IncludeLoopback: n.opt.VideoLoopback})
-	s := &screenStream{pub: pub, src: src, from: from, sid: sid, until: until, cancel: cancel, done: make(chan struct{})}
+	goPub := func() *video.Publisher {
+		return video.NewPublisher(video.Options{WHIPURL: whip, PublishKey: key, ICEServers: n.screenICE(), Log: n.log, IncludeLoopback: n.opt.VideoLoopback})
+	}
+	s := &screenStream{src: src, from: from, sid: sid, until: until, cancel: cancel, done: make(chan struct{})}
+	if publisher != nil {
+		s.pub = publisher
+	} else {
+		s.pub = goPub()
+	}
 	n.screen.mu.Lock()
 	n.screen.cur = s
 	n.screen.mu.Unlock()
-	n.log.Info("screen stream started", "seconds", seconds, "fps", fps)
+	n.log.Info("screen stream started", "seconds", seconds, "fps", fps, "publisher", map[bool]string{true: "ov-desk", false: "go"}[publisher != nil])
 	go func() {
 		defer close(s.done)
-		pub.Run(ctx, src)
+		if publisher != nil {
+			if err := publisher.Run(ctx); err == nil || ctx.Err() != nil {
+				return
+			}
+			// ov-desk cannot publish here (no UDP path: the Go publisher relays through TURN; or an older ov-desk).
+			p := goPub()
+			s.mu.Lock()
+			s.pub = p
+			s.mu.Unlock()
+			p.Run(ctx, src)
+			return
+		}
+		s.mu.Lock()
+		p := s.pub.(*video.Publisher)
+		s.mu.Unlock()
+		p.Run(ctx, src)
 	}()
 	go func() {
 		t := time.NewTicker(250 * time.Millisecond)
@@ -318,5 +363,8 @@ func (n *Agent) screenStatus() ScreenStatus {
 	if s == nil {
 		return ScreenStatus{State: video.StateOff}
 	}
-	return ScreenStatus{State: s.pub.State(), Until: s.until.UTC().Format(time.RFC3339), Frames: s.pub.Frames(), LastError: s.pub.LastError()}
+	s.mu.Lock()
+	pub := s.pub
+	s.mu.Unlock()
+	return ScreenStatus{State: pub.State(), Until: s.until.UTC().Format(time.RFC3339), Frames: pub.Frames(), LastError: pub.LastError()}
 }

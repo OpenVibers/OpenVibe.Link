@@ -132,6 +132,27 @@ You can watch your machine's screen live on openvibe.bot (**Your machines** → 
   On one workstation (1280×800) a frame cost about 16 ms of CPU, against about 70 ms for the old path's forked `import`
   (51.6 ms) and its ffmpeg encoding, and a frame arrives every 66 ms instead of every 500. Wayland and other systems
   keep the frames path.
+- **Published by ov-desk itself (v0.77).** Where ov-desk is v0.77 or newer, it also publishes the stream over WHIP
+  (`ov-desk publish`, WebRTC by str0m), so the frames never cross into the Go core. The core only starts it and reads
+  how it goes. The key reaches ov-desk in its environment, never in its arguments. A viewer's PLI or FIR makes the next
+  frame a keyframe directly. When ov-desk finds no UDP path to the server, or is older than v0.77, the core falls back
+  to the pipe and its own publisher, which can relay through TURN. `OPENVIBE_SCREEN_PUBLISH=0` turns this off.
+  The owner wants Rust wherever it gains at all, so both paths were raced on the same Xvfb screen and receiver: 30 s
+  a run, 3 runs a case, the median, counting the CPU of every sending process:
+
+  | Screen | Path | CPU | Memory | Frames received |
+  |---|---|---|---|---|
+  | Still (a clock) | pipe + Go (pion) | 8.49 s | 57.9 MB | 444 |
+  | | ov-desk publish (rust-crypto) | 8.54 s | 43.3 MB | 449 |
+  | | ov-desk publish (aws-lc) | 8.20 s | 43.2 MB | 449 |
+  | Moving video, full screen | pipe + Go (pion) | 11.22 s | 62.3 MB | 443 |
+  | | ov-desk publish (rust-crypto) | 10.23 s (−9%) | 44.7 MB (−28%) | 449 |
+  | | ov-desk publish (aws-lc) | 10.73 s (−4%) | 44.7 MB | 448 |
+
+  On a still screen, capture and encoding (the same Rust code on both paths) are nearly all the work, so CPU ties.
+  When the screen moves, Rust's media path wins, and it always uses about a quarter less memory. The pure-Rust crypto
+  backend won, and it is the build. The media path alone was raced on real recordings as well: splitting the frames,
+  RTP and SRTP took 11–44% less CPU in Rust (webrtc-rs) than in Go (pion).
 - **You are told.** The desktop says when it starts ("Your screen is live on OpenVibe"), and `openvibe-link status`
   shows `Screen: live … until …` while it runs.
 - **It ends** when its time is up, when you press Stop, when capturing fails five times in a row, and at once on
