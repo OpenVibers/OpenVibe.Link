@@ -41,6 +41,7 @@ for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
 	mkdir -p "$root"
 	# The installer's --local layout: the OS-specific binary name and the plugin bundle beside install.sh.
 	cp "$bin" "$root/openvibe-link-$os-$arch"
+	[ "$os" = linux ] && [ -s "dist/ov-desk-linux-$arch" ] && cp "dist/ov-desk-linux-$arch" "$root/ov-desk-linux-$arch"
 	cp dist/openvibe-link-plugins.tar.gz "$root/"
 	cp install/install.sh "$root/install.sh"
 	docs "$root"
@@ -55,6 +56,7 @@ for arch in amd64 arm64; do
 	root="$work/deb-$arch"
 	mkdir -p "$root/DEBIAN" "$root/usr/local/bin" "$root/usr/share/doc/openvibe-link"
 	install -m 0755 "$bin" "$root/usr/local/bin/openvibe-link"
+	[ -s "dist/ov-desk-linux-$arch" ] && install -m 0755 "dist/ov-desk-linux-$arch" "$root/usr/local/bin/ov-desk"
 	cp README.md "$root/usr/share/doc/openvibe-link/README.md"
 	cp docs/install.md "$root/usr/share/doc/openvibe-link/install.md"
 	size="$(du -sk "$root/usr" | cut -f1)"
@@ -87,6 +89,14 @@ if command -v rpmbuild >/dev/null 2>&1; then
 		top="$work/rpm-$rpmarch"
 		mkdir -p "$top/SOURCES" "$top/SPECS" "$top/BUILD" "$top/BUILDROOT" "$top/RPMS" "$top/SRPMS"
 		cp "$bin" "$top/SOURCES/openvibe-link"
+		desk_install=""
+		desk_files=""
+		if [ -s "dist/ov-desk-linux-$arch" ]; then
+			cp "dist/ov-desk-linux-$arch" "$top/SOURCES/ov-desk"
+			desk_install="install -m 0755 %{_sourcedir}/ov-desk %{buildroot}/usr/local/bin/ov-desk"
+			desk_files="/usr/local/bin/ov-desk
+"
+		fi
 		cp README.md "$top/SOURCES/README.md"
 		cp docs/install.md "$top/SOURCES/install.md"
 		cat >"$top/SPECS/openvibe-link.spec" <<EOF
@@ -115,13 +125,13 @@ can use it only as far as you allow, and you choose what it offers the network. 
 %install
 mkdir -p %{buildroot}/usr/local/bin %{buildroot}/usr/share/doc/openvibe-link
 install -m 0755 %{SOURCE0} %{buildroot}/usr/local/bin/openvibe-link
+$desk_install
 install -m 0644 %{SOURCE1} %{buildroot}/usr/share/doc/openvibe-link/README.md
 install -m 0644 %{SOURCE2} %{buildroot}/usr/share/doc/openvibe-link/install.md
 
 %files
 /usr/local/bin/openvibe-link
-/usr/local/bin/openvibe-link
-/usr/share/doc/openvibe-link/README.md
+$desk_files/usr/share/doc/openvibe-link/README.md
 /usr/share/doc/openvibe-link/install.md
 EOF
 		rpmbuild -bb --quiet --define "_topdir $top" --define "_arch $rpmarch" --define "_build_arch $rpmarch" \

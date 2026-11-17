@@ -359,7 +359,25 @@ only where both are on.
   `libturbojpeg` on Ubuntu 24.04, with `--desktops`) Go's encoder runs, and where MIT-SHM is refused the socket does;
   the helper's ready message says which (`capture`: `shm` or `socket`, `encoder`: `libjpeg-turbo` or `go`). A narrower
   picture than the desk is shrunk by averaging, so text stays legible. Elsewhere the Python helper (a PNG, the same xdotool
-  commands) runs. The plugin trusts
+  commands) runs.
+- **ov-desk, the Rust helper (v0.74).** Where the sandbox sees `ov-desk` (the installer, the .deb, the .rpm and the Linux
+  tarballs put it beside `openvibe-link`), the plugin runs it before the Go helper. It speaks the same protocol, line
+  for line ([desk/README.md](../desk/README.md)), and its ready message adds `helper: "ov-desk"` (its own encoder, where
+  libjpeg-turbo is missing, is `rust`: 10 ms a 1280×800 picture against 21 ms for Go's). It replaced the Go loop after
+  a race on one workstation (2026-11-17). The two ran the same loop on a real 1280×800 desktop frame on Xvfb: MIT-SHM,
+  the same shrink, the same libjpeg-turbo call. Each case ran twice for 60 s at 30 a second, in alternating order, then
+  flat out:
+
+  | Case | Go: frame p50 / p99, CPU a frame | Rust: frame p50 / p99, CPU a frame | CPU | Memory (Go / Rust) |
+  | --- | --- | --- | --- | --- |
+  | Full 1280×800, 30 a second | 4.9 / 17.7 ms, 5.74 ms | 5.0 / 17.6 ms, 5.75 ms | same | 17 / 7 MB |
+  | Shrunk to 1024, 30 a second | 16.3 / 42.5 ms, 17.93 ms | 11.9 / 26.6 ms, 12.42 ms | −31% | 19 / 9 MB |
+  | Full, flat out (217 vs 266 a second) | 3.9 / 12.5 ms, 4.06 ms | 3.5 / 5.9 ms, 3.10 ms | −24% | 17 / 7 MB |
+  | Shrunk, flat out (62 vs 118 a second) | 14.1 / 38.5 ms, 15.58 ms | 8.1 / 13.5 ms, 7.76 ms | −50% | 19 / 9 MB |
+
+  Where libjpeg-turbo does the work they tie. Where our own code does (the shrink, frames as fast as they go), Rust
+  takes a quarter to half off the CPU and about half off the worst case, in 10 MB less memory. A mouse move (an XTest
+  round trip) is 0.04 ms either way. The same crate is where native capture goes next: Windows, macOS and Wayland. The plugin trusts
   nothing the helper answers beyond its shape, its size (32 MB) and its time. `browser` on a desktop is refused (its
   browser is a window there), as are `exec`, `fs`, `screen_stream` and everything else of the machine.
 - **What `describe` says.** `desk.kinds` lists `desktop` when it is lent and the machine has everything a desktop needs

@@ -1106,13 +1106,17 @@ class Computer(Plugin):
                               native=self._native_display())
 
     def _native_display(self):
-        """The Link's own binary for the Go desktop helper (`openvibe-link desk-display`, Link v0.67), where the sandbox
-        sees it: under /usr (the system's paths) or /opt (bound with the desktop). None: the Python helper runs."""
-        exe = self.env.get("OPENVIBE_LINK_EXE") or self.which("openvibe-link")
-        if not exe:
-            return None
-        real = os.path.realpath(exe)
-        return real if real.startswith(("/usr/", "/bin/", "/opt/")) else None
+        """The native desktop helper, where the sandbox sees it (under /usr, /bin or /opt): ov-desk, the Rust helper
+        (Link v0.74; the race in docs/computer.md), else the Link's own binary (`openvibe-link desk-display`, v0.67).
+        Both take `desk-display WIDTH HEIGHT APPS` and speak the same pipe. None: the Python helper runs."""
+        for exe in (self.env.get("OPENVIBE_DESK_EXE") or self.which("ov-desk"),
+                    self.env.get("OPENVIBE_LINK_EXE") or self.which("openvibe-link")):
+            if not exe:
+                continue
+            real = os.path.realpath(exe)
+            if real.startswith(("/usr/", "/bin/", "/opt/")):
+                return real
+        return None
 
     def _lent_desktop(self, v):
         """The lent desktop a command names on a desk host for other people, else None."""

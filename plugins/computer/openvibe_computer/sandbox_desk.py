@@ -177,7 +177,8 @@ class SandboxDesktop:
         # The Go helper (`openvibe-link desk-display`, Link v0.67): the Link's own binary where the sandbox can see it
         # (under /usr or /opt). It captures and drives the display in-process; HELPER is the fallback.
         self.native = native
-        self.paths = {}  # how the Go helper makes pictures: {"capture": "shm"|"socket", "encoder": "libjpeg-turbo"|"go"}
+        self.paths = {}  # how the native helper makes pictures: {"capture": "shm"|"socket", "encoder": "libjpeg-turbo"|"go"|"rust"}
+        self.helper = None  # which native helper answered: "ov-desk" (Rust, Link v0.74) says so; the Go one says nothing
         self.mu = threading.Lock()      # one start or stop at a time
         self.call_mu = threading.Lock()  # one request on the pipe at a time
         self.proc = self.out = self.inp = None
@@ -269,6 +270,7 @@ class SandboxDesktop:
                 raise Fault("hardware", "the lent desktop did not start: %s%s" % (why, self._tail()))
             self.width, self.height, self.since = width, height, self.clock()
             self.paths = {k: hello[k] for k in ("capture", "encoder") if isinstance(hello.get(k), str)}
+            self.helper = hello.get("helper") if isinstance(hello.get("helper"), str) else None
             return self.status()
 
     def stop(self):
