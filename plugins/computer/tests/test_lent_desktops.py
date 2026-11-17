@@ -340,6 +340,7 @@ class RealLentDesktopTest(unittest.TestCase):
 
 
 
+@unittest.skipIf(os.name == "nt", "lent desktops are Linux: these are POSIX paths")
 class NativeHelperChoiceTest(unittest.TestCase):
     """Link v0.74: ov-desk (Rust) is the first native helper, the Link's own binary the second; only where the sandbox
     sees it (under /usr, /bin or /opt)."""
