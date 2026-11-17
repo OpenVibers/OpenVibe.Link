@@ -271,6 +271,10 @@ window manager.
     - total CPU 0.353 → 0.204 s (−42%);
     - the plugin's own 0.353 → 0.044 s;
     - the same 150 frames.
+  - **Agent screenshots too (v0.78).** An action's screenshot is taken scaled by Chrome and handed back by ov-desk as
+    Chrome's own base64. Before, Python decoded the full-size picture, shrank it with Pillow and encoded it again. At
+    640 wide, over 3 rounds of 60: 23–25 ms of CPU a screenshot became 0.7–0.9 ms (−96%), and 57–64 ms of waiting
+    became 49–50 ms.
   - **What it costs:** the relay is one more process (6.4 MB), and an ordinary call takes one more hop (323 → 366 µs).
     Both shrink as more of the browser moves into it.
 - **On a Mac too.** A browser desk needs only Chromium, Chrome, Edge or Brave, so it runs on macOS as well as Linux.

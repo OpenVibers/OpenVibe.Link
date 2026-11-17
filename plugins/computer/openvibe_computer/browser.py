@@ -755,6 +755,10 @@ class Browser:
     def screenshot(self, max_width=1280):
         self._need()
         self.used_at = time.monotonic()
+        if self.relay:
+            # ov-desk asks Chrome for it already scaled and hands back Chrome's own base64: nothing is decoded here.
+            r = self.call("OV.screenshot", {"max_width": max_width, "quality": 70})
+            return {"format": "jpeg", "width": int(r["width"]), "height": int(r["height"]), "content_b64": r["data"]}
         r = self.call("Page.captureScreenshot", {"format": "jpeg", "quality": 70})
         data = base64.b64decode(r["data"])
         metrics = self.call("Page.getLayoutMetrics")
