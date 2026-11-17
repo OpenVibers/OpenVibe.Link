@@ -1,3 +1,6 @@
+//go:build !windows
+
+// The updater runs where the Codes worker runs (Linux); its paths are Unix paths.
 package codesrunner
 
 import (
