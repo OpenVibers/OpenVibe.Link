@@ -54,6 +54,32 @@ computer's models** for the machine on openvibe.link/machines.
 | `timeout_s` | `180` | how long one reply may take (at most 900) |
 | `offer` | off | the network offer, below |
 
+## Run the models here (`serve`)
+
+Since Link v0.79 (ai plugin 0.5.0) the plugin can run its models itself instead of reaching an Ollama or a
+`llama-server` someone started by hand (plan §AD.23: the models, speech and checks OpenVibe's production host ran move
+to the shared node and to people's own machines). Name them in the plugin's `serve` list:
+
+```json
+{ "serve": [
+    { "model": "qwen2.5-1.5b-instruct" },
+    { "model": "bge-small-en-v1.5" },
+    { "alias": "my-model", "url": "https://huggingface.co/…/my-model-q4_k_m.gguf", "sha256": "…", "threads": 4, "ctx": 8192, "parallel": 2 }
+] }
+```
+
+- **Models:** a catalog name (`qwen2.5-1.5b-instruct`, `llama-3.2-1b-instruct`, `bge-small-en-v1.5`), each pinned to
+  Hugging Face's own sha256, or any GGUF given by its URL and sha256. A file that does not match its sha256 is never used.
+- **Fetching:** each model is downloaded into the plugin's state folder, written whole and then moved into place. So is
+  llama.cpp's pinned CPU build for this machine (x64 or arm64), checked the same way.
+- **Running:** each model runs as its own `llama-server` on 127.0.0.1 at a free port (`--embedding` for an embedding
+  model), held to its threads. Nothing listens beyond loopback: OpenVibe reaches the models through the Link's own
+  connection, as before.
+- **Health:** the plugin waits for `/health`, restarts a server that exits (with a backoff), and stops them all when it
+  stops. Its status says what each model is doing: fetching, starting, ready, or why not.
+- **Routing:** the `ai` command routes by model alias to that model's server; `models` narrows which of the ready ones
+  are offered.
+
 ## Offer to the network
 
 Your machine can serve other people's OpenVibe requests, and earn credits for it. It is off until you turn it on, and
