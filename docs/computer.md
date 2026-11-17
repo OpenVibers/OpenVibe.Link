@@ -206,6 +206,17 @@ text and keys are passed to the tool as arguments, never through a shell, and `k
   placeholder. Each element keeps its ref (`data-ov-ref`) while it stays on the page, so `click` or `fill` with the
   selector `[data-ov-ref="e7"]` acts on exactly that element. An agent works from the page's own structure first and
   needs a screenshot only when that is not enough.
+- **The page check** (`page_check`, Link v0.79). `{ "action": "page_check", "url", "widths"?, "themes"?, "shots"? }`
+  opens a page once and draws it at each width (390 and 1280 by default, one to three from 320 to 1920) in each theme
+  (dark and light), with Chrome's own device emulation and `prefers-color-scheme`. The emulation is cleared afterwards,
+  whatever happened.
+  - **Measured, per view.** What sticks out sideways, judged against the width being checked (a phone zooms out to fit
+    a page that sticks out, so its own width can be wider). Also targets under 44 px on a phone, text under 12 px,
+    native controls showing (not one kept under OpenVibe's own with `data-ov-native`) and pictures without alt. Each
+    comes as counts and a few examples.
+  - **Pictured.** With `shots` (the default), a JPEG of each view: a phone at its width, a desktop at most 900 px wide.
+  - **Levels.** It opens a page, so it is an acting command like `open`: refused at `observe`, approved at `ask`. The
+    egress guard and task origins apply.
 - **Receipts.** `click`, `press` and `back` answer with a `receipt` of what they changed: `url_changed`, the first lines
   that `appeared` (up to 8) and how many lines are `gone`. An agent knows at once whether its click did anything,
   without another read.
