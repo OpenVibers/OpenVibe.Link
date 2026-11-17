@@ -32,8 +32,12 @@ jobs:
         with:
           node-version: "20"
       - name: Install pinned Gradle
+        # The release asset comes through GitHub's API: with the job's token, not the anonymous limit that runners
+        # share (60 an hour per address; a 403 there failed this job twice on 11-17). The checksum below still pins it.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          curl -fL --retry 3 -H 'Accept: application/octet-stream' \
+          curl -fL --retry 3 -H 'Accept: application/octet-stream' -H "Authorization: Bearer $GH_TOKEN" \
             https://api.github.com/repos/gradle/gradle-distributions/releases/assets/207876967 \
             -o "$RUNNER_TEMP/gradle-8.11.1-bin.zip"
           echo 'f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6  '"$RUNNER_TEMP/gradle-8.11.1-bin.zip" | sha256sum -c -
