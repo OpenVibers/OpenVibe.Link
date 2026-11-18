@@ -36,6 +36,11 @@ openvibe.bot shows this command with the robot's id and a fresh code. `--driver`
 OpenVibe.Network gets `--network <URL> --pairing pair_… --code ABCD-1234` instead of `--robot`. Details, manual
 install, Windows and configuration: [docs/install.md](docs/install.md).
 
+**An update keeps what the machine is (v0.79.1).** Running the installer again with no flags keeps the account the
+service runs as. That matters for a job worker or a desk host set up before v0.78, which runs as root, and for a
+computer, which runs as its owner. The update also brings the computer and ai plugins the machine already runs up to
+the release. Such a machine can now update with a plain run, which also turns its automatic updates on.
+
 **Design's eyes, and models of its own (v0.79).**
 - **A page as a phone and a desktop draw it.** The browser's new `page_check` draws a page at 390 and 1280 px, dark and
   light. For each view it answers what sticks out sideways, targets under 44 px on a phone, text under 12 px, native
