@@ -127,3 +127,39 @@ func TestPreviewAPIAndOpen(t *testing.T) {
 		t.Fatalf("a refusal says why: %v", err)
 	}
 }
+
+func TestPreviewDetachArgs(t *testing.T) {
+	got := previewArgsWithoutDetach([]string{"preview", "dist", "--for", "30m", "--detach", "-detach=true"})
+	if strings.Join(got, " ") != "preview dist --for 30m" {
+		t.Fatalf("the background copy runs the same command without --detach: %v", got)
+	}
+}
+
+// The command that started a background preview waits for its one line, its end, or the time limit.
+func TestPreviewWaitReady(t *testing.T) {
+	dir := t.TempDir()
+	ok := filepath.Join(dir, "ok")
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		_ = os.WriteFile(ok, []byte("ok\thttps://pa1b2c3--box.openvibe.link\t2026-11-18T16:00:00Z\n"), 0o600)
+	}()
+	_ = os.WriteFile(ok, nil, 0o600)
+	line, err := waitPreviewReady(ok, make(chan struct{}), 5*time.Second)
+	if err != nil || !strings.HasPrefix(line, "ok\thttps://pa1b2c3--box.openvibe.link") {
+		t.Fatalf("ready: %q %v", line, err)
+	}
+
+	gone := make(chan struct{})
+	close(gone)
+	if _, err := waitPreviewReady(filepath.Join(dir, "empty"), gone, 5*time.Second); err == nil || !strings.Contains(err.Error(), "stopped before") {
+		t.Fatalf("a copy that died says so: %v", err)
+	}
+	failed := filepath.Join(dir, "failed")
+	_ = os.WriteFile(failed, []byte("error\tOpenVibe Connect said no: five previews open\n"), 0o600)
+	if line, err := waitPreviewReady(failed, gone, 5*time.Second); err != nil || !strings.HasPrefix(line, "error\t") {
+		t.Fatalf("its reason comes through even after it ended: %q %v", line, err)
+	}
+	if _, err := waitPreviewReady(filepath.Join(dir, "never"), make(chan struct{}), 300*time.Millisecond); err == nil || !strings.Contains(err.Error(), "within a minute") {
+		t.Fatalf("a time limit: %v", err)
+	}
+}

@@ -232,6 +232,7 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		shID         = fs.String("share", "", "a share this computer serves itself, as OpenVibe Link: its shr_… id, no key (share)")
 		gitRoot      = fs.String("root", "", "the folder Link may clone into or publish from (clone, git); default ~/OpenVibe")
 		yes          = fs.Bool("yes", false, "approve this clone without asking (clone; for a script, never for a person)")
+		pvDetach     = fs.Bool("detach", false, "keep the preview up in the background and return once its address is printed (preview)")
 	)
 	// Accept flags anywhere: split positionals out.
 	var positional []string
@@ -349,7 +350,7 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 			return 2
 		}
 	case "preview":
-		err = cmdPreview(g, positional, *accessFor, *shSrv, stdout, stderr)
+		err = cmdPreview(g, positional, *accessFor, *shSrv, *pvDetach, stdout, stderr)
 		if errors.Is(err, errUsage) {
 			return 2
 		}
