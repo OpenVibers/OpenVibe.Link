@@ -36,6 +36,12 @@ openvibe.bot shows this command with the robot's id and a fresh code. `--driver`
 OpenVibe.Network gets `--network <URL> --pairing pair_… --code ABCD-1234` instead of `--robot`. Details, manual
 install, Windows and configuration: [docs/install.md](docs/install.md).
 
+**Programs with their packages, and runners that keep old jobs working (v0.81).** The skill runner (1.2.0) runs inline
+code with an npm packages bundle beside it: OpenVibe.Actor's `script_run` sends a program, its input and a pinned
+`node_modules` bundle, and the job still has no network. A machine's declared function now also takes jobs that name an
+earlier minor of its major, so updating a runner never strands the requesters that still name the version before.
+Details: [docs/worker.md](docs/worker.md#skills-that-run-code-openvibe-skill-runner120).
+
 **A preview of what you built (v0.80).** `openvibe-link preview <dir> [--for 2h] [--detach]` puts a built folder at a
 short-lived address only you can open, signed in to OpenVibe: `https://p<6>--<this computer>.openvibe.link`, for 5 minutes
 to a day (2 hours by default). It serves the folder read-only, with no listing, no hidden files and nothing outside it.
