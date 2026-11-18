@@ -43,6 +43,14 @@ class FakeServer(http.server.BaseHTTPRequestHandler):
         FakeServer.seen.append((self.path, body))
         if body.get("model") == "slow":
             FakeServer.hold.wait(5)
+        if self.path == "/v1/embeddings":
+            # One vector per text, given back out of order (the plugin puts them in the order of input).
+            rows = [{"object": "embedding", "index": i, "embedding": [float(len(t)), i + 0.1234567, -1.0]} for i, t in enumerate(body["input"])]
+            if body.get("model") == "broken":
+                return self._send(500, {"error": "out of memory"})
+            if body.get("model") == "qwen2.5:7b":
+                rows = [{"object": "embedding", "index": i, "embedding": [0.5] * 3000} for i, _ in enumerate(body["input"])]
+            return self._send(200, {"object": "list", "model": body["model"], "data": list(reversed(rows)), "usage": {"prompt_tokens": 7, "total_tokens": 7}})
         if self.path != "/v1/chat/completions":
             return self._send(404, {"error": "not found"})
         if body.get("model") == "broken":
@@ -116,6 +124,29 @@ class AiPluginTest(unittest.TestCase):
         path, body = FakeServer.seen[-1]
         self.assertEqual(path, "/v1/chat/completions")
         self.assertEqual((body["max_tokens"], body["temperature"], body["stream"]), (50, 0.2, False))
+
+    def test_embeddings_come_back_one_per_text_in_order(self):
+        caps = self.boot()[0]["capabilities"]["ai"]
+        self.assertIs(caps["embed"], True, "the machine says it can make embeddings")
+        r = self.ask({"model": "llama3.1:8b", "input": ["what is a mutex", "a lock"]})
+        self.assertEqual(r["op"], "ack", r)
+        self.assertEqual(r["data"]["embeddings"], [[15.0, 0.123457, -1.0], [6.0, 1.123457, -1.0]], "in the order of input, rounded to 6 places")
+        self.assertEqual((r["data"]["model"], r["data"]["usage"]), ("llama3.1:8b", {"prompt_tokens": 7, "total_tokens": 7}))
+        path, body = FakeServer.seen[-1]
+        self.assertEqual((path, body), ("/v1/embeddings", {"model": "llama3.1:8b", "input": ["what is a mutex", "a lock"]}))
+        # Refused before the server: no texts, a number, texts with messages, a model it does not offer.
+        for bad in ({"model": "llama3.1:8b", "input": []}, {"model": "llama3.1:8b", "input": [3]},
+                    {"model": "llama3.1:8b", "input": ["x"], "messages": [{"role": "user", "content": "x"}]},
+                    {"model": "nope", "input": ["x"]}):
+            r = self.ask(bad)
+            self.assertEqual(r["op"], "nack", bad)
+        # Vectors too large for one answer: said, not cut.
+        r = self.ask({"model": "qwen2.5:7b", "input": ["a"] * 40})
+        self.assertEqual(r["op"], "nack", r)
+        self.assertIn("fewer texts", json.dumps(r))
+        # The server fails: said.
+        r = self.ask({"model": "broken", "input": ["x"]})
+        self.assertEqual(r["op"], "nack", r)
 
     def test_tools_go_to_the_model_and_its_calls_come_back_never_run(self):
         caps = self.boot()[0]["capabilities"]["ai"]

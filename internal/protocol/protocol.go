@@ -204,7 +204,8 @@ const (
 	// screen; screen, screen_stream, input and browser take "desk": "private" to act there. Starting and stopping act.
 	KindDesk = "desk"
 	// KindAI is one chat completion on the person's own model server (contracts 0.219.0, the ai plugin): {"model",
-	// "messages", "max_tokens"?, "temperature"?} → {model, message, usage?}. It reads and changes nothing on the
+	// "messages", "max_tokens"?, "temperature"?} → {model, message, usage?}; or embeddings (contracts 0.448.0, Link
+	// v0.82.0): {"model", "input": [text]} → {model, embeddings, usage?}. It reads and changes nothing on the
 	// machine, so it never acts and runs while a stop is latched like a read.
 	KindAI = "ai"
 	// KindDeskStream is an agent's own desk stream (Agent Streams S1, live.agent-stream@1): {"action": "start", "title",
