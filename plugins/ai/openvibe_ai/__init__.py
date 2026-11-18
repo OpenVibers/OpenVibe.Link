@@ -71,6 +71,9 @@ VERSION = "0.5.0"
 DEFAULT_ENDPOINTS = ("http://127.0.0.1:11434", "http://127.0.0.1:1234", "http://127.0.0.1:8080")
 MAX_REPLY_CHARS = 200 * 1024     # well inside the core's answer limit (512 KB)
 MAX_MESSAGES = 200
+MAX_EMBED_INPUTS = 64         # bot.command@1 1.1.0 (contracts 0.448.0): an embedding request's texts
+MAX_EMBED_CHARS = 8192
+MAX_EMBED_REPLY = 450 * 1024    # the vectors as JSON, inside the core's answer limit (512 KB)
 MAX_CONTENT = 64 * 1024
 ROLES = ("system", "user", "assistant", "tool")
 MAX_TOOLS = 64
@@ -738,7 +741,7 @@ class Ai(Plugin):
         except Fault:
             return {}
         out = {"ai": {"models": self.models, "ready": self.reachable and bool(self.models),
-                      "max_tokens": self.max_tokens, "tools": True,
+                      "max_tokens": self.max_tokens, "tools": True, "embed": True,
                       "speed": {m: round(r, 1) for m, r in self.speed.items()},
                       "offer": self._offer_view()}}
         if self.serve_specs:
@@ -784,6 +787,8 @@ class Ai(Plugin):
                 raise Fault("not_allowed", "the machine is in use or has not been quiet for %d minutes" % (self.offer["quiet_minutes"] or 0))
             if model not in self.offer["models"]:
                 raise Fault("bad_value", "this machine does not offer %s to the network (it offers: %s)" % (model, ", ".join(self.offer["models"][:20]) or "none"))
+        if v.get("input") is not None:
+            return self._embed(cmd, v, model, community)
         sent = [_message(m) for m in messages] if isinstance(messages, list) and 0 < len(messages) <= MAX_MESSAGES else None
         if not sent or any(m is None for m in sent):
             raise Fault("bad_value", "messages are 1 to %d of {role: system|user|assistant|tool, content: text}; tool_calls on an assistant message, tool_call_id on a tool one" % MAX_MESSAGES)
@@ -824,6 +829,70 @@ class Ai(Plugin):
             self._release()
             raise
         raise Deferred()
+
+    def _embed(self, cmd, v, model, community):
+        """An embedding request (contracts 0.448.0, Link v0.82.0): {model, input: [text, ...]} → {model, embeddings, usage?}
+        from the model server's OpenAI-compatible /v1/embeddings, one vector per text in the order given. The owner, 11-18:
+        heavy work runs on the shared node via Link; embeddings were the last model on production."""
+        texts = v.get("input")
+        if (not isinstance(texts, list) or not 0 < len(texts) <= MAX_EMBED_INPUTS or v.get("messages") is not None
+                or any(not isinstance(t, str) or not t or len(t) > MAX_EMBED_CHARS for t in texts)):
+            raise Fault("bad_value", "input is 1 to %d texts of at most %d characters, without messages" % (MAX_EMBED_INPUTS, MAX_EMBED_CHARS))
+        if not self.reachable:
+            self._configure_again()
+        if not self.reachable:
+            raise Fault("not_ready", "no model server answers on this machine (start Ollama, LM Studio or llama.cpp's server)")
+        if model not in self.models:
+            self._configure_again()
+            if model not in self.models:
+                raise Fault("bad_value", "this machine does not offer %s (it offers: %s)" % (model, ", ".join(self.models[:20]) or "none"))
+        capacity = self.offer["concurrency"] if self.offer["enabled"] else 1
+        with self.lock:
+            if self.active >= capacity:
+                raise Fault("not_ready", "the model is answering another request on this machine: try again in a moment")
+            self.active += 1
+        try:
+            threading.Thread(target=self._embed_reply, args=(cmd.id, {"model": model, "input": texts}, community), name="ai-embed", daemon=True).start()
+        except Exception:
+            self._release()
+            raise
+        raise Deferred()
+
+    def _embed_reply(self, cid, body, community=False):
+        try:
+            req = urllib.request.Request((self._endpoint_for(body.get("model")) or "") + "/v1/embeddings", data=json.dumps(body).encode("utf-8"),
+                                         headers={"Content-Type": "application/json", "Accept": "application/json"})
+            started = self.clock()
+            with self.opener(req, timeout=self.timeout_s) as r:
+                doc = json.loads(r.read(16 * 1024 * 1024).decode("utf-8"))
+            rows = doc.get("data") if isinstance(doc, dict) else None
+            if not isinstance(rows, list) or len(rows) != len(body["input"]):
+                return self.fail(cid, "hardware", "the model server gave no embeddings")
+            rows = sorted(rows, key=lambda x: x.get("index", 0) if isinstance(x, dict) else 0)
+            vectors = []
+            for row in rows:
+                vec = row.get("embedding") if isinstance(row, dict) else None
+                if not isinstance(vec, list) or not vec or any(isinstance(x, bool) or not isinstance(x, (int, float)) for x in vec):
+                    return self.fail(cid, "hardware", "the model server gave an embedding that is not numbers")
+                vectors.append([round(float(x), 6) for x in vec])
+            out = {"model": str(doc.get("model") or body["model"]), "embeddings": vectors, "ms": int((self.clock() - started) * 1000)}
+            usage = doc.get("usage")
+            if isinstance(usage, dict):
+                out["usage"] = {k: int(usage[k]) for k in ("prompt_tokens", "total_tokens") if isinstance(usage.get(k), (int, float))}
+            if len(json.dumps(out)) > MAX_EMBED_REPLY:
+                return self.fail(cid, "bad_value", "the vectors are too large for one answer: send fewer texts")
+            if community:
+                with self.lock:
+                    self.community["requests"] += 1
+                    self.community["tokens_in"] += int((out.get("usage") or {}).get("prompt_tokens") or 0)
+                out["community"] = True
+            self.complete(cid, out)
+        except urllib.error.HTTPError as e:
+            self.fail(cid, "hardware", "the model server answered %d" % e.code)
+        except (OSError, ValueError, urllib.error.URLError) as e:
+            self.fail(cid, "hardware", "the model server did not answer: %s" % (getattr(e, "reason", None) or e))
+        finally:
+            self._release()
 
     def _measure(self, model, tokens, ms):
         """Keeps how fast this model answered: the reply's tokens over the whole answer's time (reading the prompt

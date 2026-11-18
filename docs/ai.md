@@ -169,6 +169,12 @@ When the machine is off or its model server is down, the request fails and says 
   time, averaged with the earlier answers, the latest counting most. openvibe.link/machines shows it beside the models.
 - It never acts on the machine, so it also runs while the machine's stop is latched.
 
+**Embeddings (v0.82.0, contracts 0.448.0).** `ai` `{"model", "input": ["text", …]}` → `{model, embeddings: [[number]],
+usage?, ms}`: one vector per text, in the order given, from the model server's OpenAI-compatible `/v1/embeddings`
+(Ollama, llama.cpp's server with `--embedding`, LM Studio). 1 to 64 texts of at most 8192 characters; values are
+rounded to 6 places, and vectors too large for one answer (over 450 KB) are refused with "send fewer texts". `describe`
+says `ai.embed: true`. OpenVibe.AI uses it to run embeddings on the shared node instead of production.
+
 ## Machine pools (Linux)
 
 Several of your machines on the same local network can serve one model together, as one offer: a gaming PC and a

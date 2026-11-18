@@ -36,6 +36,10 @@ openvibe.bot shows this command with the robot's id and a fresh code. `--driver`
 OpenVibe.Network gets `--network <URL> --pairing pair_… --code ABCD-1234` instead of `--robot`. Details, manual
 install, Windows and configuration: [docs/install.md](docs/install.md).
 
+**Embeddings on your own model server (v0.82).** The ai plugin also answers `{"model", "input": [texts]}` with one vector
+per text from the machine's `/v1/embeddings`, so OpenVibe's search embeddings run on the shared node instead of the
+production host. Details: [docs/ai.md](docs/ai.md#the-command).
+
 **Programs with their packages, and runners that keep old jobs working (v0.81).** The skill runner (1.2.0) runs inline
 code with an npm packages bundle beside it: OpenVibe.Actor's `script_run` sends a program, its input and a pinned
 `node_modules` bundle, and the job still has no network. A machine's declared function now also takes jobs that name an
