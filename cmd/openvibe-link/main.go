@@ -110,6 +110,8 @@ Usage:
   openvibe-link share --key ovc_… --port N           put this machine's port N on the web (OpenVibe Connect),
                                                    behind OpenVibe sign-in, until Ctrl-C
   openvibe-link share add|list|remove …             the shares the Link service keeps up (openvibe-link share)
+  openvibe-link preview <dir> [--for 2h]           serve a built folder read-only at a short-lived address only you
+                                                   can open, signed in (a check or a reviewer's page), until done
   openvibe-link party host <party-id>               host a shared browser for an openvibe.party room, until stopped
   openvibe-link clone <LINK>                        clone a repository here: the "Clone to my computer" link from
                                                     its page on git.openvibe.codes, approved on this computer
@@ -218,7 +220,7 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		printConfig  = fs.String("print-config", "", "print MCP server config for a CLI (mcp)")
 		mcpAgent     = fs.String("agent", "", "local CLI identity for MCP")
 		accessScope  = fs.String("scope", "", "comma-separated machine access scopes")
-		accessFor    = fs.String("for", "", "machine access duration")
+		accessFor    = fs.String("for", "", "how long: machine access, or a preview (5m to 24h)")
 		accessReason = fs.String("reason", "", "why this machine asks for access")
 		svcUser      = fs.String("user", "", "run the service as this account (install)")
 		session      = fs.Bool("user-session", false, "Windows: start at sign-in in your own session instead of as a service (install, uninstall)")
@@ -343,6 +345,11 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		err = cmdGitConnect(g, positional[1], *gitRoot, *yes, stdin, stdout)
 	case "share":
 		err = cmdShare(g, positional, shareArgs{key: *shKey, port: *shPort, server: *shSrv, share: *shID}, stdout, stderr)
+		if errors.Is(err, errUsage) {
+			return 2
+		}
+	case "preview":
+		err = cmdPreview(g, positional, *accessFor, *shSrv, stdout, stderr)
 		if errors.Is(err, errUsage) {
 			return 2
 		}
