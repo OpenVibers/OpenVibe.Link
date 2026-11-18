@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * openvibe-skill-runner@1.1.0: run one tool of a declared skill, or one tool a person made, as an OpenVibe Run job.
+ * openvibe-skill-runner@1.2.0: run one tool of a declared skill, or one tool a person made, as an OpenVibe Run job.
  *
  * The Node's job worker runs this file as the job's function (declared in worker.functions by
  * `openvibe-link skills on`). The job's args are one JSON line on stdin:
@@ -16,6 +16,13 @@
  * most 64 KiB of JavaScript and its lowercase hex SHA-256, which must match before anything is written or run. The
  * runner writes it once, read-only, into a new folder of its own under the job's scratch /tmp (the only place a job
  * may write) and runs it from there with read access to that folder alone: the same flags, the same limits.
+ *
+ * 1.2.0: inline code may come with its packages, `{ tool, source, sha256, modules, input }` (Actor's script_run, plan
+ * §AD.26 heavy scripts): `modules` names a job input, a gzipped ustar of a node_modules folder that Actor built with
+ * npm --ignore-scripts and pinned by sha256 (the worker checked it before staging it). It is unpacked under the code's
+ * own folder, files and folders only (no link of any kind, no absolute path, no `..`, at most 256 MiB and 50,000
+ * entries), so `require('<package>')` finds it and the tool's read access, which is that folder, covers it. The job
+ * has no network: the packages are whatever is in the bundle. Native addons do not load (no --allow-addons).
  *
  * The tool runs with this Node's own node binary, cwd the job directory, an empty environment, and:
  *
@@ -115,6 +122,10 @@ function parseArgs(raw) {
     } else if (typeof a.entry !== 'string' || !ENTRY_NAME.test(a.entry) || a.entry === '.' || a.entry === '..') {
         throw new Error('entry must be the name of one of the job inputs');
     }
+    if (Object.prototype.hasOwnProperty.call(a, 'modules')) {
+        if (!Object.prototype.hasOwnProperty.call(a, 'source')) throw new Error('modules go with inline source only');
+        if (typeof a.modules !== 'string' || !ENTRY_NAME.test(a.modules) || a.modules === '.' || a.modules === '..') throw new Error('modules must be the name of one of the job inputs');
+    }
     if (!Object.prototype.hasOwnProperty.call(a, 'input')) throw new Error('input is missing');
     return a;
 }
@@ -140,6 +151,58 @@ function sourceFile(source) {
     const file = path.join(dir, 'tool.cjs');
     fs.writeFileSync(file, source, { mode: 0o400, flag: 'wx' });
     return { dir, file };
+}
+
+const MAX_BUNDLE = 256 * 1024 * 1024;
+const MAX_ENTRIES = 50000;
+
+/** A tar header field as text: up to its first NUL. */
+const field = (h, at, n) => { const b = h.subarray(at, at + n); const z = b.indexOf(0); return b.subarray(0, z < 0 ? n : z).toString('utf8'); };
+
+/**
+ * Unpacks a gzipped ustar of packages (1.2.0) into dest: files and folders only, every path inside dest. Anything else
+ * (a link, a device, a pax or GNU header, a path that climbs out, a size past the caps) refuses the whole bundle.
+ */
+function unpackModules(bundleFile, dest) {
+    const zlib = require('zlib');
+    let tar;
+    try {
+        tar = zlib.gunzipSync(fs.readFileSync(bundleFile), { maxOutputLength: MAX_BUNDLE });
+    } catch {
+        throw new Error('the packages bundle is not a gzip of at most 256 MiB');
+    }
+    fs.mkdirSync(dest, { mode: 0o755 });
+    const root = fs.realpathSync(dest);
+    let at = 0;
+    let entries = 0;
+    while (at + 512 <= tar.length) {
+        const h = tar.subarray(at, at + 512);
+        if (h.every((b) => b === 0)) break;
+        if (++entries > MAX_ENTRIES) throw new Error('the packages bundle has more than 50,000 entries');
+        if (field(h, 257, 5) !== 'ustar') throw new Error('the packages bundle is not a ustar archive');
+        const type = String.fromCharCode(h[156] || 48);
+        const size = parseInt(field(h, 124, 12).trim() || '0', 8);
+        if (!Number.isFinite(size) || size < 0) throw new Error('the packages bundle has a bad size');
+        const prefix = field(h, 345, 155);
+        const name = (prefix ? `${prefix}/` : '') + field(h, 0, 100);
+        const parts = name.replace(/\/+$/, '').split('/');
+        if (!name || name.startsWith('/') || name.includes('\\') || name.includes('\0') || parts.some((p) => p === '' || p === '.' || p === '..')) {
+            throw new Error(`the packages bundle has a path outside its folder: ${JSON.stringify(name.slice(0, 120))}`);
+        }
+        const target = path.join(root, ...parts);
+        if (!target.startsWith(root + path.sep)) throw new Error('the packages bundle has a path outside its folder');
+        const body = at + 512;
+        if (type === '5') {
+            fs.mkdirSync(target, { recursive: true, mode: 0o755 });
+        } else if (type === '0') {
+            if (body + size > tar.length) throw new Error('the packages bundle is cut short');
+            fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o755 });
+            fs.writeFileSync(target, tar.subarray(body, body + size), { mode: 0o444, flag: 'wx' });
+        } else {
+            throw new Error('the packages bundle holds something other than files and folders');
+        }
+        at = body + Math.ceil(size / 512) * 512;
+    }
 }
 
 /** The command the job sandbox starts a tool through (OPENVIBE_CONFINE, Windows), or none. */
@@ -240,8 +303,11 @@ async function main() {
     }
     let dir, file;
     try {
-        if (typeof args.source === 'string') ({ dir, file } = sourceFile(args.source));
-        else {
+        if (typeof args.source === 'string') {
+            const job = fs.realpathSync(process.cwd());
+            ({ dir, file } = sourceFile(args.source));
+            if (args.modules) unpackModules(entryFile(job, args.modules), path.join(dir, 'node_modules'));
+        } else {
             dir = fs.realpathSync(process.cwd());
             file = entryFile(dir, args.entry);
         }

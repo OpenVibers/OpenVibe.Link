@@ -56,7 +56,7 @@ with a token from this `env`. Codes CLI 0.6.1 and later sends it to git as an `A
 alone, through `GIT_CONFIG_*` variables: it is never on a command line, in the clone's remote URL or in its
 `.git/config`, and it never passes through OpenVibe.
 
-## Skills that run code (`openvibe-skill-runner@1.1.0`)
+## Skills that run code (`openvibe-skill-runner@1.2.0`)
 
 A skill that declares `runs: "sandbox"` has tools whose code runs as a **function job** on a Link that declared the
 skill runner. The runner is a declared function like the Codes runner, and it is **off until the owner turns it on**:
@@ -73,13 +73,24 @@ once before writing anything), writes the runner script into `--dir` (default `/
 this entry to `worker.functions`:
 
 ```json
-{"name": "openvibe-skill-runner", "version": "1.1.0", "class": "function",
+{"name": "openvibe-skill-runner", "version": "1.2.0", "class": "function",
  "command": ["/usr/bin/node", "/opt/openvibe-skill-runner/openvibe-skill-runner.js", "job"],
  "artifact_dir": "/opt/openvibe-skill-runner"}
 ```
 
 It does not turn `worker.enabled` on: the installer's `--worker` does. Restart the Link to load the entry. `skills off`
 removes the entry and keeps the script, so `on` is instant again.
+
+**Versions (v0.81).** A declared function serves jobs that ask for its own version, or an earlier minor or patch of the
+same major, as semantic versioning promises: the runner at 1.2.0 takes jobs naming 1.0.0, 1.1.0 or 1.2.0. It never
+serves a later version than it declares, another major, or anything at 0.x. When the Link updates, it brings the runner
+to its own version (no `skills on` again), so a requester that still names an earlier version keeps working.
+
+**Packages (1.2.0).** Inline code may come with `modules`, the name of a job input that holds a gzipped ustar of a
+`node_modules` folder. OpenVibe.Actor's `script_run` builds it with `npm install --ignore-scripts`, and the worker
+checks its sha256 before staging it. The runner unpacks it beside the code. It refuses the whole bundle on any link,
+absolute path, `..`, other entry type, more than 50,000 entries, or more than 256 MiB unpacked. The job still has no
+network, and native addons do not load.
 
 ### What a job of the runner runs
 

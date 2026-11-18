@@ -252,3 +252,78 @@ setTimeout(() => done({ reached: true, timeout: true }), 8000);
     assert.equal(r.result.output.reached, false, r.raw);
     assert.ok(['ENETUNREACH', 'EHOSTUNREACH', 'ECONNREFUSED'].includes(r.result.output.code), r.raw);
 });
+
+// 1.2.0: a gzipped ustar of node_modules (Actor's script_run packages). Built here the way Actor builds one.
+function ustar(entries) {
+    const blocks = [];
+    for (const e of entries) {
+        const h = Buffer.alloc(512);
+        const name = e.name;
+        const [prefix, base] = name.length > 100 ? [name.slice(0, name.lastIndexOf('/', name.length - 2)), name.slice(name.lastIndexOf('/', name.length - 2) + 1)] : ['', name];
+        h.write(base, 0, 100, 'utf8');
+        h.write((e.type === '5' ? '0000755' : '0000644') + '\0', 100, 8, 'ascii');
+        h.write('0000000\0', 108, 8, 'ascii');
+        h.write('0000000\0', 116, 8, 'ascii');
+        const body = e.body ? Buffer.from(e.body) : Buffer.alloc(0);
+        h.write(body.length.toString(8).padStart(11, '0') + '\0', 124, 12, 'ascii');
+        h.write('00000000000\0', 136, 12, 'ascii');
+        h.write(e.type || '0', 156, 1, 'ascii');
+        if (e.link) h.write(e.link, 157, 100, 'utf8');
+        h.write('ustar\0', 257, 6, 'ascii');
+        h.write('00', 263, 2, 'ascii');
+        if (prefix) h.write(prefix, 345, 155, 'utf8');
+        h.fill(' ', 148, 156);
+        let sum = 0;
+        for (const b of h) sum += b;
+        h.write(sum.toString(8).padStart(6, '0') + '\0 ', 148, 8, 'ascii');
+        blocks.push(h, body, Buffer.alloc((512 - (body.length % 512)) % 512));
+    }
+    blocks.push(Buffer.alloc(1024));
+    return require('node:zlib').gzipSync(Buffer.concat(blocks));
+}
+
+const USES_PACKAGE = `
+const pad = require('leftpad-ish');
+const deep = require('@ov/deep');
+let input = '';
+process.stdin.on('data', (d) => input += d).on('end', () => {
+    process.stdout.write(JSON.stringify({ padded: pad(JSON.parse(input).n), deep: deep() }));
+});`;
+
+test('1.2.0: inline code with its packages bundle requires them, read only, inside its own folder', (t) => {
+    const longDir = 'node_modules/@ov/deep/' + 'd'.repeat(90) + '/';
+    const bundle = ustar([
+        { name: 'leftpad-ish/', type: '5' },
+        { name: 'leftpad-ish/package.json', body: '{"name":"leftpad-ish","main":"index.js"}' },
+        { name: 'leftpad-ish/index.js', body: 'module.exports = (n) => String(n).padStart(5, "0");' },
+        { name: '@ov/deep/package.json', body: '{"name":"@ov/deep","main":"' + longDir.slice('node_modules/@ov/deep/'.length) + 'x.js"}' },
+        { name: longDir.slice('node_modules/'.length) + 'x.js', body: 'module.exports = () => "deep ok";' },
+    ]);
+    const r = runJob(t, { files: { 'pkgs.tgz': bundle }, args: { tool: 'script_run', source: USES_PACKAGE, sha256: sha(USES_PACKAGE), modules: 'pkgs.tgz', input: { n: 42 } } });
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(r.result && r.result.output, { padded: '00042', deep: 'deep ok' }, r.raw);
+});
+
+test('1.2.0: a bundle with a link, a climbing path or another kind of entry is refused before anything runs', (t) => {
+    const cases = [
+        [{ name: '../escape.js', body: 'x' }, /outside its folder/],
+        [{ name: 'pkg/../../escape.js', body: 'x' }, /outside its folder/],
+        [{ name: '/abs.js', body: 'x' }, /outside its folder/],
+        [{ name: 'pkg/link', type: '2', link: '/etc/passwd' }, /other than files and folders/],
+        [{ name: 'pkg/hard', type: '1', link: 'pkg/x' }, /other than files and folders/],
+    ];
+    for (const [entry, why] of cases) {
+        const code = 'process.stdout.write("{}")';
+        const r = runJob(t, { files: { 'pkgs.tgz': ustar([entry]) }, args: { tool: 'script_run', source: code, sha256: sha(code), modules: 'pkgs.tgz', input: {} } });
+        assert.equal(r.result && r.result.ok, false, `${entry.name}: ${r.raw}`);
+        assert.match(r.result.error, why, entry.name);
+        assert.ok(!fs.existsSync(path.join(r.dir, '..', 'escape.js')), 'nothing written outside');
+    }
+    const code = 'process.stdout.write("{}")';
+    let r = runJob(t, { files: { 'pkgs.tgz': Buffer.from('not gzip') }, args: { tool: 'script_run', source: code, sha256: sha(code), modules: 'pkgs.tgz', input: {} } });
+    assert.match(r.result.error, /not a gzip/);
+    r = runJob(t, { args: { tool: 'script_run', source: code, sha256: sha(code), modules: 'missing.tgz', input: {} } });
+    assert.match(r.result.error, /not one of the job inputs/);
+    r = runJob(t, { files: { 'tool.js': code, 'pkgs.tgz': ustar([]) }, args: { tool: 'script_run', entry: 'tool.js', modules: 'pkgs.tgz', input: {} } });
+    assert.match(r.result.error, /modules go with inline source only/);
+});

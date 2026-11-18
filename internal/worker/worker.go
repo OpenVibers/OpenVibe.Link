@@ -266,6 +266,8 @@ func (w *Worker) AdmitFrom(j protocol.Job, origin Origin) (fault, reason string)
 }
 
 // entry finds the declared artifact that implements class: a code job never runs a function entry, nor the reverse.
+// The version is the one asked for, or a later one of the same major (versionServes): a runner the Link brings up to its
+// own version (skills.Refresh) keeps serving the jobs that name the version before.
 func (w *Worker) entry(class string, a *protocol.Artifact) (config.FunctionConfig, bool) {
 	if a == nil {
 		return config.FunctionConfig{}, false
@@ -275,7 +277,52 @@ func (w *Worker) entry(class string, a *protocol.Artifact) (config.FunctionConfi
 			return f, true
 		}
 	}
+	for _, f := range w.cfg.Functions {
+		if f.Name == a.Name && f.EffectiveClass() == class && versionServes(f.Version, a.Version) {
+			return f, true
+		}
+	}
 	return config.FunctionConfig{}, false
+}
+
+// versionServes says whether a function declared at version declared serves a job that asks for asked: the same
+// version, or a later minor or patch of the same major, as semantic versioning promises (1.2.0 serves 1.0.0 and 1.1.3;
+// never 1.2.1, 2.0.0, or anything at 0.x, where nothing is promised). Both are plain MAJOR.MINOR.PATCH.
+func versionServes(declared, asked string) bool {
+	if declared == asked {
+		return true
+	}
+	d, ok := semver3(declared)
+	q, ok2 := semver3(asked)
+	if !ok || !ok2 || d[0] != q[0] || d[0] == 0 {
+		return false
+	}
+	if d[1] != q[1] {
+		return d[1] > q[1]
+	}
+	return d[2] >= q[2]
+}
+
+func semver3(v string) ([3]int, bool) {
+	var out [3]int
+	parts := strings.Split(v, ".")
+	if len(parts) != 3 {
+		return out, false
+	}
+	for i, p := range parts {
+		if p == "" || len(p) > 6 || (len(p) > 1 && p[0] == '0') {
+			return out, false
+		}
+		n := 0
+		for _, c := range p {
+			if c < '0' || c > '9' {
+				return out, false
+			}
+			n = n*10 + int(c-'0')
+		}
+		out[i] = n
+	}
+	return out, true
 }
 
 // Classes is the runtime classes the declared entries implement, in the order of protocol.RuntimeClasses: none

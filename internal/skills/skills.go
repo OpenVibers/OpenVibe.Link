@@ -19,7 +19,7 @@ import (
 const (
 	// Name and Version are the artifact the job names (platform.job@1 artifact.name/version).
 	Name    = "openvibe-skill-runner"
-	Version = "1.1.0"
+	Version = "1.2.0"
 	// File is the runner script inside the artifact directory.
 	File = "openvibe-skill-runner.js"
 	// MinNode is the first Node.js whose permission model is stable behind --permission (v22.13.0).
