@@ -16,6 +16,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path"
 	"path/filepath"
@@ -30,8 +31,14 @@ import (
 )
 
 const previewUsage = `usage:
-  openvibe-link preview <dir> [--for 2h]   serve a built folder (static, read-only) at a short-lived address only you can
-                                           open, signed in, until the time is up or Ctrl-C (5m to 24h; 2h by default)`
+  openvibe-link preview <dir> [--for 2h] [--detach]
+      serve a built folder (static, read-only) at a short-lived address only you can open, signed in, until the time is
+      up or Ctrl-C (5m to 24h; 2h by default). --detach keeps it up in the background and returns once the address is
+      printed (for scripts and agents).`
+
+// previewReadyEnv names the file a detached preview writes its address (or why it failed) to, for the command that
+// started it (`--detach`): "ok\t<url>\t<until RFC 3339>\n" or "error\t<why>\n".
+const previewReadyEnv = "OPENVIBE_LINK_PREVIEW_READY"
 
 const previewDefault = 2 * time.Hour
 
@@ -162,16 +169,123 @@ func openPreview(ctx context.Context, api, connectToken, networkToken string, po
 	return out, nil
 }
 
-func cmdPreview(g *globals, positional []string, forText, server string, stdout, stderr io.Writer) error {
+func cmdPreview(g *globals, positional []string, forText, server string, detach bool, stdout, stderr io.Writer) error {
 	if len(positional) != 1 {
 		fmt.Fprintln(stderr, previewUsage)
 		return errUsage
 	}
+	ready := os.Getenv(previewReadyEnv)
+	if ready != "" {
+		// The background copy: whatever stops it before the address is up goes to the one that started it.
+		err := servePreview(g, positional[0], forText, server, stdout, func(url string, until time.Time) {
+			_ = os.WriteFile(ready, []byte("ok\t"+url+"\t"+until.UTC().Format(time.RFC3339)+"\n"), 0o600)
+		})
+		if err != nil {
+			_ = os.WriteFile(ready, []byte("error\t"+strings.ReplaceAll(err.Error(), "\n", " ")+"\n"), 0o600)
+		}
+		return err
+	}
+	if detach {
+		return detachPreview(g, positional[0], forText, stdout)
+	}
+	return servePreview(g, positional[0], forText, server, stdout, func(url string, until time.Time) {
+		root, _ := previewRoot(positional[0])
+		fmt.Fprintf(stdout, "Preview of %s until %s (only you, signed in to OpenVibe, can open it):\n%s\n", root, until.Local().Format("15:04"), url)
+	})
+}
+
+// previewArgsWithoutDetach is this command line without --detach, for the background copy.
+func previewArgsWithoutDetach(args []string) []string {
+	out := make([]string, 0, len(args))
+	for _, a := range args {
+		switch a {
+		case "--detach", "-detach", "--detach=true", "-detach=true":
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
+// detachPreview starts this same command in the background (its own session, no terminal) and returns once it says
+// the address is up, or why not; it waits a minute at most.
+func detachPreview(g *globals, dir, forText string, stdout io.Writer) error {
+	if _, err := previewFor(forText); err != nil {
+		return err
+	}
+	root, err := previewRoot(dir)
+	if err != nil {
+		return err
+	}
+	if creds, err := credentials.Load(g.paths.CredentialFile(), nil); err != nil || !creds.NetworkPaired() {
+		return errors.New("this computer is not added to OpenVibe yet: add it on openvibe.bot/machines first")
+	}
+	f, err := os.CreateTemp("", "openvibe-link-preview-*")
+	if err != nil {
+		return err
+	}
+	readyPath := f.Name()
+	f.Close()
+	defer os.Remove(readyPath)
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command(exe, previewArgsWithoutDetach(os.Args[1:])...)
+	cmd.Env = append(os.Environ(), previewReadyEnv+"="+readyPath)
+	cmd.SysProcAttr = previewDetachAttr()
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("the background preview did not start: %w", err)
+	}
+	exited := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(exited) }()
+	line, err := waitPreviewReady(readyPath, exited, time.Minute)
+	if err != nil {
+		return err
+	}
+	parts := strings.SplitN(strings.TrimSpace(line), "\t", 3)
+	if parts[0] != "ok" || len(parts) != 3 {
+		if len(parts) >= 2 {
+			return errors.New(parts[1])
+		}
+		return errors.New("the background preview did not start")
+	}
+	until, _ := time.Parse(time.RFC3339, parts[2])
+	fmt.Fprintf(stdout, "Preview of %s until %s (only you, signed in to OpenVibe, can open it):\n%s\n", root, until.Local().Format("15:04"), parts[1])
+	fmt.Fprintf(stdout, "It runs in the background (process %d) and closes by itself then.\n", cmd.Process.Pid)
+	return nil
+}
+
+// waitPreviewReady waits for the background copy's one line, its end, or the time limit.
+func waitPreviewReady(path string, exited <-chan struct{}, limit time.Duration) (string, error) {
+	deadline := time.NewTimer(limit)
+	defer deadline.Stop()
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		if b, err := os.ReadFile(path); err == nil && strings.HasSuffix(string(b), "\n") {
+			return string(b), nil
+		}
+		select {
+		case <-exited:
+			if b, err := os.ReadFile(path); err == nil && strings.HasSuffix(string(b), "\n") {
+				return string(b), nil
+			}
+			return "", errors.New("the background preview stopped before its address was up")
+		case <-deadline.C:
+			return "", errors.New("the background preview did not say its address within a minute")
+		case <-tick.C:
+		}
+	}
+}
+
+// servePreview serves dir until --for runs out or the process is stopped; up is told the address once it is open.
+func servePreview(g *globals, dir, forText, server string, stdout io.Writer, up func(url string, until time.Time)) error {
 	d, err := previewFor(forText)
 	if err != nil {
 		return err
 	}
-	root, err := previewRoot(positional[0])
+	root, err := previewRoot(dir)
 	if err != nil {
 		return err
 	}
@@ -209,7 +323,7 @@ func cmdPreview(g *globals, positional []string, forText, server string, stdout,
 	if t, err := time.Parse(time.RFC3339, share.ExpiresAt); err == nil {
 		until = t
 	}
-	fmt.Fprintf(stdout, "Preview of %s until %s (only you, signed in to OpenVibe, can open it):\n%s\n", root, until.Local().Format("15:04"), share.Share.URL)
+	up(share.Share.URL, until)
 	ctx, cancel := context.WithDeadline(ctx, until)
 	defer cancel()
 	err = connect.Run(ctx, connect.Share{ID: share.Share.ID, Port: port}, connect.Options{
