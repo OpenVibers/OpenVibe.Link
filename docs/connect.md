@@ -63,6 +63,27 @@ The saved shares are in the Link's config directory, `connect-shares.json`, read
 `add` or `remove`. A share the server ends for good (its key was replaced, it was closed, or another computer took it
 over) stays stopped and says so in the log; `share list` shows each share's address once it has connected.
 
+## A preview of a built folder
+
+```bash
+openvibe-link preview dist              # until Ctrl-C, or two hours
+openvibe-link preview dist --for 30m    # 5m to 24h
+openvibe-link preview dist --detach     # in the background; prints the address and returns
+```
+
+A preview shows a site or app you built (the `dist`, `build` or `out` folder) to you, and to what acts for you on
+OpenVibe, without running a server of your own. This computer must be added to OpenVibe (openvibe.bot/machines).
+
+- **Who opens it:** only you, signed in. A room's check on OpenVibe opens it as you, with a token that reads only that
+  preview for two minutes. No API key opens it.
+- **What it serves:** the folder's files, read only: GET and HEAD, a folder's `index.html` or nothing (no listing), no
+  file or folder whose name starts with a dot, and nothing a link points to outside the folder. It refuses `/` and
+  your home folder itself. Answers say `noindex` and `no-store`, with a sandboxing Content-Security-Policy.
+- **How long:** `--for` from 5 minutes to a day, 2 hours by default. Connect closes the share when the time is up, and
+  the command stops then. At most five previews are open at once per computer; they do not count toward your shares.
+- **`--detach`:** the same command starts again in its own session and returns once it says the address is up, or why
+  not, within a minute. It prints the process id; stopping that process closes the preview early.
+
 ## What the Link does and does not do
 
 - It opens one outgoing WebSocket per share to `wss://connect.openvibe.website/tunnel` (port 443, through Cloudflare),

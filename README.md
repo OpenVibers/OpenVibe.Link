@@ -36,6 +36,12 @@ openvibe.bot shows this command with the robot's id and a fresh code. `--driver`
 OpenVibe.Network gets `--network <URL> --pairing pair_… --code ABCD-1234` instead of `--robot`. Details, manual
 install, Windows and configuration: [docs/install.md](docs/install.md).
 
+**A preview of what you built (v0.80).** `openvibe-link preview <dir> [--for 2h] [--detach]` puts a built folder at a
+short-lived address only you can open, signed in to OpenVibe: `https://p<6>--<this computer>.openvibe.link`, for 5 minutes
+to a day (2 hours by default). It serves the folder read-only, with no listing, no hidden files and nothing outside it.
+`--detach` keeps it up in the background and returns with the address, for scripts and agents. A room's check on
+OpenVibe opens it as you, read only. Details: [docs/connect.md](docs/connect.md#a-preview-of-a-built-folder).
+
 **An update keeps what the machine is (v0.79.1).** Running the installer again with no flags keeps the account the
 service runs as. That matters for a job worker or a desk host set up before v0.78, which runs as root, and for a
 computer, which runs as its owner. The update also brings the computer and ai plugins the machine already runs up to
