@@ -13,6 +13,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -224,9 +225,11 @@ func (w *Worker) AdmitFrom(j protocol.Job, origin Origin) (fault, reason string)
 	if origin == OriginOther && !w.cfg.ServeOthers {
 		return protocol.FaultNotAllowed, protocol.JobOthersRefused
 	}
-	// inputs are fetched from worker.media and checked against their digests before the job starts (platform.job@1):
-	// without it a job naming inputs is refused, never run with the files and the digest check silently dropped.
-	if len(j.Inputs) > 0 && !w.cfg.Media.Enabled {
+	// inputs are fetched by the Link and checked against their digests before the job starts (platform.job@1): with
+	// worker.media's token, or (v0.83) with no credential from Media's public address when they are public or unlisted.
+	// A Link that opted out of the second (no_public_inputs) and has no worker.media refuses a job naming inputs, never
+	// running it with the files and the digest check silently dropped.
+	if len(j.Inputs) > 0 && !w.cfg.Media.Enabled && w.cfg.Media.NoPublicInputs {
 		return protocol.FaultUnsupported, protocol.JobInputsRefused
 	}
 	if !protocol.ValidJobInputs(j.Inputs) {
@@ -882,19 +885,26 @@ func (w *Worker) readResult(jb *job, r io.Reader) []byte {
 // mediaClient returns jb's worker.media client, bounded by its ttl from receipt, and the context its requests run
 // in, which killing jb cancels; done releases it.
 func (w *Worker) mediaClient(jb *job) (c *mediaClient, ctx context.Context, done func(), err error) {
-	deadline := jb.received.Add(jb.ttl)
-	if c, err = newMediaClient(w.cfg.Media, w.mediaRT, deadline); err != nil {
+	if c, err = newMediaClient(w.cfg.Media, w.mediaRT, jb.received.Add(jb.ttl)); err != nil {
 		return nil, nil, nil, err
 	}
-	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	if ctx, done, err = w.jobContext(jb); err != nil {
+		return nil, nil, nil, err
+	}
+	return c, ctx, done, nil
+}
+
+// jobContext is the context of jb's Media requests: its ttl from receipt, cancelled when the job is killed.
+func (w *Worker) jobContext(jb *job) (context.Context, func(), error) {
+	ctx, cancel := context.WithDeadline(context.Background(), jb.received.Add(jb.ttl))
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if jb.reason != "" {
 		cancel()
-		return nil, nil, nil, fmt.Errorf("killed (%s)", jb.reason)
+		return nil, nil, fmt.Errorf("killed (%s)", jb.reason)
 	}
 	jb.abort = cancel
-	return c, ctx, func() {
+	return ctx, func() {
 		w.mu.Lock()
 		jb.abort = nil
 		w.mu.Unlock()
@@ -905,11 +915,32 @@ func (w *Worker) mediaClient(jb *job) (c *mediaClient, ctx context.Context, done
 // fetchInputs fetches jb's inputs into dir and returns their names: each at most worker.media.max_bytes, all of them
 // together at most worker.caps.max_disk_bytes (the size of the job's /tmp they are copied to), each matching its
 // pinned sha256.
+//
+// With worker.media on, each input is read with its token, and one its app may not read (another app's object) is
+// read from Media's public address instead (v0.83): that answers only for a public or unlisted object. With it off,
+// every input comes from the public address. A misconfigured worker.media (no token) still fails the job: it never
+// quietly reads without the credential the operator set up.
 func (w *Worker) fetchInputs(jb *job, dir string) ([]string, error) {
 	if len(jb.req.Inputs) == 0 {
 		return nil, nil
 	}
-	c, ctx, done, err := w.mediaClient(jb)
+	deadline := jb.received.Add(jb.ttl)
+	var own, pub *mediaClient
+	var err error
+	if w.cfg.Media.Enabled {
+		if own, err = newMediaClient(w.cfg.Media, w.mediaRT, deadline); err != nil {
+			return nil, err
+		}
+	}
+	if !w.cfg.Media.NoPublicInputs {
+		if pub, err = newPublicMediaClient(w.cfg.Media, w.mediaRT, deadline); err != nil {
+			return nil, err
+		}
+	}
+	if own == nil && pub == nil {
+		return nil, errors.New("worker.media is off")
+	}
+	ctx, done, err := w.jobContext(jb)
 	if err != nil {
 		return nil, err
 	}
@@ -917,7 +948,15 @@ func (w *Worker) fetchInputs(jb *job, dir string) ([]string, error) {
 	left := w.caps.MaxDiskBytes
 	names := make([]string, 0, len(jb.req.Inputs))
 	for _, in := range jb.req.Inputs {
-		n, err := c.fetchInput(ctx, in, dir, min(c.cfg.MaxBytes, left))
+		var n int64
+		if own != nil {
+			n, err = own.fetchInput(ctx, in, dir, min(own.cfg.MaxBytes, left))
+			if err != nil && pub != nil && unreadable(err) {
+				n, err = pub.fetchInput(ctx, in, dir, min(pub.cfg.MaxBytes, left))
+			}
+		} else {
+			n, err = pub.fetchInput(ctx, in, dir, min(pub.cfg.MaxBytes, left))
+		}
 		if err != nil {
 			return nil, err
 		}

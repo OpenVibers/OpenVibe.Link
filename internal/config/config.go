@@ -196,15 +196,29 @@ type MediaConfig struct {
 	App      string `json:"app,omitempty"`       // the :app of /api/v2/:app/objects
 	TokenEnv string `json:"token_env,omitempty"` // default DefaultMediaTokenEnv
 	MaxBytes int64  `json:"max_bytes,omitempty"` // the most bytes one input or uploaded result may take; default 64 MiB
+	// PublicEndpoint is where a job's inputs that are public or unlisted Media objects are fetched with no credential
+	// (GET {public_endpoint}/o/{media_id}), when worker.media is off or its own app cannot read them (v0.83): a
+	// package bundle is one (Actor's script_run: public npm code, stored unlisted). The digest pin, size limits and
+	// https-only redirects are the same; a private object answers 404 there and the job fails before it runs.
+	// Default DefaultMediaPublicEndpoint.
+	PublicEndpoint string `json:"public_endpoint,omitempty"`
+	// NoPublicInputs refuses every job with inputs unless worker.media is on, as before v0.83.
+	NoPublicInputs bool `json:"no_public_inputs,omitempty"`
 }
 
 // DefaultMediaTokenEnv is the variable worker.media's token is read from when token_env is not set.
 const DefaultMediaTokenEnv = "OPENVIBE_MEDIA_TOKEN"
 
-// WithDefaults fills token_env and max_bytes.
+// DefaultMediaPublicEndpoint serves public and unlisted Media objects at /o/{media_id} (OpenVibe.Media's publicRouter).
+const DefaultMediaPublicEndpoint = "https://openvibe.media"
+
+// WithDefaults fills token_env, public_endpoint and max_bytes.
 func (m MediaConfig) WithDefaults() MediaConfig {
 	if m.TokenEnv == "" {
 		m.TokenEnv = DefaultMediaTokenEnv
+	}
+	if m.PublicEndpoint == "" {
+		m.PublicEndpoint = DefaultMediaPublicEndpoint
 	}
 	if m.MaxBytes == 0 {
 		m.MaxBytes = 64 << 20
@@ -222,6 +236,12 @@ func (m MediaConfig) validate() error {
 		u, err := url.Parse(m.Endpoint)
 		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 			return errors.New("config: worker.media.endpoint must be an https:// URL with no credentials, query or fragment")
+		}
+	}
+	if m.PublicEndpoint != "" {
+		u, err := url.Parse(m.PublicEndpoint)
+		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+			return errors.New("config: worker.media.public_endpoint must be an https:// URL with no credentials, query or fragment")
 		}
 	}
 	switch {

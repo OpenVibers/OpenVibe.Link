@@ -309,11 +309,15 @@ AppArmor; a Link running as root with `run_as` is not affected.
 
 1. **Admit** (before the `ack`): refused unless the stop latch is clear, the artifact is declared and fewer than
    `max_jobs` jobs run. An id the worker already holds is answered from it (`ack` while it runs, its `job_exit` once
-   it ended) and never starts a second process. A job carrying `inputs` is refused (`job inputs not supported`) unless
-   `media` is enabled: it never runs one with the requested files and the digest check silently dropped. So is a job
-   naming a `net` this host cannot enforce.
-2. **Inputs** (with `media` on, before anything of the job runs): each input is fetched by the Link from
-   `GET <endpoint>/api/v2/<app>/objects/<media_id>/download?redirect=1` into the job's directory under its `name`
+   it ended) and never starts a second process. A job carrying `inputs` is refused (`job inputs not supported`) only
+   when `media` is off and `media.no_public_inputs` is set: it never runs one with the requested files and the digest
+   check silently dropped. So is a job naming a `net` this host cannot enforce.
+2. **Inputs** (before anything of the job runs): with `media` on, each input is fetched by the Link from
+   `GET <endpoint>/api/v2/<app>/objects/<media_id>/download?redirect=1` with its token; one that app may not read
+   (401, 403, 404: another app's object) and, with `media` off, every input, is fetched with no credential at all from
+   `GET <public_endpoint>/o/<media_id>` (v0.83; default `https://openvibe.media`), which serves only a public or
+   unlisted object: a package bundle for Actor's `script_run` is one (public npm code, stored unlisted), and a private
+   object answers 404 there, which fails the job. Either way it lands in the job's directory under its `name`
    (the contract's file-name pattern, unique, checked before the `ack`, so it cannot leave that directory). Every
    redirect hop must stay https (at most 3; the token is dropped on a hop to another host), the body is cut off at
    `max_bytes` (and at what is left of `max_disk_bytes` for all inputs together) while it streams, and the bytes that

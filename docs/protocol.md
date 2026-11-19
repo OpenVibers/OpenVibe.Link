@@ -336,7 +336,7 @@ checked in this order:
 | `function or code job needs an artifact with an exact version` | `bad_value` | a `function` or `code` job without `artifact`, or a name or version outside the contract's pattern (a range) |
 | `net policy not supported`                   | `unsupported` | `net` is present and not one of `deny`, `none`, `public`, `openvibe-only`, or is one the host cannot enforce |
 | `invalid inputs`                             | `bad_value`   | an entry of `inputs` outside the contract's patterns, a repeated name, or more than 32 |
-| `job inputs not supported`                   | `unsupported` | the job carries `inputs`: this Link cannot stage and check them yet, so it never runs it with them dropped |
+| `job inputs not supported`                   | `unsupported` | the job carries `inputs` and this Link opted out of public inputs (`worker.media.no_public_inputs`) with no `worker.media`: it cannot fetch and check them, so it never runs the job with them dropped |
 | `missing or invalid args, ttl_ms or limits`  | `bad_value`   | `args` is not an object, or `ttl_ms` or a limit is missing or below 1 |
 | `class not available`                        | `unsupported` | the class is valid but this Link does not run it (every class but `function`, `code` and `linux`; every class while the worker is off) |
 | `the stop or local stop is latched`        | `estopped` or `local_stop` | the stop latch is set: no job starts until it clears |

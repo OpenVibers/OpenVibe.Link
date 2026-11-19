@@ -45,13 +45,14 @@ type mediaFake struct {
 	objects    map[string][]byte
 	where      func(id string) string // the download redirect's target
 	uploaded   []byte
-	bounce     bool     // every API request is redirected to the storage host
-	storeAuth  []string // Authorization headers the storage host saw
-	apiAuth    []string // Authorization headers the API saw
+	bounce     bool            // every API request is redirected to the storage host
+	notOurs    map[string]bool // objects the API says this app may not read (another app's): 404
+	storeAuth  []string        // Authorization headers the storage host saw
+	apiAuth    []string        // Authorization headers the API saw
 }
 
 func newMediaFake(t *testing.T) *mediaFake {
-	m := &mediaFake{objects: map[string][]byte{}}
+	m := &mediaFake{objects: map[string][]byte{}, notOurs: map[string]bool{}}
 	m.store = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		m.mu.Lock()
 		m.storeAuth = append(m.storeAuth, r.Header.Get("Authorization"))
@@ -80,7 +81,12 @@ func newMediaFake(t *testing.T) *mediaFake {
 		p := strings.TrimPrefix(r.URL.Path, "/api/v2/run/objects")
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(p, "/download") && r.URL.Query().Get("redirect") == "1":
-			http.Redirect(w, r, m.where(strings.TrimSuffix(strings.TrimPrefix(p, "/"), "/download")), http.StatusFound)
+			id := strings.TrimSuffix(strings.TrimPrefix(p, "/"), "/download")
+			if m.notOurs[id] {
+				http.NotFound(w, r)
+				return
+			}
+			http.Redirect(w, r, m.where(id), http.StatusFound)
 		case r.Method == http.MethodPost && p == "":
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"id":"` + resultID + `","upload":{"method":"PUT"}}`))
@@ -243,6 +249,101 @@ func TestAdmitInputs(t *testing.T) {
 	}
 	if _, r := w.Admit(inputJob(2, protocol.JobInput{Name: "../a.bin", MediaID: inputID, SHA256: strings.Repeat("a", 64)})); r != protocol.JobBadInputs {
 		t.Fatalf("a path-escaping name: %q", r)
+	}
+}
+
+// publicWorker is a worker with worker.media off, whose public inputs come from m's storage host (as openvibe.media's
+// /o/{media_id} serves a public or unlisted object, with no credential).
+func publicWorker(t *testing.T, m *mediaFake) (w *Worker, s *sink, log *logBuf, isolated func() (plan, []string, bool)) {
+	t.Helper()
+	w, s, log, isolated = mediaWorker(t, m)
+	cfg := w.cfg
+	cfg.Media = config.MediaConfig{PublicEndpoint: m.store.URL, MaxBytes: 1 << 20}
+	w2 := New(cfg, s.send, slog.New(slog.NewTextHandler(log, nil)))
+	w2.mediaRT = m.srv.Client().Transport
+	w2.isolate = w.isolate
+	t.Cleanup(w2.Close)
+	return w2, s, log, isolated
+}
+
+// TestPublicInputFetched (v0.83): with worker.media off, an unlisted object is fetched from the public address with no
+// Authorization at all, checked against its digest and laid in the job's directory; the API is never asked.
+func TestPublicInputFetched(t *testing.T) {
+	m := newMediaFake(t)
+	data := []byte("packages.tgz bytes\n")
+	m.objects[inputID] = data
+	w, s, _, isolated := publicWorker(t, m)
+	j := inputJob(1, protocol.JobInput{Name: "packages.tgz", MediaID: inputID, SHA256: digestOf(data), SizeBytes: int64(len(data))})
+	if f, r := w.Admit(j); f != "" {
+		t.Fatalf("admitted? %s %s", f, r)
+	}
+	run(t, w, j)
+	s.exit(t, j.ID)
+	p, _, called := isolated()
+	if !called || len(p.inputs) != 2 || p.inputs[1] != "packages.tgz=packages.tgz bytes\n|" {
+		t.Fatalf("called %v, inputs %q", called, p.inputs)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.storeAuth) != 1 || m.storeAuth[0] != "" || len(m.apiAuth) != 0 {
+		t.Fatalf("store saw %q, the API %q", m.storeAuth, m.apiAuth)
+	}
+}
+
+// TestPublicInputRefused (v0.83): a private object (404 at the public address) or another digest ends the job failed
+// with nothing run.
+func TestPublicInputRefused(t *testing.T) {
+	data := []byte("packages.tgz bytes\n")
+	for _, c := range []struct {
+		name, why string
+		set       func(m *mediaFake, in *protocol.JobInput)
+	}{
+		{"private (not served)", "status 404", func(m *mediaFake, in *protocol.JobInput) { delete(m.objects, inputID) }},
+		{"another digest", "sha256 does not match", func(m *mediaFake, in *protocol.JobInput) { in.SHA256 = digestOf([]byte("else")) }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m := newMediaFake(t)
+			m.objects[inputID] = data
+			w, s, log, isolated := publicWorker(t, m)
+			in := protocol.JobInput{Name: "packages.tgz", MediaID: inputID, SHA256: digestOf(data)}
+			c.set(m, &in)
+			j := inputJob(1, in)
+			run(t, w, j)
+			ex := s.exit(t, j.ID)
+			if ex.Reason != protocol.ExitFailed || ex.Usage.StartedMS != nil {
+				t.Fatalf("%+v", ex)
+			}
+			if _, _, called := isolated(); called {
+				t.Fatal("the job's sandbox was made")
+			}
+			if !strings.Contains(log.String(), c.why) {
+				t.Fatalf("the failure was not logged: %s", log)
+			}
+		})
+	}
+}
+
+// TestOwnAppFallsBackToPublic (v0.83): with worker.media on, an object its app may not read (another app's, 404) is
+// read from the public address instead, with no token sent there; a misconfigured token still fails (tested in
+// TestInputRefused: "token_env unset").
+func TestOwnAppFallsBackToPublic(t *testing.T) {
+	m := newMediaFake(t)
+	data := []byte("bundle\n")
+	m.objects[inputID] = data
+	m.notOurs[inputID] = true
+	w, s, _, isolated := mediaWorker(t, m)
+	w.cfg.Media.PublicEndpoint = m.store.URL
+	j := inputJob(1, protocol.JobInput{Name: "packages.tgz", MediaID: inputID, SHA256: digestOf(data)})
+	run(t, w, j)
+	s.exit(t, j.ID)
+	p, _, called := isolated()
+	if !called || len(p.inputs) != 2 || p.inputs[1] != "packages.tgz=bundle\n|" {
+		t.Fatalf("called %v, inputs %q", called, p.inputs)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.storeAuth) != 1 || m.storeAuth[0] != "" {
+		t.Fatalf("the public address saw Authorization %q", m.storeAuth)
 	}
 }
 
