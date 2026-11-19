@@ -24,7 +24,8 @@ const maxRedirects = 3
 
 // mediaClient is the OpenVibe.Media objects client of one job (worker.media; docs/worker.md). Its token is read from
 // the environment variable worker.media.token_env names and goes only in the Authorization header of a request to the
-// endpoint's own host: never in a job's environment, a log line or an error.
+// endpoint's own host: never in a job's environment, a log line or an error. A public client (newPublicMediaClient)
+// has no token at all and reads only {public_endpoint}/o/{media_id}.
 type mediaClient struct {
 	cfg   config.MediaConfig
 	base  *url.URL // the endpoint
@@ -60,6 +61,38 @@ func newMediaClient(cfg config.MediaConfig, rt http.RoundTripper, deadline time.
 	return c, nil
 }
 
+// newPublicMediaClient returns a client with no credential for a job's public or unlisted inputs (GET
+// {public_endpoint}/o/{media_id}; v0.83), bounded by the job's deadline like the token client.
+func newPublicMediaClient(cfg config.MediaConfig, rt http.RoundTripper, deadline time.Time) (*mediaClient, error) {
+	cfg = cfg.WithDefaults()
+	base, err := url.Parse(cfg.PublicEndpoint)
+	if err != nil || base.Scheme != "https" || base.Host == "" {
+		return nil, errors.New("worker.media.public_endpoint is not an https URL")
+	}
+	left := time.Until(deadline)
+	if left <= 0 {
+		return nil, errors.New("worker.media: the job's ttl has passed")
+	}
+	if rt == nil {
+		rt = http.DefaultTransport
+	}
+	c := &mediaClient{cfg: cfg, base: base}
+	c.http = &http.Client{Transport: rt, Timeout: left, CheckRedirect: c.redirect}
+	return c, nil
+}
+
+// statusError is a non-2xx answer: its status only (never the URL, which may be a signed one).
+type statusError struct{ code int }
+
+func (e statusError) Error() string { return fmt.Sprintf("status %d", e.code) }
+
+// unreadable says whether err is Media saying this client may not read the object (401, 403 or 404): the Link's
+// own app may not read another app's object, which the public path may still serve when it is public or unlisted.
+func unreadable(err error) bool {
+	var se statusError
+	return errors.As(err, &se) && (se.code == http.StatusUnauthorized || se.code == http.StatusForbidden || se.code == http.StatusNotFound)
+}
+
 // redirect re-checks every hop of a download: https only, at most maxRedirects, and the token is sent to the
 // endpoint's own host only (a signed URL on a storage host carries its own authority). The bytes at the end are
 // checked against the pinned digest whatever host served them.
@@ -73,7 +106,7 @@ func (c *mediaClient) redirect(req *http.Request, via []*http.Request) error {
 	if req.URL.Scheme != "https" {
 		return errors.New("worker.media: a redirect left https")
 	}
-	if req.URL.Host != c.base.Host {
+	if c.token == "" || req.URL.Host != c.base.Host {
 		req.Header.Del("Authorization")
 	} else {
 		req.Header.Set("Authorization", "Bearer "+c.token)
@@ -93,7 +126,9 @@ func (c *mediaClient) objectsURL(elem ...string) string {
 // do sends req with the token and returns the response of a 2xx answer. An error names the status or the transport's
 // cause, never a URL (a signed URL is a credential too) and never the token.
 func (c *mediaClient) do(req *http.Request) (*http.Response, error) {
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
 	resp, err := c.http.Do(req)
 	if err != nil {
 		var ue *url.Error
@@ -104,7 +139,7 @@ func (c *mediaClient) do(req *http.Request) (*http.Response, error) {
 	}
 	if resp.StatusCode/100 != 2 {
 		resp.Body.Close()
-		return nil, fmt.Errorf("status %d", resp.StatusCode)
+		return nil, statusError{resp.StatusCode}
 	}
 	return resp, nil
 }
@@ -117,7 +152,11 @@ func (c *mediaClient) fetchInput(ctx context.Context, in protocol.JobInput, dir 
 	if !protocol.ValidMediaID(in.MediaID) || filepath.Base(in.Name) != in.Name || in.Name == "." || in.Name == ".." {
 		return fail(errors.New("malformed"))
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.objectsURL(in.MediaID, "download")+"?redirect=1", nil)
+	where := c.objectsURL(in.MediaID, "download") + "?redirect=1"
+	if c.token == "" { // the public client: the object's own public address, no credential
+		where = c.base.JoinPath("o", in.MediaID).String()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, where, nil)
 	if err != nil {
 		return fail(err)
 	}

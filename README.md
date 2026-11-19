@@ -36,6 +36,11 @@ openvibe.bot shows this command with the robot's id and a fresh code. `--driver`
 OpenVibe.Network gets `--network <URL> --pairing pair_… --code ABCD-1234` instead of `--robot`. Details, manual
 install, Windows and configuration: [docs/install.md](docs/install.md).
 
+**Inputs without a Media key (v0.83).** A job's inputs that are public or unlisted OpenVibe.Media objects (a
+`script_run` package bundle: public npm code) are fetched from `https://openvibe.media/o/<id>` with no credential and
+checked against their pinned sha256, so any Link runs them; with `worker.media` on, the Link's own app is tried first.
+A private input still needs `worker.media`, and `worker.media.no_public_inputs` keeps the old refusal.
+
 **Embeddings on your own model server (v0.82).** The ai plugin also answers `{"model", "input": [texts]}` with one vector
 per text from the machine's `/v1/embeddings`, so OpenVibe's search embeddings run on the shared node instead of the
 production host. Details: [docs/ai.md](docs/ai.md#the-command).

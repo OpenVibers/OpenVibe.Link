@@ -349,15 +349,22 @@ func TestEgressFor(t *testing.T) {
 	}
 }
 
-// TestAdmitRefusesInputs: a job carrying inputs is refused, never run with them silently dropped (platform.job@1).
+// TestAdmitRefusesInputs: a Link with no worker.media that opted out of public inputs refuses a job carrying inputs,
+// never running it with them silently dropped (platform.job@1); without the opt-out it admits it (v0.83: public and
+// unlisted inputs come from Media's public address).
 func TestAdmitRefusesInputs(t *testing.T) {
 	s := &sink{}
-	w := New(helperConfig(t, config.WorkerCaps{}, "sleep"), s.send, quiet())
+	optedOut := helperConfig(t, config.WorkerCaps{}, "sleep")
+	optedOut.Media.NoPublicInputs = true
+	w := New(optedOut, s.send, quiet())
 	j := testJob(1, "sleep")
 	j.Inputs = []protocol.JobInput{{Name: "clip.mp4", MediaID: "med_01JAB2C3D4E5F6G7H8J9K0MNPQ",
 		SHA256: "9f86d081884c7d659a2feb15b0b4f8f1c0e6ad1d7e6fd2e1b0b6fd1c4f1d2a3b"}}
 	if f, r := w.Admit(j); f != protocol.FaultUnsupported || r != protocol.JobInputsRefused {
 		t.Fatalf("a job with inputs: %q %q, want %q %q", f, r, protocol.FaultUnsupported, protocol.JobInputsRefused)
+	}
+	if f, r := New(helperConfig(t, config.WorkerCaps{}, "sleep"), s.send, quiet()).Admit(j); f != "" {
+		t.Fatalf("public inputs on (the default): %q %q, want admitted", f, r)
 	}
 	// A net the host cannot enforce is refused too, rather than run with no network.
 	n := testJob(2, "sleep")
